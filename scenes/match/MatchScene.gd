@@ -1067,12 +1067,12 @@ func _spawn_open_play_actors() -> void:
 	_defender_dirs.clear()
 
 	var side := -1.0 if _player_pos.x > 0.0 else 1.0
-	var base_z := clampf(_ball_pos.z - 5.5, -40.0, -22.0)
-	# 3 living teammates: wing cut-in runner, central box striker, and edge-of-box trailer
+	var base_z := clampf(_ball_pos.z - 2.0, -35.0, -18.0)
+	# 3 forward-running teammates (always advance -Z toward opponent goal)
 	var tm_defs := [
-		[Vector3(clampf(_player_pos.x + side * 8.5, -18.0, 18.0), 0.0, base_z), Vector3(side * -1.4, 0.0, -3.8), Vector3(side * 4.5, 0.0, -45.5)],
-		[Vector3(clampf(-_player_pos.x * 0.5 - side * 5.0, -14.0, 14.0), 0.0, base_z - 3.0), Vector3(side * 1.1, 0.0, -3.1), Vector3(0.0, 0.0, -44.0)],
-		[Vector3(clampf(_player_pos.x - side * 5.5, -15.0, 15.0), 0.0, clampf(base_z + 3.0, -36.0, -20.0)), Vector3(side * 0.6, 0.0, -2.5), Vector3(-side * 2.5, 0.0, -37.5)],
+		[Vector3(clampf(_player_pos.x + side * 8.5, -18.0, 18.0), 0.0, base_z), Vector3(side * -1.1, 0.0, -3.5), Vector3(side * 4.2, 0.0, -47.0)],
+		[Vector3(clampf(-_player_pos.x * 0.5 - side * 5.0, -14.0, 14.0), 0.0, base_z - 2.8), Vector3(side * 0.9, 0.0, -3.2), Vector3(0.0, 0.0, -47.5)],
+		[Vector3(clampf(_player_pos.x - side * 5.5, -15.0, 15.0), 0.0, clampf(base_z + 2.0, -33.0, -16.0)), Vector3(side * 0.5, 0.0, -2.8), Vector3(-side * 2.8, 0.0, -44.5)],
 	]
 	for i in range(tm_defs.size()):
 		if i < _teammates.size():
@@ -1471,24 +1471,76 @@ func _update_gk_ai(dt: float) -> void:
 	var dx := _gk_target_x - _gk_pos.x
 	_gk_pos.x += clampf(dx, -gk_spd * dt, gk_spd * dt)
 
+func _is_user_dribbling_active() -> bool:
+	if _moment_type != MomentType.DRIBBLE:
+		return false
+	if _dribble_input.length() > 0.08 or _skill_burst_timer > 0.0:
+		return true
+	var kb := Vector2(
+		Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left"),
+		Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
+	)
+	return kb.length() > 0.12
+
+func _get_moment_time_scales() -> Dictionary:
+	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
+	var base_def_spd: float = float(diff_p.get("defender_speed", 1.6))
+	var drib_def_spd: float = float(diff_p.get("dribble_defender_speed", 2.2))
+	var aim_tm_scale: float = float(diff_p.get("aim_teammate_scale", 0.34))
+	var aim_def_scale: float = float(diff_p.get("aim_defender_scale", 0.48))
+
+	if _phase != MatchPhase.KEY_MOMENT_AIM:
+		return {"teammate": 1.0, "defender_speed": base_def_spd, "active_dribble": false}
+	if _moment_type == MomentType.DRIBBLE:
+		if _is_user_dribbling_active():
+			# Moving player in DRIBBLE: teammates & defenders move at normal mode speed
+			return {"teammate": 1.0, "defender_speed": drib_def_spd, "active_dribble": true}
+		# Idle before dribbling: slowed down per difficulty mode
+		return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
+	if _moment_type in [MomentType.PASS, MomentType.SHOT]:
+		# Aiming PASS or SHOT: teammates advance slowly forward & defenders press per mode
+		return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
+	return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
+
 func _animate_gk_idle(delta: float) -> void:
 	_gk_pos.x = sin(Time.get_ticks_msec() * 0.003) * 0.85
 	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
-	var def_speed: float = float(diff_p.get("defender_speed", 1.4))
+	var scales := _get_moment_time_scales()
+	var eff_def_speed: float = float(scales["defender_speed"])
+	var tm_scale: float = float(scales["teammate"])
 	var can_steal: bool = bool(diff_p.get("can_steal", false))
-	var stride_front: int = 1 if fmod(_anim_clock, 0.34) < 0.17 else 2
+	var steal_dist: float = float(diff_p.get("steal_dist", 1.05))
+	var stride_front: int = 1 if fmod(_anim_clock * maxf(0.3, tm_scale), 0.34) < 0.17 else 2
 
-	if _moment_type != MomentType.FREE_KICK and def_speed > 0.0:
+	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
+		# Identify nearest active defender on pitch to press ball carrier in SHOT or DRIBBLE
+		var chaser_idx: int = -1
+		if _moment_type in [MomentType.SHOT, MomentType.DRIBBLE]:
+			var best_dist: float = 999.0
+			for j in range(_defender_positions.size()):
+				if j < _defenders.size() and not _defenders[j].visible:
+					continue
+				if absf(_defender_positions[j].x) > 30.0:
+					continue
+				var dj: float = Vector2(_ball_pos.x - _defender_positions[j].x, _ball_pos.z - _defender_positions[j].z).length()
+				if dj < best_dist:
+					best_dist = dj
+					chaser_idx = j
+
 		for i in range(_defender_positions.size()):
-			if i == 0 and _moment_type in [MomentType.SHOT, MomentType.DRIBBLE]:
-				# Pressing defender closes toward the ball carrier based on KESULITAN mode
+			if i == chaser_idx and _moment_type in [MomentType.SHOT, MomentType.DRIBBLE]:
+				# Pressing defender moves toward ball carrier to tackle/steal (speed scaled by mode)
 				var to_ball: Vector3 = Vector3(_ball_pos.x - _defender_positions[i].x, 0.0, _ball_pos.z - _defender_positions[i].z)
 				var dist: float = to_ball.length()
-				if dist > 0.01:
-					_defender_positions[i] += to_ball.normalized() * def_speed * delta
+				if eff_def_speed > 0.01 and dist > 0.01:
+					_defender_positions[i] += to_ball.normalized() * eff_def_speed * delta
 					if i < _defenders.size():
 						_defenders[i].frame = stride_front
-				if can_steal and run_mode == RunMode.CAREER_MATCH and _phase == MatchPhase.KEY_MOMENT_AIM and dist < 1.15:
+				elif i < _defenders.size():
+					_defenders[i].frame = 0
+				if can_steal and run_mode != RunMode.MOVIOLA_REPLAY and _phase == MatchPhase.KEY_MOMENT_AIM and eff_def_speed > 0.01 and dist < steal_dist:
+					if i < _defenders.size():
+						_defenders[i].frame = 3
 					_dragging = false
 					_aim_imm.clear_surfaces()
 					_ring_imm.clear_surfaces()
@@ -1501,45 +1553,48 @@ func _animate_gk_idle(delta: float) -> void:
 						"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
 					})
 					AudioSynth.play_save()
-					_show_moment_result("DIREBUT LAWAN!", UITheme.ACCENT_RED, 1.2)
+					_show_moment_result("DIREBUT BEK!" if _moment_type == MomentType.SHOT else "DIREBUT LAWAN!", UITheme.ACCENT_RED, 1.2)
 					return
-			elif i > 0 and (i - 1) < _teammate_positions.size() and _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
-				# Living markers shadow teammates toward goal with realistic reaction lag
-				var tm_target: Vector3 = _teammate_positions[i - 1] + Vector3(0.0, 0.0, -2.0)
-				var to_tm: Vector3 = Vector3(tm_target.x - _defender_positions[i].x, 0.0, tm_target.z - _defender_positions[i].z)
-				if to_tm.length() > 0.65:
-					_defender_positions[i] += to_tm.normalized() * minf(3.0, def_speed * 0.9 + 1.4) * delta
-					if i < _defenders.size():
-						_defenders[i].frame = stride_front
+			else:
+				# Secondary defenders shadow attacking teammates & support pressure at mode-scaled speed
+				var tm_idx: int = maxi(0, i - 1) if chaser_idx == 0 else (i if i < chaser_idx else i - 1)
+				if eff_def_speed > 0.01 and tm_idx < _teammate_positions.size():
+					var tm_target: Vector3 = _teammate_positions[tm_idx] + Vector3(0.0, 0.0, -2.0)
+					var to_tm: Vector3 = Vector3(tm_target.x - _defender_positions[i].x, 0.0, tm_target.z - _defender_positions[i].z)
+					if to_tm.length() > 0.65:
+						_defender_positions[i] += to_tm.normalized() * eff_def_speed * 0.92 * delta
+						if i < _defenders.size():
+							_defenders[i].frame = stride_front
+					elif i < _defenders.size():
+						_defenders[i].frame = 0
 				elif i < _defenders.size():
 					_defenders[i].frame = 0
-			else:
-				_defender_positions[i].x += _defender_dirs[i] * delta * minf(2.2, def_speed + 0.6)
-				if absf(_defender_positions[i].x) > 12.0:
-					_defender_dirs[i] *= -1.0
-				if i < _defenders.size():
-					_defenders[i].frame = stride_front if def_speed > 0.1 else 0
 	_sync_3d_sprites()
 
 func _animate_teammates(delta: float) -> void:
-	var stride_back: int = 5 if fmod(_anim_clock, 0.32) < 0.16 else 6
+	var scales := _get_moment_time_scales()
+	var tm_scale: float = float(scales["teammate"])
+	var stride_back: int = 5 if fmod(_anim_clock * maxf(0.3, tm_scale), 0.32) < 0.16 else 6
 	for i in range(_teammate_positions.size()):
 		if i < _teammate_targets.size() and _phase == MatchPhase.KEY_MOMENT_AIM and _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
+			# Enforce strictly forward (-Z) target progression; never retreat (+Z)
+			if _teammate_targets[i].z > _teammate_positions[i].z:
+				_teammate_targets[i].z = maxf(-48.5, _teammate_positions[i].z - 3.5)
 			var tgt: Vector3 = _teammate_targets[i]
-			var to_t: Vector3 = Vector3(tgt.x - _teammate_positions[i].x, 0.0, tgt.z - _teammate_positions[i].z)
+			var to_t: Vector3 = Vector3(tgt.x - _teammate_positions[i].x, 0.0, minf(0.0, tgt.z - _teammate_positions[i].z))
 			if to_t.length() < 1.2:
-				# Dynamic AI peel/pocket cut once reaching zone so movement stays unpredictable & alive!
-				var new_x := clampf(-tgt.x * 0.75 + randf_range(-4.0, 4.0), -17.0, 17.0)
-				var new_z := clampf(randf_range(-45.5, -30.0), -47.0, -24.0)
-				_teammate_targets[i] = Vector3(new_x, 0.0, new_z)
+				var next_x: float = clampf(-tgt.x * 0.7 + randf_range(-4.0, 4.0), -17.0, 17.0)
+				var next_z: float = maxf(-48.5, _teammate_positions[i].z - randf_range(3.5, 7.0))
+				_teammate_targets[i] = Vector3(next_x, 0.0, next_z)
 			else:
 				var spd := 3.6 if i == 0 else (3.1 if i == 1 else 2.5)
 				_teammate_vels[i] = to_t.normalized() * spd
-		_teammate_positions[i] += _teammate_vels[i] * delta
+		_teammate_vels[i].z = minf(_teammate_vels[i].z, 0.0)
+		_teammate_positions[i] += _teammate_vels[i] * tm_scale * delta
 		_teammate_positions[i].x = clampf(_teammate_positions[i].x, -22.0, 22.0)
-		_teammate_positions[i].z = clampf(_teammate_positions[i].z, -49.5, -12.0)
+		_teammate_positions[i].z = clampf(_teammate_positions[i].z, -48.5, -12.0)
 		if i < _teammates.size():
-			_teammates[i].frame = stride_back if _teammate_vels[i].length() > 0.4 else 4
+			_teammates[i].frame = stride_back if (_teammate_vels[i].length() * tm_scale) > 0.25 else 4
 	_sync_3d_sprites()
 
 func _update_pass_openness_ui() -> void:
