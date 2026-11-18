@@ -1,0 +1,33 @@
+# Godot 4 generated local cache & editor metadata
+.godot/
+
+# Godot 4 mono/C# & build artifacts
+.mono/
+data_*/
+mono_crash.*.json
+*.translation
+.export/
+export_presets.cfg
+build/
+dist/
+exports/
+*.apk
+*.aab
+*.exe
+*.pck
+*.zip
+*.tar.gz
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE, OS & logs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp
+*.bak
