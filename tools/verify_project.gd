@@ -229,6 +229,37 @@ func _run_suite() -> void:
 	ms_inst.call("_animate_gk_idle", 0.05)
 	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT, "Defender reaching ball carrier during SHOT tackles and steals ball")
 	SettingsManager.set_setting("difficulty", "NORMAL")
+
+	# Passing from SHOT into a forward-running teammate initiates animated TEAMMATE_CARRY -> 3D shot / assist!
+	ms_inst.call("_trigger_key_moment", 0)  # SHOT
+	var tm0_p: Vector3 = ms_inst.get("_teammate_positions")[0]
+	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
+	ms_inst.set("_flight_timer", 0.2)
+	ms_inst.set("_ball_pos", tm0_p + Vector3(0.1, 0.5, 0.1))
+	ms_inst.set("_ball_vel", Vector3(0.0, 0.0, -8.0))
+	ms_inst.call("_process_ball_flight", 0.02)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_shot_by_teammate")) and bool(ms_inst.get("_carry_assist_pending")), "Aiming pass to teammate during SHOT launches animated TEAMMATE_CARRY")
+	ms_inst.set("_carry_pass_back", false)
+	ms_inst.set("_carry_shoot_at", 0.35)
+	# Move defenders far away for clean carry->shot check, then verify carrier shoots 3D ball in flight & assist scores!
+	for di in range(ms_inst.get("_defender_positions").size()):
+		ms_inst.get("_defender_positions")[di] = Vector3(28.0, 0.0, -15.0)
+	for _cs in range(5):
+		if int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY:
+			ms_inst.call("_process_teammate_carry", 0.12)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.BALL_IN_FLIGHT and bool(ms_inst.get("_shot_by_teammate")), "Carrying teammate strikes real 3D shot toward goal")
+	var pre_assists: int = int(ms_inst.get("_my_assists"))
+	ms_inst.call("_handle_goal_scored")
+	_assert(int(ms_inst.get("_my_assists")) == pre_assists + 1, "Teammate goal from user pass credits user assist (+1)")
+
+	# Incoming teammate pass opportunity (MomentType.TEAMMATE_PASS -> INCOMING_PASS -> KEY_MOMENT_AIM SHOT)
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.TEAMMATE_PASS)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.INCOMING_PASS, "TEAMMATE_PASS triggers animated INCOMING_PASS toward user")
+	for _ip in range(22):
+		if int(ms_inst.get("_phase")) == ms_inst.MatchPhase.INCOMING_PASS:
+			ms_inst.call("_process_incoming_pass", 0.12)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.KEY_MOMENT_AIM and int(ms_inst.get("_moment_type")) == ms_inst.MomentType.SHOT, "Incoming teammate pass arrives at user's feet and opens live SHOT decision")
+
 	ms_inst.call("_trigger_key_moment", 5)  # TEAMMATE_PENALTY
 	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_PENALTY_WAIT, "Teammate penalty puts player on alert in TEAMMATE_PENALTY_WAIT")
 	ms_inst.set("_ball_pos", Vector3(2.4, 0.4, -44.0))

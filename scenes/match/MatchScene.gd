@@ -4,8 +4,8 @@ signal match_completed(report: Dictionary)
 signal mode_exited
 
 enum RunMode { CAREER_MATCH, PRACTICE_MODE, DUEL_MODE, MOVIOLA_REPLAY }
-enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, BALL_IN_FLIGHT, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, FULLTIME }
-enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY }
+enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, FULLTIME }
+enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS }
 
 var run_mode: RunMode = RunMode.CAREER_MATCH
 var duel_target: Dictionary = {}
@@ -128,6 +128,15 @@ var _shot_by_teammate: bool = false
 var _post_rebound_eligible: bool = false
 var _tm_penalty_timer: float = 0.0
 var _tm_penalty_kicked: bool = false
+var _carry_tm_idx: int = -1
+var _carry_timer: float = 0.0
+var _carry_shoot_at: float = 1.2
+var _carry_pass_back: bool = false
+var _carry_assist_pending: bool = false
+var _carry_shrug_cd: float = 0.0
+var _incoming_pass_tm_idx: int = -1
+var _incoming_pass_timer: float = 0.0
+var _incoming_pass_kicked: bool = false
 var _anim_clock: float = 0.0
 var _best_pass_openness: float = 0.0
 var _last_pass_state: String = ""
@@ -858,6 +867,10 @@ func _process(delta: float) -> void:
 			_process_teammate_penalty_wait(delta)
 		MatchPhase.BALL_IN_FLIGHT:
 			_process_ball_flight(delta)
+		MatchPhase.TEAMMATE_CARRY:
+			_process_teammate_carry(delta)
+		MatchPhase.INCOMING_PASS:
+			_process_incoming_pass(delta)
 		MatchPhase.REBOUND_SCRAMBLE:
 			_process_rebound_scramble(delta)
 		MatchPhase.MOMENT_RESULT:
@@ -915,13 +928,15 @@ func _process_simulation(delta: float) -> void:
 		_next_moment_idx += 1
 		var r := randf()
 		var m_type := MomentType.SHOT
-		if r < 0.22:
-			m_type = MomentType.PASS
+		if r < 0.18:
+			m_type = MomentType.TEAMMATE_PASS
 		elif r < 0.38:
-			m_type = MomentType.DRIBBLE
+			m_type = MomentType.PASS
 		elif r < 0.54:
+			m_type = MomentType.DRIBBLE
+		elif r < 0.70:
 			m_type = MomentType.FREE_KICK
-		elif r < 0.66:
+		elif r < 0.82:
 			m_type = MomentType.PENALTY
 		if _board_panel != null:
 			_board_panel.visible = false
@@ -961,6 +976,14 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_post_rebound_eligible = false
 	_rebound_grace = 0.0
 	_tm_penalty_kicked = false
+	_carry_tm_idx = -1
+	_carry_timer = 0.0
+	_carry_pass_back = false
+	_carry_assist_pending = false
+	_carry_shrug_cd = 0.0
+	_incoming_pass_tm_idx = -1
+	_incoming_pass_timer = 0.0
+	_incoming_pass_kicked = false
 
 	# Setup positions on the attacking top half (goal at z = -52.5)
 	for tm in _teammates:
@@ -986,6 +1009,9 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	match m_type:
 		MomentType.TEAMMATE_PENALTY:
 			_setup_teammate_penalty()
+			return
+		MomentType.TEAMMATE_PASS:
+			_setup_teammate_pass_to_user()
 			return
 		MomentType.PENALTY:
 			_player_pos = Vector3(0.0, 0.0, -40.2)
@@ -1134,6 +1160,9 @@ func _update_camera(delta: float) -> void:
 	if _phase == MatchPhase.TEAMMATE_PENALTY_WAIT:
 		_cam_target_pos = _cam_target_pos.lerp(Vector3(0.0, 7.8, -22.0), delta * 4.5)
 		_cam_look_pos = _cam_look_pos.lerp(Vector3(0.0, 0.7, -42.5), delta * 5.0)
+	elif _phase == MatchPhase.TEAMMATE_CARRY or _phase == MatchPhase.INCOMING_PASS:
+		_cam_target_pos = _cam_target_pos.lerp(_ball_pos + Vector3(0.0, 6.2, 13.5), delta * 5.0)
+		_cam_look_pos = _cam_look_pos.lerp(Vector3(_ball_pos.x * 0.45, 0.7, minf(_ball_pos.z - 6.0, -45.0)), delta * 5.5)
 	elif _phase == MatchPhase.REBOUND_SCRAMBLE:
 		_cam_target_pos = _cam_target_pos.lerp(_ball_pos + Vector3(0.0, 7.6, 15.0), delta * 4.5)
 		_cam_look_pos = _cam_look_pos.lerp(Vector3(_ball_pos.x * 0.55, 0.6, minf(_ball_pos.z - 4.0, -43.0)), delta * 5.5)
@@ -1398,15 +1427,18 @@ func _process_ball_flight(delta: float) -> void:
 				_show_moment_result("DIBLOK BEK!", UITheme.ACCENT_RED, 1.3)
 				return
 
-		# Check Live Teammate reception (PASS mode checks ALL moving teammates)
-		if _moment_type == MomentType.PASS and not _teammate_positions.is_empty():
+		# Check Live Teammate reception (both explicit PASS and SHOT passed to a forward-running teammate!)
+		if not _shot_by_teammate and not _incoming_pass_kicked and (_moment_type == MomentType.PASS or _moment_type == MomentType.SHOT) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
+			var catch_rad: float = 2.25 if _moment_type == MomentType.PASS else 1.85
 			for ti in range(_teammate_positions.size()):
 				var tm_pos := _teammate_positions[ti]
-				if Vector2(_ball_pos.x - tm_pos.x, _ball_pos.z - tm_pos.z).length() < 2.25 and _ball_pos.y < 1.9:
+				if Vector2(_ball_pos.x - tm_pos.x, _ball_pos.z - tm_pos.z).length() < catch_rad and _ball_pos.y < 1.95:
 					if ti < _teammates.size():
 						_teammates[ti].frame = 7
+					if _moment_type == MomentType.SHOT:
+						_moment_type = MomentType.PASS
 					_passes_won += 1
-					_evaluate_teammate_shot_or_layoff(ti, false)
+					_start_teammate_carry(ti, true)
 					return
 
 		# Goalkeeper Dive AI
@@ -1421,13 +1453,13 @@ func _process_ball_flight(delta: float) -> void:
 						parry_dir = 1.0 if randf() > 0.5 else -1.0
 					_ball_pos.z = -49.8
 					_ball_vel = Vector3(parry_dir * randf_range(3.0, 6.2), randf_range(1.8, 3.3), randf_range(5.2, 8.8))
-					_enter_rebound_scramble("DITEPIS KIPER! BEREBUT REBOUND!")
+					_enter_rebound_scramble("TEMBAKAN REKAN DITEPIS KIPER! BEREBUT REBOUND!" if _shot_by_teammate else "DITEPIS KIPER! BEREBUT REBOUND!")
 					return
 				_ball_vel.z = absf(_ball_vel.z) * 0.45
 				_ball_vel.x += signf(_ball_pos.x - _gk_pos.x) * 3.0
 				_ball_vel.y = maxf(_ball_vel.y, 2.2)
 				_update_last_shot("ON_TARGET")
-				_show_moment_result("DITANGKAP KIPER!" if _shot_by_teammate else "DITEPIS KIPER!", UITheme.ACCENT_CYAN, 1.4)
+				_show_moment_result("TEMBAKAN REKAN DITEPIS KIPER!" if _shot_by_teammate else "DITEPIS KIPER!", UITheme.ACCENT_CYAN, 1.4)
 				return
 
 	# Record Moviola keyframes
@@ -1632,66 +1664,287 @@ func _update_pass_openness_ui() -> void:
 				_moment_sub_lbl.text = "Rekan DIJAGA ketat! Umpan berisiko dipotong bek."
 
 func _evaluate_teammate_shot_or_layoff(tm_idx: int, from_rebound: bool) -> void:
-	var open_d: float = _teammate_open_scores[tm_idx] if tm_idx < _teammate_open_scores.size() else 2.5
+	if tm_idx < 0 or tm_idx >= _teammate_positions.size():
+		return
 	var tm_pos: Vector3 = _teammate_positions[tm_idx]
-	# Farther from goal on a rebound can be laid back cleanly to the rushing user
-	if from_rebound and tm_pos.z > -39.5 and _player_pos.distance_to(tm_pos) < 11.0:
-		_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.9)
-		_enter_user_follow_up_shot("UMPAN REBOUND REKAN!", "Rekan menyodorkan bola rebound kepadamu — tembak sekarang!")
+	if from_rebound and tm_pos.z > -41.5 and _player_pos.distance_to(tm_pos) < 12.0:
+		_launch_pass_to_user(tm_idx, "UMPAN REBOUND REKAN!", "Rekan menyodorkan bola rebound — bersiap TEMBAK!")
+		return
+	_start_teammate_carry(tm_idx, not from_rebound)
+
+func _start_teammate_carry(tm_idx: int, is_assist: bool) -> void:
+	if tm_idx < 0 or tm_idx >= _teammate_positions.size():
+		return
+	_phase = MatchPhase.TEAMMATE_CARRY
+	_carry_tm_idx = tm_idx
+	_carry_timer = 0.0
+	_carry_shrug_cd = 0.0
+	_shot_by_teammate = true
+	_carry_assist_pending = is_assist
+	_post_rebound_eligible = false
+	_dragging = false
+	_ball_vel = Vector3.ZERO
+	_ball_omega = Vector3.ZERO
+	_aim_imm.clear_surfaces()
+	_ring_imm.clear_surfaces()
+	_spin_pad.visible = false
+	_power_lbl.visible = false
+	if _action_bar != null:
+		_action_bar.visible = false
+	if _dribble_pad != null:
+		_dribble_pad.visible = false
+	if _dribble_ctrl_bar != null:
+		_dribble_ctrl_bar.visible = false
+	if _player_badge_lbl != null:
+		_player_badge_lbl.visible = false
+
+	var tm_pos: Vector3 = _teammate_positions[tm_idx]
+	var min_user_def := 99.0
+	for dpos in _defender_positions:
+		min_user_def = minf(min_user_def, Vector2(_player_pos.x - dpos.x, _player_pos.z - dpos.z).length())
+	_carry_pass_back = (not is_assist or (tm_pos.z > -42.5 and min_user_def >= 2.0 and randf() < 0.28))
+	_carry_shoot_at = 0.45 if (not is_assist and tm_pos.z < -41.5) else randf_range(0.78, 1.28)
+	_moment_banner.visible = true
+	_moment_title_lbl.text = "REKAN BAWA BOLA!"
+	_moment_sub_lbl.text = "Rekan menerima umpanmu dan menggiring maju ke kotak penalti!"
+	_ticker_lbl.text = "Rekan menggiring bola — bek lawan mulai menutup ruang!"
+	AudioSynth.play_click()
+
+func _process_teammate_carry(delta: float) -> void:
+	if _carry_tm_idx < 0 or _carry_tm_idx >= _teammate_positions.size():
+		_show_moment_result("BOLA TERBUANG!", Color("#F97316"), 1.0)
+		return
+	_carry_timer += delta
+	_carry_shrug_cd = maxf(0.0, _carry_shrug_cd - delta)
+	var stride_back: int = 5 if fmod(_anim_clock, 0.26) < 0.13 else 6
+	var stride_front: int = 1 if fmod(_anim_clock, 0.28) < 0.14 else 2
+
+	var carrier: Vector3 = _teammate_positions[_carry_tm_idx]
+	var lane_tgt := Vector3(clampf(carrier.x * 0.48, -6.5, 6.5), 0.0, -47.2)
+	var dir_to_box := Vector3(lane_tgt.x - carrier.x, 0.0, minf(-0.35, lane_tgt.z - carrier.z)).normalized()
+	var carry_spd := 5.6
+	carrier += dir_to_box * carry_spd * delta
+	carrier.x = clampf(carrier.x, -21.0, 21.0)
+	carrier.z = clampf(carrier.z, -48.5, -14.0)
+	_teammate_positions[_carry_tm_idx] = carrier
+	if _carry_tm_idx < _teammates.size():
+		_teammates[_carry_tm_idx].frame = stride_back
+	var hop := absf(sin(_anim_clock * 15.0)) * 0.055
+	_ball_pos = Vector3(carrier.x + dir_to_box.x * 0.78, 0.115 + hop, carrier.z + dir_to_box.z * 0.78)
+
+	# Other teammates & user player sprint forward to support / look for pass or rebound
+	for ti in range(_teammate_positions.size()):
+		if ti == _carry_tm_idx:
+			continue
+		var tp: Vector3 = _teammate_positions[ti]
+		var supp_z: float = maxf(-48.2, tp.z - 4.0 * delta)
+		_teammate_positions[ti] = Vector3(tp.x, 0.0, supp_z)
+		if ti < _teammates.size():
+			_teammates[ti].frame = stride_back
+	var user_lane_x: float = clampf(-carrier.x * 0.65, -7.5, 7.5)
+	var u_dir := Vector3(user_lane_x - _player_pos.x, 0.0, minf(-0.4, -42.5 - _player_pos.z)).normalized()
+	_player_pos.x = clampf(_player_pos.x + u_dir.x * 4.4 * delta, -16.0, 16.0)
+	_player_pos.z = clampf(_player_pos.z + u_dir.z * 4.4 * delta, -46.5, -16.0)
+	_player_sprite.frame = stride_back
+
+	# Opposing defenders actively chase the carrying teammate to stop/tackle them!
+	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
+	var def_base: float = float(diff_p.get("dribble_defender_speed", 2.2))
+	var chase_spd: float = clampf(def_base * 1.18 + 1.25, 1.8, 5.2)
+	var steal_prob: float = clampf(0.32 + chase_spd * 0.11, 0.35, 0.88)
+	if str(SettingsManager.data.get("difficulty", "NORMAL")) == "MUDAH":
+		steal_prob = 0.22
+	var hit_def := false
+	for i in range(_defender_positions.size()):
+		var dp: Vector3 = _defender_positions[i]
+		if i < _defenders.size() and not _defenders[i].visible:
+			continue
+		var to_car := Vector3(carrier.x - dp.x, 0.0, carrier.z - dp.z)
+		var dist := to_car.length()
+		if dist > 0.1:
+			_defender_positions[i] += to_car.normalized() * chase_spd * delta
+		if i < _defenders.size():
+			_defenders[i].frame = stride_front
+		if dist < 1.02 and _carry_timer > 0.24 and _carry_shrug_cd <= 0.0:
+			if randf() < steal_prob:
+				hit_def = true
+				if i < _defenders.size():
+					_defenders[i].frame = 3
+				break
+			else:
+				_carry_shrug_cd = 0.45
+
+	_gk_pos.x = move_toward(_gk_pos.x, clampf(carrier.x * 0.35, -2.5, 2.5), 3.0 * delta)
+	_trail_points.clear()
+	_trail_imm.clear_surfaces()
+	_sync_3d_sprites()
+
+	if hit_def:
+		AudioSynth.play_save()
+		_shot_by_teammate = false
+		_carry_assist_pending = false
+		_update_last_shot("BLOCKED")
+		_add_board_event(int(_minute), "INFO", "%d' Rekan yang membawa bola dihentikan bek lawan!" % int(_minute), false)
+		_show_moment_result("REKAN DIHENTIKAN BEK!", UITheme.ACCENT_RED, 1.35)
 		return
 
-	var base_prob: float = clampf(0.32 + open_d * 0.13 + (0.14 if tm_pos.z < -41.0 else 0.0), 0.28, 0.86)
-	var roll := randf()
-	if roll <= base_prob:
-		_score_us += 1
-		if not from_rebound:
-			_my_assists += 1
-			_rating = minf(10.0, _rating + 1.1)
-			_update_last_shot("GOAL")
-			_add_board_event(int(_minute), "GOAL", "%d' ASSIST! Rekan tuntaskan umpan terobosan!" % int(_minute), true)
-			_save_moviola_clip("ASSIST CANTIK!")
-			_show_moment_result("ASSIST! REKAN CETAK GOL!", UITheme.ACCENT_GOLD, 1.6)
-		else:
-			_rating = minf(10.0, _rating + 0.4)
-			_add_board_event(int(_minute), "GOAL", "%d' GOL REBOUND REKAN SETIM!" % int(_minute), true)
-			_save_moviola_clip("GOL REBOUND!")
-			_show_moment_result("GOOOOL REBOUND REKAN!", UITheme.ACCENT_GOLD, 1.6)
-		_update_score_label()
-		AudioSynth.play_goal()
-		if is_instance_valid(_goal_flash_rect):
-			_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
-			create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
-	elif roll <= base_prob + 0.18 and not from_rebound:
-		# Teammate hits GK parry -> triggers secondary rebound scramble!
-		_rating = minf(10.0, _rating + 0.35)
-		_update_last_shot("ON_TARGET")
-		_ball_pos = Vector3(tm_pos.x * 0.4, 0.35, -48.5)
-		_ball_vel = Vector3(signf(-tm_pos.x + 0.2) * randf_range(3.0, 5.5), randf_range(1.6, 2.8), randf_range(5.5, 8.2))
-		AudioSynth.play_save()
-		_enter_rebound_scramble("TEMBAKAN REKAN DITEPIS! REBUT REBOUND!")
+	# Opportunity: carrying teammate passes back to our rushing striker (one-two)!
+	if _carry_pass_back and _carry_timer >= 0.72 and _player_pos.z > -47.0 and _player_pos.distance_to(carrier) > 3.2:
+		_launch_pass_to_user(_carry_tm_idx, "UMPAN BALIK REKAN!", "Rekan mengumpan balik ke kakimu — bersiap TEMBAK!")
+		return
+
+	# Shoot toward goal in real 3D!
+	if _carry_timer >= _carry_shoot_at or carrier.z <= -43.8:
+		if _carry_tm_idx < _teammates.size():
+			_teammates[_carry_tm_idx].frame = 7
+		var corner := -1.0 if randf() < 0.5 else 1.0
+		var aim_x := corner * randf_range(0.75, 3.35)
+		var aim_pt := Vector3(aim_x, randf_range(0.55, 1.95), -52.6)
+		var spd := randf_range(22.5, 29.0)
+		_ball_vel = (aim_pt - _ball_pos).normalized() * spd + Vector3(0.0, 1.15, 0.0)
+		_ball_omega = Vector3(0.0, corner * randf_range(-2.2, 2.2), 0.0)
+		_flight_timer = 0.0
+		_post_rebound_eligible = true
+		_phase = MatchPhase.BALL_IN_FLIGHT
+		_moment_type = MomentType.SHOT
+		_shot_by_teammate = true
+		_moment_banner.visible = false
+		AudioSynth.play_kick(0.88)
+
+func _setup_teammate_pass_to_user() -> void:
+	_phase = MatchPhase.INCOMING_PASS
+	_incoming_pass_tm_idx = 0
+	_incoming_pass_timer = 0.0
+	_incoming_pass_kicked = false
+	_shot_by_teammate = false
+	_carry_assist_pending = false
+	_spin_pad.visible = false
+	_power_lbl.visible = false
+
+	var side := -1.0 if randf() < 0.5 else 1.0
+	var user_x := clampf(-side * randf_range(2.0, 6.5), -10.0, 10.0)
+	var user_z := randf_range(-33.5, -27.5)
+	_player_pos = Vector3(user_x, 0.0, user_z)
+
+	# Teammate 0 carries ball on opposite wing ready to pass into user's stride!
+	var passer_pos := Vector3(clampf(user_x + side * 9.5, -18.0, 18.0), 0.0, user_z + 4.2)
+	_teammates[0].visible = true
+	_teammate_positions.append(passer_pos)
+	_teammate_vels.append(Vector3(-side * 1.4, 0.0, -3.6))
+	_teammate_targets.append(Vector3(clampf(passer_pos.x - side * 3.0, -16.0, 16.0), 0.0, -45.5))
+	_teammate_open_scores.append(2.8)
+	for i in range(1, 3):
+		_teammates[i].visible = true
+		_teammate_positions.append(Vector3(clampf(-user_x + float(i) * side * 3.0, -16.0, 16.0), 0.0, user_z - 2.0))
+		_teammate_vels.append(Vector3(0.0, 0.0, -2.8))
+		_teammate_targets.append(Vector3(-user_x * 0.4, 0.0, -47.0))
+		_teammate_open_scores.append(2.4)
+
+	var def_spots := [
+		Vector3(clampf(user_x + side * 1.8, -14.0, 14.0), 0.0, user_z - 6.8),
+		Vector3(passer_pos.x - side * 2.2, 0.0, passer_pos.z - 4.0),
+		Vector3(clampf(-user_x, -14.0, 14.0), 0.0, user_z - 9.0),
+	]
+	for i in range(def_spots.size()):
+		if i < _defenders.size():
+			_defenders[i].visible = true
+			_defender_positions.append(def_spots[i])
+			_defender_dirs.append(1.0)
+
+	_ball_pos = Vector3(passer_pos.x - side * 0.7, 0.115, passer_pos.z - 0.6)
+	_moment_title_lbl.text = "PELUANG UMPAN REKAN!"
+	_moment_sub_lbl.text = "Rekan melihat larimu — bersiap menyambut umpan terobosan!"
+	_ticker_lbl.text = "Rekan membawa bola di sisi lapangan & mencari celah umpan kepadamu."
+	_moment_banner.visible = true
+	_sync_action_bar()
+	_configure_moment_camera()
+	_sync_3d_sprites()
+	AudioSynth.play_whistle(false)
+
+func _launch_pass_to_user(tm_idx: int, title_txt: String, sub_txt: String) -> void:
+	_phase = MatchPhase.INCOMING_PASS
+	_incoming_pass_tm_idx = tm_idx
+	_incoming_pass_timer = 0.0
+	_incoming_pass_kicked = true
+	_shot_by_teammate = false
+	_carry_assist_pending = false
+	if tm_idx >= 0 and tm_idx < _teammates.size():
+		_teammates[tm_idx].frame = 7
+	_moment_title_lbl.text = title_txt
+	_moment_sub_lbl.text = sub_txt
+	_moment_banner.visible = true
+	_sync_action_bar()
+	AudioSynth.play_kick(0.6)
+
+func _process_incoming_pass(delta: float) -> void:
+	_incoming_pass_timer += delta
+	var stride_back: int = 5 if fmod(_anim_clock, 0.28) < 0.14 else 6
+	var stride_front: int = 1 if fmod(_anim_clock, 0.30) < 0.15 else 2
+
+	# User runs forward into pocket; passer advances until kick, then ball zips to user's feet
+	_player_pos.z = clampf(_player_pos.z - 3.6 * delta, -44.5, -18.0)
+	_player_sprite.frame = stride_back
+	_gk_pos.x = sin(_anim_clock * 3.2) * 0.7
+
+	if not _incoming_pass_kicked:
+		if _incoming_pass_tm_idx >= 0 and _incoming_pass_tm_idx < _teammate_positions.size():
+			var ppos: Vector3 = _teammate_positions[_incoming_pass_tm_idx]
+			var to_u := Vector3(_player_pos.x - ppos.x, 0.0, _player_pos.z - ppos.z).normalized()
+			ppos += Vector3(to_u.x * 2.2, 0.0, -3.2) * delta
+			_teammate_positions[_incoming_pass_tm_idx] = ppos
+			if _incoming_pass_tm_idx < _teammates.size():
+				_teammates[_incoming_pass_tm_idx].frame = stride_back
+			var hop := absf(sin(_anim_clock * 14.0)) * 0.05
+			_ball_pos = Vector3(ppos.x + to_u.x * 0.72, 0.115 + hop, ppos.z + to_u.z * 0.72)
+		if _incoming_pass_timer >= 0.55:
+			_incoming_pass_kicked = true
+			if _incoming_pass_tm_idx >= 0 and _incoming_pass_tm_idx < _teammates.size():
+				_teammates[_incoming_pass_tm_idx].frame = 7
+			AudioSynth.play_kick(0.62)
 	else:
-		_rating = minf(10.0, _rating + (0.35 if open_d >= 2.5 else 0.15))
-		_update_last_shot("ON_TARGET")
-		AudioSynth.play_save()
-		_show_moment_result("REKAN DITEPIS KIPER!" if from_rebound else ("UMPAN KUNCI TEPAT!" if open_d >= 2.2 else "REKAN TERJEPIT BEK!"), UITheme.ACCENT_CYAN, 1.35)
+		var target_pt := _player_pos + Vector3(0.0, 0.12, -0.85)
+		var to_target := target_pt - _ball_pos
+		var dist := Vector2(to_target.x, to_target.z).length()
+		var pass_spd := 14.5
+		if dist > 0.05:
+			var step_xz := Vector3(to_target.x, 0.0, to_target.z).normalized() * minf(dist, pass_spd * delta)
+			_ball_pos.x += step_xz.x
+			_ball_pos.z += step_xz.z
+			_ball_pos.y = 0.12 + clampf(dist * 0.06, 0.0, 0.45) * sin(clampf(_incoming_pass_timer * 4.0, 0.0, PI))
+		if dist < 1.15 or _incoming_pass_timer >= 2.1:
+			_enter_user_follow_up_shot("UMPAN REKAN DITERIMA!", "Tarik ketapel TEMBAK, kirim UMPAN lagi, atau pakai DRIBEL!")
+			return
+
+	for i in range(_defender_positions.size()):
+		var tgt_d := Vector3(_player_pos.x + (float(i) - 1.0) * 2.6, 0.0, maxf(-45.5, _player_pos.z - 5.5))
+		var to_d := Vector3(tgt_d.x - _defender_positions[i].x, 0.0, tgt_d.z - _defender_positions[i].z)
+		if to_d.length() > 0.3:
+			_defender_positions[i] += to_d.normalized() * 2.2 * delta
+			if i < _defenders.size():
+				_defenders[i].frame = stride_front
+	_sync_3d_sprites()
 
 func _enter_user_follow_up_shot(title_msg: String, sub_msg: String) -> void:
 	_phase = MatchPhase.KEY_MOMENT_AIM
 	_moment_type = MomentType.SHOT
 	_shot_by_teammate = false
+	_carry_assist_pending = false
+	_incoming_pass_kicked = false
 	_post_rebound_eligible = false
 	_dragging = false
+	_dribble_input = Vector2.ZERO
 	_spin_offset = Vector2.ZERO
 	_spin_pad.reset_spin()
-	_spin_pad.visible = true
+	_spin_pad.visible = (run_mode != RunMode.MOVIOLA_REPLAY)
 	_power_lbl.visible = true
 	_power_lbl.text = ""
 	_ball_vel = Vector3.ZERO
 	_ball_omega = Vector3.ZERO
-	_player_pos = Vector3(_ball_pos.x, 0.0, clampf(_ball_pos.z + 1.0, -50.0, -20.0))
-	_ball_pos = _player_pos + Vector3(0.0, 0.115, -1.0)
+	_player_sprite.frame = 4
+	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.95)
 	_moment_title_lbl.text = title_msg
 	_moment_sub_lbl.text = sub_msg
+	_ticker_lbl.text = "Umpan rekan matang! Pilih TEMBAK, UMPAN, atau DRIBEL."
 	_moment_banner.visible = true
 	_update_pass_openness_ui()
 	_sync_action_bar()
@@ -1897,10 +2150,22 @@ func _handle_goal_scored() -> void:
 	_camera_shake = 1.0
 	_score_us += 1
 	if _shot_by_teammate:
-		_rating = minf(10.0, _rating + 0.3)
+		if _carry_assist_pending:
+			_my_assists += 1
+			_rating = minf(10.0, _rating + 1.1)
+			_update_score_label()
+			_update_last_shot("GOAL")
+			_add_board_event(int(_minute), "GOAL", "%d' ASSIST! Rekan tuntaskan umpanmu menjadi GOL!" % int(_minute), true)
+			_save_moviola_clip("ASSIST CANTIK!")
+			if is_instance_valid(_goal_flash_rect):
+				_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
+				create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
+			_show_moment_result("ASSIST! REKAN CETAK GOL!", UITheme.ACCENT_GOLD, 1.6)
+			return
+		_rating = minf(10.0, _rating + 0.35)
 		_update_score_label()
-		_add_board_event(int(_minute), "GOAL", "%d' GOL PENALTI REKAN SETIM!" % int(_minute), true)
-		_save_moviola_clip("GOL PENALTI REKAN!")
+		_add_board_event(int(_minute), "GOAL", "%d' GOL REKAN SETIM!" % int(_minute), true)
+		_save_moviola_clip("GOL REKAN SETIM!")
 		if is_instance_valid(_goal_flash_rect):
 			_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
 			create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
@@ -1969,7 +2234,8 @@ func _advance_after_moment() -> void:
 			return
 		_minute_lbl.text = "%d/5" % _practice_round
 		_score_lbl.text = "LATIHAN (%d GOL)" % _my_goals
-		_trigger_key_moment(MomentType.FREE_KICK if _practice_round % 2 == 0 else MomentType.SHOT)
+		var p_next := MomentType.TEAMMATE_PASS if _practice_round == 3 else (MomentType.FREE_KICK if _practice_round % 2 == 0 else MomentType.SHOT)
+		_trigger_key_moment(p_next)
 		return
 
 	if run_mode == RunMode.DUEL_MODE:
@@ -2177,6 +2443,17 @@ func _draw_aim_and_ring() -> void:
 	var steps_preview := int(lerpf(12.0, 28.0, float(ak + (bm if _moment_type == MomentType.FREE_KICK else 0)) / 180.0))
 	var pts := SlingshotPhysics.predict_trajectory(_ball_pos, launch["velocity"], launch["omega"], ef, steps_preview, 0.04)
 	if pts.size() >= 2:
+		if _moment_type == MomentType.SHOT:
+			var aims_teammate := false
+			for pt in pts:
+				for tp in _teammate_positions:
+					if Vector2(pt.x - tp.x, pt.z - tp.z).length() < 2.2:
+						aims_teammate = true
+						break
+				if aims_teammate:
+					break
+			if aims_teammate:
+				_power_lbl.text = "%d%% • UMPAN" % pct
 		_aim_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in range(pts.size() - 1):
 			var p0 := pts[i]
@@ -2219,6 +2496,7 @@ func _moment_type_str() -> String:
 		MomentType.DRIBBLE: return "DRIBBLE"
 		MomentType.FREE_KICK: return "FREE_KICK"
 		MomentType.PENALTY: return "PENALTY"
+		MomentType.TEAMMATE_PASS: return "TEAMMATE_PASS"
 		_: return "OPEN_PLAY"
 
 func _update_score_label() -> void:
