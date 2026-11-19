@@ -48,6 +48,12 @@ var _dribble_shoot_btn: Button
 var _dribble_input: Vector2 = Vector2.ZERO
 var _dribble_facing: Vector2 = Vector2(0.0, -1.0)
 var _skill_burst_timer: float = 0.0
+var _sprint_held: bool = false
+var _match_stamina: float = 100.0
+var _match_stamina_max: float = 100.0
+var _stamina_bar_bg: PanelContainer
+var _stamina_fill: ColorRect
+var _stamina_lbl: Label
 var _result_toast: Label
 var _exit_btn: Button
 var _pause_btn: Button
@@ -579,7 +585,7 @@ func _build_hud() -> void:
 	_moment_banner.offset_left = 10
 	_moment_banner.offset_right = -380
 	_moment_banner.offset_top = 86
-	_moment_banner.offset_bottom = 136
+	_moment_banner.offset_bottom = 142
 	_moment_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.05, 0.14, 0.28, 0.90), UITheme.ACCENT_GOLD, 2, 4))
 	_moment_banner.visible = false
 	add_child(_moment_banner)
@@ -648,70 +654,91 @@ func _build_hud() -> void:
 
 	_build_board_and_overlays()
 
-	# Top-Right Action Mode Toggle (TEMBAK / UMPAN / DRIBEL) in 3D Open Play
+	# Top-Right Unified Open-Play Action Pill (TEMBAK / UMPAN)
 	_action_bar = HBoxContainer.new()
 	_action_bar.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_action_bar.offset_left = -366
+	_action_bar.offset_left = -260
 	_action_bar.offset_right = -10
 	_action_bar.offset_top = 56
-	_action_bar.offset_bottom = 94
+	_action_bar.offset_bottom = 90
 	_action_bar.add_theme_constant_override("separation", 4)
 	_action_bar.visible = false
 	add_child(_action_bar)
-	for act_def in [["TEMBAK", MomentType.SHOT], ["UMPAN", MomentType.PASS], ["DRIBEL", MomentType.DRIBBLE]]:
-		var act_name: String = act_def[0]
-		var act_t: MomentType = act_def[1]
-		var ab := Button.new()
-		ab.text = act_name
-		ab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		UITheme.style_btn(ab, Color("#0C182A"), UITheme.BORDER_STEEL, 10)
-		ab.pressed.connect(func(): AudioSynth.play_click(); _switch_open_play_action(act_t))
-		_action_bar.add_child(ab)
-		_action_mode_btns[act_name] = ab
+	var main_act_btn := Button.new()
+	main_act_btn.text = "TEMBAK / UMPAN"
+	main_act_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main_act_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UITheme.style_btn(main_act_btn, Color("#174A7A"), UITheme.ACCENT_GOLD, 11)
+	_action_bar.add_child(main_act_btn)
+	_action_mode_btns["MAIN"] = main_act_btn
 
-	# eFootball / EA SPORTS FC Style Circular Virtual Joystick (Bottom-Left in DRIBBLE)
+	# eFootball / EA SPORTS FC Style Circular Virtual Joystick (Bottom-Left during Open Play)
 	_dribble_pad = DribbleJoystickPad.new()
 	_dribble_pad.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_dribble_pad.offset_left = 20
-	_dribble_pad.offset_right = 160
-	_dribble_pad.offset_top = -156
-	_dribble_pad.offset_bottom = -16
+	_dribble_pad.offset_left = 18
+	_dribble_pad.offset_right = 158
+	_dribble_pad.offset_top = -152
+	_dribble_pad.offset_bottom = -12
 	_dribble_pad.visible = false
 	_dribble_pad.joy_changed.connect(func(v: Vector2): _dribble_input = v)
 	add_child(_dribble_pad)
 
-	# Bottom-Right Action Pads for DRIBBLE mode (TRIK LARI + TEMBAK!)
+	# Bottom-Left Live Stamina Bar (above circular joystick)
+	_stamina_bar_bg = PanelContainer.new()
+	_stamina_bar_bg.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_stamina_bar_bg.offset_left = 18
+	_stamina_bar_bg.offset_right = 178
+	_stamina_bar_bg.offset_top = -176
+	_stamina_bar_bg.offset_bottom = -156
+	_stamina_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stamina_bar_bg.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.03, 0.07, 0.14, 0.90), UITheme.BORDER_CYAN, 1, 3))
+	_stamina_bar_bg.visible = false
+	add_child(_stamina_bar_bg)
+	var st_ctrl := Control.new()
+	st_ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stamina_bar_bg.add_child(st_ctrl)
+	_stamina_fill = ColorRect.new()
+	_stamina_fill.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	_stamina_fill.anchor_right = 1.0
+	_stamina_fill.color = UITheme.ACCENT_GREEN
+	_stamina_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	st_ctrl.add_child(_stamina_fill)
+	_stamina_lbl = Label.new()
+	_stamina_lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_stamina_lbl.text = "STAMINA 100%"
+	_stamina_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stamina_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_stamina_lbl.add_theme_font_size_override("font_size", 10)
+	_stamina_lbl.add_theme_color_override("font_outline_color", Color.BLACK)
+	_stamina_lbl.add_theme_constant_override("outline_size", 3)
+	_stamina_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	st_ctrl.add_child(_stamina_lbl)
+
+	# Bottom-Right LARI (Sprint) Hold Button beside Spin Pad
 	_dribble_ctrl_bar = HBoxContainer.new()
 	_dribble_ctrl_bar.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_dribble_ctrl_bar.offset_left = -260
-	_dribble_ctrl_bar.offset_right = -16
-	_dribble_ctrl_bar.offset_top = -80
+	_dribble_ctrl_bar.offset_left = -226
+	_dribble_ctrl_bar.offset_right = -124
+	_dribble_ctrl_bar.offset_top = -70
 	_dribble_ctrl_bar.offset_bottom = -20
-	_dribble_ctrl_bar.add_theme_constant_override("separation", 8)
 	_dribble_ctrl_bar.visible = false
 	add_child(_dribble_ctrl_bar)
 
 	_dribble_sprint_btn = Button.new()
-	_dribble_sprint_btn.text = "LARI / TRIK"
+	_dribble_sprint_btn.text = "LARI"
 	_dribble_sprint_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	UITheme.style_btn(_dribble_sprint_btn, Color("#173B66"), UITheme.ACCENT_CYAN, 13)
-	_dribble_sprint_btn.pressed.connect(func(): _trigger_dribble_skill())
+	_dribble_sprint_btn.button_down.connect(func(): _sprint_held = true; _sync_stamina_hud())
+	_dribble_sprint_btn.button_up.connect(func(): _sprint_held = false; _sync_stamina_hud())
 	_dribble_ctrl_bar.add_child(_dribble_sprint_btn)
-
-	_dribble_shoot_btn = Button.new()
-	_dribble_shoot_btn.text = "TEMBAK!"
-	_dribble_shoot_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(_dribble_shoot_btn, Color("#8E2C2C"), UITheme.ACCENT_GOLD, 14)
-	_dribble_shoot_btn.pressed.connect(func(): AudioSynth.play_click(); _switch_open_play_action(MomentType.SHOT))
-	_dribble_ctrl_bar.add_child(_dribble_shoot_btn)
 
 	# Bottom-Left Player Number/Name Badge
 	_player_badge_lbl = Label.new()
 	_player_badge_lbl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_player_badge_lbl.offset_left = 18
-	_player_badge_lbl.offset_top = -52
+	_player_badge_lbl.offset_top = -202
 	_player_badge_lbl.offset_right = 240
-	_player_badge_lbl.offset_bottom = -24
+	_player_badge_lbl.offset_bottom = -178
 	_player_badge_lbl.add_theme_font_override("font", UITheme.get_display_font())
 	_player_badge_lbl.add_theme_font_size_override("font_size", 15)
 	_player_badge_lbl.add_theme_color_override("font_color", Color.WHITE)
@@ -720,17 +747,18 @@ func _build_hud() -> void:
 	_player_badge_lbl.visible = false
 	add_child(_player_badge_lbl)
 
-	# Power Readout Badge
+	# Power Readout Badge (Bottom-Right above Spin Pad)
 	_power_lbl = Label.new()
-	_power_lbl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_power_lbl.offset_left = 18
-	_power_lbl.offset_bottom = -56
-	_power_lbl.offset_top = -86
-	_power_lbl.offset_right = 200
+	_power_lbl.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_power_lbl.offset_left = -165
+	_power_lbl.offset_right = -16
+	_power_lbl.offset_top = -166
+	_power_lbl.offset_bottom = -138
+	_power_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_power_lbl.text = ""
 	_power_lbl.add_theme_font_override("font", UITheme.get_display_font())
 	_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	_power_lbl.add_theme_font_size_override("font_size", 22)
+	_power_lbl.add_theme_font_size_override("font_size", 18)
 	add_child(_power_lbl)
 
 	# Spin / Magnus Curve Touch Ball at Bottom-Right
@@ -777,6 +805,12 @@ func _start_selected_mode() -> void:
 	_rating = 6.2
 	_shots_telemetry.clear()
 	_best_clip = {}
+	_sprint_held = false
+	if run_mode == RunMode.CAREER_MATCH and CareerState.has_active_career:
+		_match_stamina_max = clampf(float(CareerState.career["playerProfile"].get("energy", 100)) * 0.4 + 60.0, 55.0, 100.0)
+	else:
+		_match_stamina_max = 100.0
+	_match_stamina = _match_stamina_max
 
 	if run_mode == RunMode.MOVIOLA_REPLAY:
 		_speed_btn.visible = false
@@ -859,7 +893,7 @@ func _process(delta: float) -> void:
 		MatchPhase.KEY_MOMENT_AIM:
 			_animate_gk_idle(delta)
 			_animate_teammates(delta)
-			if _moment_type == MomentType.DRIBBLE:
+			if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 				_process_dribble_control(delta)
 			_update_pass_openness_ui()
 			_draw_aim_and_ring()
@@ -962,6 +996,7 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_dribble_input = Vector2.ZERO
 	_dribble_facing = Vector2(0.0, -1.0)
 	_skill_burst_timer = 0.0
+	_sprint_held = false
 	if _dribble_pad != null:
 		_dribble_pad.reset_joy()
 	_spin_offset = Vector2.ZERO
@@ -1120,19 +1155,10 @@ func _spawn_open_play_actors() -> void:
 			_defender_positions.append(def_defs[i])
 			_defender_dirs.append(1.0 if i % 2 == 0 else -1.0)
 
-func _apply_open_play_prompt(t: MomentType) -> void:
-	if t == MomentType.PASS:
-		_moment_title_lbl.text = "UMPAN TEROBOSAN!"
-		_moment_sub_lbl.text = "Arahkan ke ruang lari rekan (lingkaran HIJAU = bebas)!"
-		_ticker_lbl.text = "Rekan sedang bergerak! Kirim umpan ke jalur larinya."
-	elif t == MomentType.DRIBBLE:
-		_moment_title_lbl.text = "DRIBEL 1v1!"
-		_moment_sub_lbl.text = "Gunakan kursor lingkaran kiri untuk menggiring & lewati bek!"
-		_ticker_lbl.text = "Bek menghadang! Dribel lewati dengan kursor analog atau Trik Lari."
-	else:
-		_moment_title_lbl.text = "PELUANG TEMBAKAN!"
-		_moment_sub_lbl.text = "Tarik ketapel ke gawang atau pilih UMPAN sesuai gerak rekan!"
-		_ticker_lbl.text = "Celah terbuka di kotak penalti! Tembak atau umpan rekan."
+func _apply_open_play_prompt(_t: MomentType) -> void:
+	_moment_title_lbl.text = "PELUANG TERBUKA!"
+	_moment_sub_lbl.text = "Gerakkan bebas pakai kursor kiri + LARI; berhenti & tarik ketapel untuk TEMBAK / UMPAN!"
+	_ticker_lbl.text = "Bebas menggiring! Berhenti untuk tembak atau umpan."
 
 func _configure_moment_camera() -> void:
 	var persp := str(SettingsManager.data.get("perspective", "TV"))
@@ -1188,7 +1214,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return
-	if _moment_type == MomentType.DRIBBLE:
+	if _is_user_dribbling_active():
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		var mb: InputEventMouseButton = event
@@ -1268,37 +1294,44 @@ func _process_dribble_control(delta: float) -> void:
 	var joy: Vector2 = _dribble_input
 	if kb.length() > 0.12:
 		joy = kb.normalized()
-	if joy.length() > 0.08:
+	var is_moving := (joy.length() > 0.08 and not _dragging)
+	var fisik_attr := CareerState.get_effective_attribute("fisik") if CareerState.has_active_career else 68
+	var drain_mult: float = lerpf(1.22, 0.65, clampf(float(fisik_attr) / 99.0, 0.0, 1.0))
+	var sprinting: bool = (_sprint_held or Input.is_key_pressed(KEY_SHIFT) or _skill_burst_timer > 0.0) and _match_stamina > 8.0
+
+	if is_moving:
 		_dribble_facing = joy.normalized()
 		var spd_attr := CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 68
 		var drib_attr := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
 		var move_spd: float = lerpf(6.2, 9.0, float(spd_attr + drib_attr) / 200.0) * minf(1.0, joy.length())
-		if _skill_burst_timer > 0.0:
-			move_spd *= 1.42
-		_player_pos.x = clampf(_player_pos.x + joy.x * move_spd * delta, -24.0, 24.0)
-		_player_pos.z = clampf(_player_pos.z + joy.y * move_spd * delta, -48.5, -15.0)
+		if _match_stamina < 18.0:
+			move_spd *= 0.65
+		elif sprinting:
+			move_spd *= 1.44
+		_match_stamina = maxf(0.0, _match_stamina - (24.0 if sprinting else 7.5) * drain_mult * delta)
+		# Unrestricted full-pitch movement (all X sidelines & full Z pitch)
+		_player_pos.x = clampf(_player_pos.x + joy.x * move_spd * delta, -32.5, 32.5)
+		_player_pos.z = clampf(_player_pos.z + joy.y * move_spd * delta, -51.8, 48.0)
 		var tap_hop: float = absf(sin(_anim_clock * 14.0)) * 0.06
-		_ball_pos = Vector3(_player_pos.x + _dribble_facing.x * 0.85, 0.115 + tap_hop, _player_pos.z + _dribble_facing.y * 0.85)
+		_ball_pos = Vector3(_player_pos.x + _dribble_facing.x * 0.82, 0.115 + tap_hop, _player_pos.z + _dribble_facing.y * 0.82)
 		_player_sprite.frame = 5 if fmod(_anim_clock, 0.28) < 0.14 else 6
+		_configure_moment_camera()
 	else:
+		_match_stamina = minf(_match_stamina_max, _match_stamina + 8.5 * delta)
 		_player_sprite.frame = 4
 		_ball_pos = Vector3(_player_pos.x + _dribble_facing.x * 0.78, 0.115, _player_pos.z + _dribble_facing.y * 0.78)
+	_sync_stamina_hud()
 	_sync_3d_sprites()
-	# Check clean beat past primary defender or breaking into goal area!
-	if not _defender_positions.is_empty():
-		var d0_z: float = _defender_positions[0].z
-		if _player_pos.z < d0_z - 1.6 or _player_pos.z < -43.5:
-			_convert_dribble_to_shot(true)
 
 func _trigger_dribble_skill() -> void:
-	if _phase != MatchPhase.KEY_MOMENT_AIM or _moment_type != MomentType.DRIBBLE:
+	if _phase != MatchPhase.KEY_MOMENT_AIM or (_moment_type != MomentType.SHOT and _moment_type != MomentType.PASS and _moment_type != MomentType.DRIBBLE):
 		return
 	AudioSynth.play_click()
 	_skill_burst_timer = 0.45
 	var burst_dir: Vector2 = _dribble_facing if _dribble_facing.length() > 0.1 else Vector2(0.0, -1.0)
 	var lat_side: float = signf(_dribble_input.x) if absf(_dribble_input.x) > 0.1 else (1.0 if _player_pos.x < 0.0 else -1.0)
-	_player_pos.x = clampf(_player_pos.x + lat_side * 1.45, -24.0, 24.0)
-	_player_pos.z = clampf(_player_pos.z + burst_dir.y * 1.35, -48.5, -15.0)
+	_player_pos.x = clampf(_player_pos.x + lat_side * 1.45, -32.5, 32.5)
+	_player_pos.z = clampf(_player_pos.z + burst_dir.y * 1.35, -51.8, 48.0)
 	_ball_pos = Vector3(_player_pos.x + burst_dir.x * 0.85, 0.14, _player_pos.z + burst_dir.y * 0.85)
 	_player_sprite.frame = 7
 	_sync_3d_sprites()
@@ -1504,7 +1537,9 @@ func _update_gk_ai(dt: float) -> void:
 	_gk_pos.x += clampf(dx, -gk_spd * dt, gk_spd * dt)
 
 func _is_user_dribbling_active() -> bool:
-	if _moment_type != MomentType.DRIBBLE:
+	if _phase != MatchPhase.KEY_MOMENT_AIM or not (_moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]):
+		return false
+	if _dragging:
 		return false
 	if _dribble_input.length() > 0.08 or _skill_burst_timer > 0.0:
 		return true
@@ -1518,28 +1553,26 @@ func _get_moment_time_scales() -> Dictionary:
 	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
 	var base_def_spd: float = float(diff_p.get("defender_speed", 1.6))
 	var drib_def_spd: float = float(diff_p.get("dribble_defender_speed", 2.2))
-	var aim_tm_scale: float = float(diff_p.get("aim_teammate_scale", 0.34))
-	var aim_def_scale: float = float(diff_p.get("aim_defender_scale", 0.48))
+	var aim_tm_scale: float = float(diff_p.get("aim_teammate_scale", 0.28))
+	var aim_def_scale: float = float(diff_p.get("aim_defender_scale", 0.44))
 
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return {"teammate": 1.0, "defender_speed": base_def_spd, "active_dribble": false}
-	if _moment_type == MomentType.DRIBBLE:
+	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 		if _is_user_dribbling_active():
-			# Moving player in DRIBBLE: teammates & defenders move at normal mode speed
+			# User actively moving player: teammates & defenders move at normal mode speed
 			return {"teammate": 1.0, "defender_speed": drib_def_spd, "active_dribble": true}
-		# Idle before dribbling: slowed down per difficulty mode
-		return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
-	if _moment_type in [MomentType.PASS, MomentType.SHOT]:
-		# Aiming PASS or SHOT: teammates advance slowly forward & defenders press per mode
+		# User stopped / aiming shot or pass: slowed down per difficulty mode (0.0 total stop on MUDAH)
 		return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
 	return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
 
 func _animate_gk_idle(delta: float) -> void:
-	_gk_pos.x = sin(Time.get_ticks_msec() * 0.003) * 0.85
 	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
 	var scales := _get_moment_time_scales()
 	var eff_def_speed: float = float(scales["defender_speed"])
 	var tm_scale: float = float(scales["teammate"])
+	if eff_def_speed > 0.01 or tm_scale > 0.01:
+		_gk_pos.x = sin(Time.get_ticks_msec() * 0.003) * 0.85
 	var can_steal: bool = bool(diff_p.get("can_steal", false))
 	var steal_dist: float = float(diff_p.get("steal_dist", 1.05))
 	var stride_front: int = 1 if fmod(_anim_clock * maxf(0.3, tm_scale), 0.34) < 0.17 else 2
@@ -1640,28 +1673,21 @@ func _update_pass_openness_ui() -> void:
 		_teammate_open_scores[i] = min_d
 		best = maxf(best, min_d)
 	_best_pass_openness = best
-	if _action_mode_btns.has("UMPAN") and _action_bar != null and _action_bar.visible:
-		var ub: Button = _action_mode_btns["UMPAN"]
-		var active: bool = (_moment_type == MomentType.PASS)
-		var state_key: String = ("BEBAS" if best >= 3.2 else ("GERAK" if best >= 1.95 else "DIJAGA")) + ("_A" if active else "_I")
+	if _action_mode_btns.has("MAIN") and _action_bar != null and _action_bar.visible:
+		var mb: Button = _action_mode_btns["MAIN"]
+		var state_key: String = ("BEBAS" if best >= 3.2 else ("GERAK" if best >= 1.95 else "DIJAGA"))
 		if state_key == _last_pass_state:
 			return
 		_last_pass_state = state_key
 		if best >= 3.2:
-			ub.text = "UMPAN !"
-			UITheme.style_btn(ub, Color("#174A7A") if active else Color("#0F2D3A"), UITheme.ACCENT_GREEN, 10)
-			if active:
-				_moment_sub_lbl.text = "Rekan BEBAS berlari! Arahkan umpan ke lingkaran HIJAU!"
+			mb.text = "TEMBAK / UMPAN !"
+			UITheme.style_btn(mb, Color("#174A7A"), UITheme.ACCENT_GREEN, 11)
 		elif best >= 1.95:
-			ub.text = "UMPAN +"
-			UITheme.style_btn(ub, Color("#174A7A") if active else Color("#0A1526"), UITheme.ACCENT_GOLD if active else UITheme.BORDER_CYAN, 10)
-			if active:
-				_moment_sub_lbl.text = "Rekan sedang bergerak — bidik arah larinya!"
+			mb.text = "TEMBAK / UMPAN +"
+			UITheme.style_btn(mb, Color("#174A7A"), UITheme.ACCENT_GOLD, 11)
 		else:
-			ub.text = "UMPAN"
-			UITheme.style_btn(ub, Color("#4E2C1A") if active else Color("#201412"), Color("#F97316"), 10)
-			if active:
-				_moment_sub_lbl.text = "Rekan DIJAGA ketat! Umpan berisiko dipotong bek."
+			mb.text = "TEMBAK / UMPAN"
+			UITheme.style_btn(mb, Color("#122B4A"), UITheme.BORDER_CYAN, 11)
 
 func _evaluate_teammate_shot_or_layoff(tm_idx: int, from_rebound: bool) -> void:
 	if tm_idx < 0 or tm_idx >= _teammate_positions.size():
@@ -1695,14 +1721,14 @@ func _start_teammate_carry(tm_idx: int, is_assist: bool) -> void:
 		_dribble_pad.visible = false
 	if _dribble_ctrl_bar != null:
 		_dribble_ctrl_bar.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
 
 	var tm_pos: Vector3 = _teammate_positions[tm_idx]
-	var min_user_def := 99.0
-	for dpos in _defender_positions:
-		min_user_def = minf(min_user_def, Vector2(_player_pos.x - dpos.x, _player_pos.z - dpos.z).length())
-	_carry_pass_back = (not is_assist or (tm_pos.z > -42.5 and min_user_def >= 2.0 and randf() < 0.28))
+	# Never pass back to user after user passed to teammate — teammate always pushes forward to finish
+	_carry_pass_back = false
 	_carry_shoot_at = 0.45 if (not is_assist and tm_pos.z < -41.5) else randf_range(0.78, 1.28)
 	_moment_banner.visible = true
 	_moment_title_lbl.text = "REKAN BAWA BOLA!"
@@ -1944,7 +1970,7 @@ func _enter_user_follow_up_shot(title_msg: String, sub_msg: String) -> void:
 	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.95)
 	_moment_title_lbl.text = title_msg
 	_moment_sub_lbl.text = sub_msg
-	_ticker_lbl.text = "Umpan rekan matang! Pilih TEMBAK, UMPAN, atau DRIBEL."
+	_ticker_lbl.text = "Umpan rekan matang! Giring bebas atau langsung tembak/umpan!"
 	_moment_banner.visible = true
 	_update_pass_openness_ui()
 	_sync_action_bar()
@@ -1966,6 +1992,8 @@ func _enter_rebound_scramble(banner_msg: String) -> void:
 		_dribble_pad.visible = false
 	if _dribble_ctrl_bar != null:
 		_dribble_ctrl_bar.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
 	_moment_banner.visible = true
 	_moment_title_lbl.text = "BOLA REBOUND!"
 	_moment_sub_lbl.text = banner_msg
@@ -2211,6 +2239,8 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 		_dribble_pad.visible = false
 	if _dribble_ctrl_bar != null:
 		_dribble_ctrl_bar.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
 	_result_toast.text = msg
@@ -2221,6 +2251,8 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 	create_tween().tween_property(_result_toast, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
 
 func _advance_after_moment() -> void:
+	_sprint_held = false
+	_match_stamina = minf(_match_stamina_max, _match_stamina + 25.0)
 	for tm in _teammates:
 		tm.visible = false
 	for df in _defenders:
@@ -2378,8 +2410,8 @@ func _draw_aim_and_ring() -> void:
 			for vtx in [p0_in, p0_out, p1_out, p0_in, p1_out, p1_in]:
 				_ring_imm.surface_set_color(g_col)
 				_ring_imm.surface_add_vertex(vtx)
-	# eFootball / EA FC directional cursor ring & pointer wedge under player in DRIBBLE mode
-	if _moment_type == MomentType.DRIBBLE:
+	# eFootball / EA FC directional cursor ring & pointer wedge under player whenever actively dribbling
+	if _is_user_dribbling_active() or _moment_type == MomentType.DRIBBLE:
 		var ang_f := atan2(_dribble_facing.y, _dribble_facing.x)
 		var arr_col := UITheme.ACCENT_GOLD if _skill_burst_timer > 0.0 else Color("#22D3EE")
 		var tip := Vector3(_player_pos.x + cos(ang_f) * 3.1, 0.06, _player_pos.z + sin(ang_f) * 3.1)
@@ -2798,6 +2830,8 @@ func _open_halftime_locker() -> void:
 		_dribble_pad.visible = false
 	if _dribble_ctrl_bar != null:
 		_dribble_ctrl_bar.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
 	if _action_bar != null:
 		_action_bar.visible = false
 	if _player_badge_lbl != null:
@@ -2962,33 +2996,45 @@ func _open_ask_set_piece(m_type: MomentType) -> void:
 	hb.add_child(b_no)
 	_ask_panel.visible = true
 
+func _sync_stamina_hud() -> void:
+	if _stamina_fill == null or _stamina_lbl == null:
+		return
+	var ratio: float = clampf(_match_stamina / maxf(1.0, _match_stamina_max), 0.0, 1.0)
+	_stamina_fill.anchor_right = ratio
+	var st_col: Color = UITheme.ACCENT_GREEN if ratio >= 0.45 else (UITheme.ACCENT_GOLD if ratio >= 0.20 else UITheme.ACCENT_RED)
+	_stamina_fill.color = st_col
+	_stamina_lbl.text = "STM %d%%" % int(round(_match_stamina))
+	if _dribble_sprint_btn != null:
+		var can_sprint := _match_stamina > 8.0
+		_dribble_sprint_btn.disabled = not can_sprint
+		var active_sp := _sprint_held and can_sprint
+		UITheme.style_btn(_dribble_sprint_btn, Color("#0E5A38") if active_sp else Color("#173B66"), UITheme.ACCENT_GOLD if active_sp else UITheme.ACCENT_CYAN, 13)
+
 func _sync_action_bar() -> void:
 	if _action_bar == null:
 		return
 	var open_play := (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and (_moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]))
-	var is_drib := (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type == MomentType.DRIBBLE)
 	_action_bar.visible = open_play
 	if _dribble_pad != null:
-		_dribble_pad.visible = is_drib
+		_dribble_pad.visible = open_play
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = open_play
+		if open_play:
+			_sync_stamina_hud()
 	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = is_drib
+		_dribble_ctrl_bar.visible = open_play
 	if _spin_pad != null:
-		_spin_pad.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY and not is_drib)
+		_spin_pad.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY)
 	if _power_lbl != null:
-		_power_lbl.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY and not is_drib)
+		_power_lbl.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY)
 	if open_play:
 		_last_pass_state = ""
-		var m_map := {"TEMBAK": MomentType.SHOT, "UMPAN": MomentType.PASS, "DRIBEL": MomentType.DRIBBLE}
-		for k in _action_mode_btns.keys():
-			var b: Button = _action_mode_btns[k]
-			var active: bool = (_moment_type == m_map[k])
-			UITheme.style_btn(b, Color("#174A7A") if active else Color("#0A1526"), UITheme.ACCENT_GOLD if active else UITheme.BORDER_STEEL, 10)
 		_update_pass_openness_ui()
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY)
-		if is_drib:
-			_player_badge_lbl.offset_top = -194
-			_player_badge_lbl.offset_bottom = -166
+		if open_play:
+			_player_badge_lbl.offset_top = -202
+			_player_badge_lbl.offset_bottom = -178
 		else:
 			_player_badge_lbl.offset_top = -52
 			_player_badge_lbl.offset_bottom = -24

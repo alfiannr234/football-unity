@@ -190,28 +190,43 @@ func _run_suite() -> void:
 	var post_tm_z: float = ms_inst.get("_teammate_positions")[0].z
 	_assert(post_tm_z <= pre_tm_z, "Teammates advance forward (-Z) and never retreat backward")
 
-	ms_inst.call("_switch_open_play_action", 2)  # DRIBBLE -> Circular Analog Cursor!
-	_assert(ms_inst.get("_dribble_pad").visible and ms_inst.get("_dribble_ctrl_bar").visible and not ms_inst.get("_spin_pad").visible, "DRIBBLE mode activates bottom-left circular joystick and bottom-right dribble controls")
+	# Unified Open Play: TEMBAK / UMPAN + simultaneous circular joystick + stamina + slingshot anytime stopped
+	var btns_dict: Dictionary = ms_inst.get("_action_mode_btns")
+	_assert(btns_dict.has("MAIN"), "Open-play HUD shows unified TEMBAK / UMPAN action badge")
+	_assert(ms_inst.get("_dribble_pad").visible and ms_inst.get("_dribble_ctrl_bar").visible and ms_inst.get("_stamina_bar_bg").visible and ms_inst.get("_spin_pad").visible, "Open-play shows joystick, stamina bar, sprint button, and slingshot/spin controls together")
 	SettingsManager.set_setting("difficulty", "NORMAL")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
 	ms_inst.set("_skill_burst_timer", 0.0)
 	var sc_idle: Dictionary = ms_inst.call("_get_moment_time_scales")
 	ms_inst.set("_dribble_input", Vector2(0.0, -1.0))
 	var sc_move: Dictionary = ms_inst.call("_get_moment_time_scales")
-	_assert(float(sc_idle["teammate"]) < float(sc_move["teammate"]) and float(sc_idle["defender_speed"]) < float(sc_move["defender_speed"]), "Teammates and defenders slow down when idle and move normally when user dribbles")
+	_assert(float(sc_idle["teammate"]) < float(sc_move["teammate"]) and float(sc_idle["defender_speed"]) < float(sc_move["defender_speed"]), "Teammates and defenders slow down when stopped and move normally when user dribbles")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
+	_assert(not bool(ms_inst.call("_is_user_dribbling_active")), "User can immediately aim & shoot/pass whenever stopped moving")
 
+	# Movement + Stamina + Unrestricted pitch roam (no artificial box cutoff)
+	var pre_stam: float = float(ms_inst.get("_match_stamina"))
 	var start_p: Vector3 = ms_inst.get("_player_pos")
 	ms_inst.set("_dribble_input", Vector2(0.5, -0.866))
-	ms_inst.call("_process_dribble_control", 0.12)
+	ms_inst.call("_process_dribble_control", 0.15)
 	var end_p: Vector3 = ms_inst.get("_player_pos")
-	_assert(end_p.distance_to(start_p) > 0.25 and end_p.z < start_p.z, "Circular joystick vector moves player and ball smoothly")
+	var mid_stam: float = float(ms_inst.get("_match_stamina"))
+	_assert(end_p.distance_to(start_p) > 0.25 and end_p.z < start_p.z and mid_stam < pre_stam, "Circular joystick vector moves player + ball smoothly and consumes stamina")
+	ms_inst.set("_sprint_held", true)
+	ms_inst.call("_process_dribble_control", 0.2)
+	var post_sprint_stam: float = float(ms_inst.get("_match_stamina"))
+	_assert(post_sprint_stam < mid_stam, "Holding LARI sprint drains stamina while accelerating dribble")
+	ms_inst.set("_sprint_held", false)
+	ms_inst.set("_player_pos", Vector3(28.0, 0.0, 12.0))
+	ms_inst.set("_dribble_input", Vector2(0.4, 0.8))
+	ms_inst.call("_process_dribble_control", 0.2)
+	var wide_p: Vector3 = ms_inst.get("_player_pos")
+	_assert(wide_p.x > 28.0 and wide_p.z > 12.0 and int(ms_inst.get("_phase")) == ms_inst.MatchPhase.KEY_MOMENT_AIM, "Player can move freely anywhere on the pitch without area cutoffs")
+	ms_inst.set("_dribble_input", Vector2.ZERO)
 	ms_inst.call("_trigger_dribble_skill")
-	_assert(float(ms_inst.get("_skill_burst_timer")) > 0.0, "LARI / TRIK activates dribble speed & skill burst")
-	ms_inst.call("_convert_dribble_to_shot", true)
-	_assert(int(ms_inst.get("_moment_type")) == ms_inst.MomentType.SHOT and not ms_inst.get("_dribble_pad").visible and ms_inst.get("_spin_pad").visible, "Transitioning from dribble restores SHOT slingshot and spin pad")
+	_assert(float(ms_inst.get("_skill_burst_timer")) > 0.0, "LARI / TRIK skill burst remains functional in open play")
 
-	# In SHOT mode, defenders press toward the ball according to difficulty mode and can steal
+	# In MUDAH, ALL teammates and ALL opponents stop completely while aiming/idle; pressing scales by mode
 	ms_inst.call("_trigger_key_moment", 0)  # SHOT
 	SettingsManager.set_setting("difficulty", "MUDAH")
 	var sc_shot_easy: Dictionary = ms_inst.call("_get_moment_time_scales")
@@ -219,18 +234,19 @@ func _run_suite() -> void:
 	var sc_shot_norm: Dictionary = ms_inst.call("_get_moment_time_scales")
 	SettingsManager.set_setting("difficulty", "EKSTREM")
 	var sc_shot_ext: Dictionary = ms_inst.call("_get_moment_time_scales")
-	_assert(float(sc_shot_easy["defender_speed"]) == 0.0 and float(sc_shot_norm["defender_speed"]) < float(sc_shot_ext["defender_speed"]), "SHOT pressing speed scales across MUDAH, NORMAL, and EKSTREM")
+	_assert(float(sc_shot_easy["teammate"]) == 0.0 and float(sc_shot_easy["defender_speed"]) == 0.0, "In MUDAH mode, all teammates and opponents freeze completely when stopped/aiming")
+	_assert(float(sc_shot_easy["defender_speed"]) < float(sc_shot_norm["defender_speed"]) and float(sc_shot_norm["defender_speed"]) < float(sc_shot_ext["defender_speed"]), "Aiming pressing speed scales across MUDAH, NORMAL, and EKSTREM")
 	var d_before: float = Vector2(ms_inst.get("_ball_pos").x - ms_inst.get("_defender_positions")[0].x, ms_inst.get("_ball_pos").z - ms_inst.get("_defender_positions")[0].z).length()
 	ms_inst.call("_animate_gk_idle", 0.2)
 	var d_after: float = Vector2(ms_inst.get("_ball_pos").x - ms_inst.get("_defender_positions")[0].x, ms_inst.get("_ball_pos").z - ms_inst.get("_defender_positions")[0].z).length()
-	_assert(d_after < d_before, "During SHOT, opposing defender moves closer toward ball carrier to tackle")
+	_assert(d_after < d_before, "During open play aiming in NORMAL, opposing defender moves closer toward ball carrier to tackle")
 	var defs_tmp: Array = ms_inst.get("_defender_positions")
 	defs_tmp[0] = ms_inst.get("_ball_pos") + Vector3(0.4, 0.0, -0.4)
 	ms_inst.call("_animate_gk_idle", 0.05)
-	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT, "Defender reaching ball carrier during SHOT tackles and steals ball")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT, "Defender reaching ball carrier while aiming tackles and steals ball")
 	SettingsManager.set_setting("difficulty", "NORMAL")
 
-	# Passing from SHOT into a forward-running teammate initiates animated TEAMMATE_CARRY -> 3D shot / assist!
+	# Passing from SHOT into a forward-running teammate initiates animated TEAMMATE_CARRY with NO pass-back -> 3D shot / assist!
 	ms_inst.call("_trigger_key_moment", 0)  # SHOT
 	var tm0_p: Vector3 = ms_inst.get("_teammate_positions")[0]
 	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
@@ -238,7 +254,7 @@ func _run_suite() -> void:
 	ms_inst.set("_ball_pos", tm0_p + Vector3(0.1, 0.5, 0.1))
 	ms_inst.set("_ball_vel", Vector3(0.0, 0.0, -8.0))
 	ms_inst.call("_process_ball_flight", 0.02)
-	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_shot_by_teammate")) and bool(ms_inst.get("_carry_assist_pending")), "Aiming pass to teammate during SHOT launches animated TEAMMATE_CARRY")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_shot_by_teammate")) and bool(ms_inst.get("_carry_assist_pending")) and not bool(ms_inst.get("_carry_pass_back")), "Aiming pass to teammate launches animated TEAMMATE_CARRY and never passes back to user")
 	ms_inst.set("_carry_pass_back", false)
 	ms_inst.set("_carry_shoot_at", 0.35)
 	# Move defenders far away for clean carry->shot check, then verify carrier shoots 3D ball in flight & assist scores!

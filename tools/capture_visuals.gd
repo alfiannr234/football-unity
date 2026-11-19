@@ -165,11 +165,10 @@ func _capture() -> void:
 	await _snap("20_match_halftime.png")
 	ms._halftime_panel.visible = false
 
-	ms.call("_trigger_key_moment", 0)  # Open Play SHOT with TEMBAK/UMPAN/DRIBEL toggle
+	ms.call("_trigger_key_moment", 0)  # Unified Open Play: TEMBAK / UMPAN + Joystick + Stamina + Slingshot
 	await _wait_frames(8)
 	await _snap("26_match_openplay_modes.png")
 
-	ms.call("_switch_open_play_action", 2)  # DRIBBLE with Circular Analog Cursor Pad!
 	ms._dribble_input = Vector2(0.55, -0.83)
 	ms._dribble_pad._active = true
 	ms._dribble_pad.joy_vec = Vector2(0.55, -0.83)
@@ -178,7 +177,8 @@ func _capture() -> void:
 	await _wait_frames(8)
 	await _snap("31_match_dribble_joystick.png")
 
-	ms.call("_switch_open_play_action", 1)  # PASS with running teammates & green/cyan lead rings!
+	ms._dribble_input = Vector2.ZERO
+	ms._dribble_pad.reset_joy()
 	ms._dragging = true
 	ms._drag_start = Vector2(480, 310)
 	ms._drag_current = Vector2(525, 420)
