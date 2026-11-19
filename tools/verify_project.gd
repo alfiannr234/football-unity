@@ -190,10 +190,10 @@ func _run_suite() -> void:
 	var post_tm_z: float = ms_inst.get("_teammate_positions")[0].z
 	_assert(post_tm_z <= pre_tm_z, "Teammates advance forward (-Z) and never retreat backward")
 
-	# Unified Open Play: TEMBAK / UMPAN + simultaneous circular joystick + stamina + slingshot anytime stopped
+	# Unified Open Play: TEMBAK / UMPAN + simultaneous circular joystick + stamina + slingshot anytime stopped (no LARI button)
 	var btns_dict: Dictionary = ms_inst.get("_action_mode_btns")
 	_assert(btns_dict.has("MAIN"), "Open-play HUD shows unified TEMBAK / UMPAN action badge")
-	_assert(ms_inst.get("_dribble_pad").visible and ms_inst.get("_dribble_ctrl_bar").visible and ms_inst.get("_stamina_bar_bg").visible and ms_inst.get("_spin_pad").visible, "Open-play shows joystick, stamina bar, sprint button, and slingshot/spin controls together")
+	_assert(ms_inst.get("_dribble_pad").visible and ms_inst.get("_stamina_bar_bg").visible and ms_inst.get("_spin_pad").visible and not ("_dribble_ctrl_bar" in ms_inst), "Open-play shows joystick, stamina bar, and slingshot/spin controls without LARI button")
 	SettingsManager.set_setting("difficulty", "NORMAL")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
 	ms_inst.set("_skill_burst_timer", 0.0)
@@ -204,27 +204,29 @@ func _run_suite() -> void:
 	ms_inst.set("_dribble_input", Vector2.ZERO)
 	_assert(not bool(ms_inst.call("_is_user_dribbling_active")), "User can immediately aim & shoot/pass whenever stopped moving")
 
-	# Movement + Stamina + Unrestricted pitch roam (no artificial box cutoff)
+	# Movement + Stamina (no regen while stopped, resets to 100% on new event) + Unrestricted pitch roam
 	var pre_stam: float = float(ms_inst.get("_match_stamina"))
 	var start_p: Vector3 = ms_inst.get("_player_pos")
 	ms_inst.set("_dribble_input", Vector2(0.5, -0.866))
-	ms_inst.call("_process_dribble_control", 0.15)
+	ms_inst.call("_process_dribble_control", 1.0)
 	var end_p: Vector3 = ms_inst.get("_player_pos")
 	var mid_stam: float = float(ms_inst.get("_match_stamina"))
-	_assert(end_p.distance_to(start_p) > 0.25 and end_p.z < start_p.z and mid_stam < pre_stam, "Circular joystick vector moves player + ball smoothly and consumes stamina")
-	ms_inst.set("_sprint_held", true)
-	ms_inst.call("_process_dribble_control", 0.2)
-	var post_sprint_stam: float = float(ms_inst.get("_match_stamina"))
-	_assert(post_sprint_stam < mid_stam, "Holding LARI sprint drains stamina while accelerating dribble")
-	ms_inst.set("_sprint_held", false)
+	_assert(end_p.distance_to(start_p) > 2.0 and end_p.z < start_p.z and mid_stam < pre_stam - 14.0, "Circular joystick vector runs player smoothly and consumes reduced stamina capacity quickly")
+	ms_inst.set("_dribble_input", Vector2.ZERO)
+	ms_inst.call("_process_dribble_control", 0.8)
+	_assert(is_equal_approx(float(ms_inst.get("_match_stamina")), mid_stam), "Stamina does NOT regenerate while stopped during the same event")
 	ms_inst.set("_player_pos", Vector3(28.0, 0.0, 12.0))
 	ms_inst.set("_dribble_input", Vector2(0.4, 0.8))
 	ms_inst.call("_process_dribble_control", 0.2)
 	var wide_p: Vector3 = ms_inst.get("_player_pos")
 	_assert(wide_p.x > 28.0 and wide_p.z > 12.0 and int(ms_inst.get("_phase")) == ms_inst.MatchPhase.KEY_MOMENT_AIM, "Player can move freely anywhere on the pitch without area cutoffs")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
-	ms_inst.call("_trigger_dribble_skill")
-	_assert(float(ms_inst.get("_skill_burst_timer")) > 0.0, "LARI / TRIK skill burst remains functional in open play")
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.DRIBBLE)
+	_assert(is_equal_approx(float(ms_inst.get("_match_stamina")), 100.0), "Starting another key-moment event restores stamina cleanly back to 100%")
+	ms_inst.set("_drag_start", Vector2(480.0, 290.0))
+	ms_inst.set("_drag_current", Vector2(480.0, 440.0))
+	ms_inst.call("_release_slingshot")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.BALL_IN_FLIGHT, "Releasing slingshot during DRIBBLE event launches real 3D shot instead of fake dribble dash")
 
 	# In MUDAH, ALL teammates and ALL opponents stop completely while aiming/idle; pressing scales by mode
 	ms_inst.call("_trigger_key_moment", 0)  # SHOT

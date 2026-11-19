@@ -42,13 +42,9 @@ var _moment_sub_lbl: Label
 var _power_lbl: Label
 var _spin_pad: SpinBallPad
 var _dribble_pad: DribbleJoystickPad
-var _dribble_ctrl_bar: HBoxContainer
-var _dribble_sprint_btn: Button
-var _dribble_shoot_btn: Button
 var _dribble_input: Vector2 = Vector2.ZERO
 var _dribble_facing: Vector2 = Vector2(0.0, -1.0)
 var _skill_burst_timer: float = 0.0
-var _sprint_held: bool = false
 var _match_stamina: float = 100.0
 var _match_stamina_max: float = 100.0
 var _stamina_bar_bg: PanelContainer
@@ -714,24 +710,6 @@ func _build_hud() -> void:
 	_stamina_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	st_ctrl.add_child(_stamina_lbl)
 
-	# Bottom-Right LARI (Sprint) Hold Button beside Spin Pad
-	_dribble_ctrl_bar = HBoxContainer.new()
-	_dribble_ctrl_bar.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_dribble_ctrl_bar.offset_left = -226
-	_dribble_ctrl_bar.offset_right = -124
-	_dribble_ctrl_bar.offset_top = -70
-	_dribble_ctrl_bar.offset_bottom = -20
-	_dribble_ctrl_bar.visible = false
-	add_child(_dribble_ctrl_bar)
-
-	_dribble_sprint_btn = Button.new()
-	_dribble_sprint_btn.text = "LARI"
-	_dribble_sprint_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(_dribble_sprint_btn, Color("#173B66"), UITheme.ACCENT_CYAN, 13)
-	_dribble_sprint_btn.button_down.connect(func(): _sprint_held = true; _sync_stamina_hud())
-	_dribble_sprint_btn.button_up.connect(func(): _sprint_held = false; _sync_stamina_hud())
-	_dribble_ctrl_bar.add_child(_dribble_sprint_btn)
-
 	# Bottom-Left Player Number/Name Badge
 	_player_badge_lbl = Label.new()
 	_player_badge_lbl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -805,11 +783,7 @@ func _start_selected_mode() -> void:
 	_rating = 6.2
 	_shots_telemetry.clear()
 	_best_clip = {}
-	_sprint_held = false
-	if run_mode == RunMode.CAREER_MATCH and CareerState.has_active_career:
-		_match_stamina_max = clampf(float(CareerState.career["playerProfile"].get("energy", 100)) * 0.4 + 60.0, 55.0, 100.0)
-	else:
-		_match_stamina_max = 100.0
+	_match_stamina_max = 100.0
 	_match_stamina = _match_stamina_max
 
 	if run_mode == RunMode.MOVIOLA_REPLAY:
@@ -990,13 +964,15 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_phase = MatchPhase.KEY_MOMENT_AIM
 	if _board_panel != null:
 		_board_panel.visible = false
-	_spin_pad.visible = (run_mode != RunMode.MOVIOLA_REPLAY and m_type != MomentType.TEAMMATE_PENALTY and m_type != MomentType.DRIBBLE)
-	_power_lbl.visible = (m_type != MomentType.TEAMMATE_PENALTY and m_type != MomentType.DRIBBLE)
+	_spin_pad.visible = (run_mode != RunMode.MOVIOLA_REPLAY and m_type != MomentType.TEAMMATE_PENALTY)
+	_power_lbl.visible = (m_type != MomentType.TEAMMATE_PENALTY)
 	_dragging = false
 	_dribble_input = Vector2.ZERO
 	_dribble_facing = Vector2(0.0, -1.0)
 	_skill_burst_timer = 0.0
-	_sprint_held = false
+	# Each new event starts with fresh 100% match stamina
+	_match_stamina_max = 100.0
+	_match_stamina = _match_stamina_max
 	if _dribble_pad != null:
 		_dribble_pad.reset_joy()
 	_spin_offset = Vector2.ZERO
@@ -1157,7 +1133,7 @@ func _spawn_open_play_actors() -> void:
 
 func _apply_open_play_prompt(_t: MomentType) -> void:
 	_moment_title_lbl.text = "PELUANG TERBUKA!"
-	_moment_sub_lbl.text = "Gerakkan bebas pakai kursor kiri + LARI; berhenti & tarik ketapel untuk TEMBAK / UMPAN!"
+	_moment_sub_lbl.text = "Gerakkan bebas pakai kursor kiri; berhenti & tarik ketapel untuk TEMBAK / UMPAN!"
 	_ticker_lbl.text = "Bebas menggiring! Berhenti untuk tembak atau umpan."
 
 func _configure_moment_camera() -> void:
@@ -1222,8 +1198,6 @@ func _input(event: InputEvent) -> void:
 			return
 		if _dribble_pad != null and _dribble_pad.visible and _dribble_pad.get_global_rect().has_point(mb.position):
 			return
-		if _dribble_ctrl_bar != null and _dribble_ctrl_bar.visible and _dribble_ctrl_bar.get_global_rect().has_point(mb.position):
-			return
 		if _action_bar != null and _action_bar.visible and _action_bar.get_global_rect().has_point(mb.position):
 			return
 		if mb.pressed:
@@ -1256,10 +1230,6 @@ func _release_slingshot() -> void:
 	var diff_mult: float = float(diff_params.get("aim_spread_mult", 1.0))
 	if CareerState.has_active_career and int(CareerState.career["playerProfile"]["energy"]) < 45 and str(SettingsManager.data.get("difficulty", "NORMAL")) == "EKSTREM":
 		diff_mult *= 1.25
-
-	if _moment_type == MomentType.DRIBBLE:
-		_execute_dribble_dash(delta_px)
-		return
 
 	var launch := SlingshotPhysics.compute_launch_params(
 		delta_px, 210.0, kek, ak, ef, pen, bm, _spin_offset,
@@ -1296,30 +1266,35 @@ func _process_dribble_control(delta: float) -> void:
 		joy = kb.normalized()
 	var is_moving := (joy.length() > 0.08 and not _dragging)
 	var fisik_attr := CareerState.get_effective_attribute("fisik") if CareerState.has_active_career else 68
-	var drain_mult: float = lerpf(1.22, 0.65, clampf(float(fisik_attr) / 99.0, 0.0, 1.0))
-	var sprinting: bool = (_sprint_held or Input.is_key_pressed(KEY_SHIFT) or _skill_burst_timer > 0.0) and _match_stamina > 8.0
+	var drain_mult: float = lerpf(1.22, 0.68, clampf(float(fisik_attr) / 99.0, 0.0, 1.0))
 
 	if is_moving:
+		var analog_mag := clampf(joy.length(), 0.0, 1.0)
 		_dribble_facing = joy.normalized()
 		var spd_attr := CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 68
 		var drib_attr := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
-		var move_spd: float = lerpf(6.2, 9.0, float(spd_attr + drib_attr) / 200.0) * minf(1.0, joy.length())
-		if _match_stamina < 18.0:
-			move_spd *= 0.65
-		elif sprinting:
-			move_spd *= 1.44
-		_match_stamina = maxf(0.0, _match_stamina - (24.0 if sprinting else 7.5) * drain_mult * delta)
-		# Unrestricted full-pitch movement (all X sidelines & full Z pitch)
+		# Analog cursor deflection already includes running up to full sprint
+		var max_run_spd: float = lerpf(8.8, 12.6, float(spd_attr + drib_attr) / 200.0)
+		var move_spd: float = max_run_spd * analog_mag
+		if _skill_burst_timer > 0.0:
+			move_spd *= 1.22
+		if _match_stamina <= 0.1:
+			move_spd *= 0.48
+		elif _match_stamina < 18.0:
+			move_spd *= 0.68
+		# 40% shorter stamina duration (~28/s base * analog deflection * fisik mult); no in-event regen
+		_match_stamina = maxf(0.0, _match_stamina - (28.0 * clampf(analog_mag, 0.30, 1.0)) * drain_mult * delta)
+		# Unrestricted full-pitch movement while keeping ball cleanly in front of goal line (z >= -52.25)
 		_player_pos.x = clampf(_player_pos.x + joy.x * move_spd * delta, -32.5, 32.5)
-		_player_pos.z = clampf(_player_pos.z + joy.y * move_spd * delta, -51.8, 48.0)
+		_player_pos.z = clampf(_player_pos.z + joy.y * move_spd * delta, -51.4, 48.0)
 		var tap_hop: float = absf(sin(_anim_clock * 14.0)) * 0.06
-		_ball_pos = Vector3(_player_pos.x + _dribble_facing.x * 0.82, 0.115 + tap_hop, _player_pos.z + _dribble_facing.y * 0.82)
+		_ball_pos = Vector3(clampf(_player_pos.x + _dribble_facing.x * 0.82, -33.2, 33.2), 0.115 + tap_hop, clampf(_player_pos.z + _dribble_facing.y * 0.82, -52.25, 48.8))
 		_player_sprite.frame = 5 if fmod(_anim_clock, 0.28) < 0.14 else 6
 		_configure_moment_camera()
 	else:
-		_match_stamina = minf(_match_stamina_max, _match_stamina + 8.5 * delta)
+		# Do NOT regenerate stamina when stopped; keep ball just inside goal line so slingshot shoots cleanly
 		_player_sprite.frame = 4
-		_ball_pos = Vector3(_player_pos.x + _dribble_facing.x * 0.78, 0.115, _player_pos.z + _dribble_facing.y * 0.78)
+		_ball_pos = Vector3(clampf(_player_pos.x + _dribble_facing.x * 0.78, -33.2, 33.2), 0.115, clampf(_player_pos.z + _dribble_facing.y * 0.78, -52.25, 48.8))
 	_sync_stamina_hud()
 	_sync_3d_sprites()
 
@@ -1331,77 +1306,10 @@ func _trigger_dribble_skill() -> void:
 	var burst_dir: Vector2 = _dribble_facing if _dribble_facing.length() > 0.1 else Vector2(0.0, -1.0)
 	var lat_side: float = signf(_dribble_input.x) if absf(_dribble_input.x) > 0.1 else (1.0 if _player_pos.x < 0.0 else -1.0)
 	_player_pos.x = clampf(_player_pos.x + lat_side * 1.45, -32.5, 32.5)
-	_player_pos.z = clampf(_player_pos.z + burst_dir.y * 1.35, -51.8, 48.0)
-	_ball_pos = Vector3(_player_pos.x + burst_dir.x * 0.85, 0.14, _player_pos.z + burst_dir.y * 0.85)
+	_player_pos.z = clampf(_player_pos.z + burst_dir.y * 1.35, -51.4, 48.0)
+	_ball_pos = Vector3(clampf(_player_pos.x + burst_dir.x * 0.85, -33.2, 33.2), 0.14, clampf(_player_pos.z + burst_dir.y * 0.85, -52.25, 48.8))
 	_player_sprite.frame = 7
 	_sync_3d_sprites()
-
-func _convert_dribble_to_shot(beat_defender: bool) -> void:
-	if beat_defender:
-		_dribbles_won += 1
-		_rating = minf(10.0, _rating + 0.5)
-		_shots_telemetry.append({
-			"type": "DRIBBLE", "outcome": "GOAL",
-			"pitchCoord": {"x": clampf((_player_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _player_pos.z) / 52.5, 0.05, 0.95)},
-			"goalCoord": {"x": 0.5, "y": 0.5}, "distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1)
-		})
-	_moment_type = MomentType.SHOT
-	_phase = MatchPhase.KEY_MOMENT_AIM
-	_dribble_input = Vector2.ZERO
-	_skill_burst_timer = 0.0
-	if _dribble_pad != null:
-		_dribble_pad.reset_joy()
-	if not _defender_positions.is_empty():
-		_defenders[0].visible = false
-		_defender_positions[0] = Vector3(45.0, 0.0, 10.0)
-	_moment_title_lbl.text = "LOLOS! TEMBAK SEKARANG!" if beat_defender else "PELUANG TEMBAKAN!"
-	_moment_sub_lbl.text = "Bek sudah terlewati — tarik ketapel ke gawang!"
-	_moment_banner.visible = true
-	AudioSynth.play_ring_tap(true)
-	_update_pass_openness_ui()
-	_sync_action_bar()
-	_configure_moment_camera()
-	_draw_aim_and_ring()
-
-func _execute_dribble_dash(delta_px: Vector2) -> void:
-	var drib := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
-	var spd := CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 68
-	var dash_dir := Vector3(delta_px.x, 0.0, delta_px.y).normalized()
-	var lateral_evade := absf(dash_dir.x)
-	var success_prob := clampf(0.42 + (float(drib + spd) / 200.0) * 0.45 + lateral_evade * 0.2, 0.2, 0.96)
-
-	_player_pos += dash_dir * 7.5
-	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.8)
-	_sync_3d_sprites()
-
-	if randf() <= success_prob:
-		_dribbles_won += 1
-		_rating = minf(10.0, _rating + 0.5)
-		_shots_telemetry.append({
-			"type": "DRIBBLE", "outcome": "GOAL",
-			"pitchCoord": {"x": clampf((_player_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _player_pos.z) / 52.5, 0.05, 0.95)},
-			"goalCoord": {"x": 0.5, "y": 0.5}, "distanceMeters": 14.0
-		})
-		_show_moment_result("DRIBEL SUKSES! +PELUANG", UITheme.ACCENT_GREEN, 0.85)
-		# Chain straight into a close-range shot!
-		_phase = MatchPhase.KEY_MOMENT_AIM
-		_moment_type = MomentType.SHOT
-		_moment_title_lbl.text = "LOLOS! TEMBAK SEKARANG!"
-		_moment_sub_lbl.text = "Bek sudah terlewati — tembak atau umpan rekan!"
-		_moment_banner.visible = true
-		if not _defender_positions.is_empty():
-			_defenders[0].visible = false
-			_defender_positions[0] = Vector3(45.0, 0.0, 10.0)
-		_update_pass_openness_ui()
-		_sync_action_bar()
-		_configure_moment_camera()
-	else:
-		_shots_telemetry.append({
-			"type": "DRIBBLE", "outcome": "BLOCKED",
-			"pitchCoord": {"x": clampf((_player_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _player_pos.z) / 52.5, 0.05, 0.95)},
-			"goalCoord": {"x": 0.5, "y": 0.5}, "distanceMeters": 14.0
-		})
-		_show_moment_result("DIBLOK BEK!", UITheme.ACCENT_RED, 1.2)
 
 func _process_ball_flight(delta: float) -> void:
 	_flight_timer += delta
@@ -1719,8 +1627,6 @@ func _start_teammate_carry(tm_idx: int, is_assist: bool) -> void:
 		_action_bar.visible = false
 	if _dribble_pad != null:
 		_dribble_pad.visible = false
-	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = false
 	if _stamina_bar_bg != null:
 		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
@@ -1990,8 +1896,6 @@ func _enter_rebound_scramble(banner_msg: String) -> void:
 		_action_bar.visible = false
 	if _dribble_pad != null:
 		_dribble_pad.visible = false
-	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = false
 	if _stamina_bar_bg != null:
 		_stamina_bar_bg.visible = false
 	_moment_banner.visible = true
@@ -2237,8 +2141,6 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 		_action_bar.visible = false
 	if _dribble_pad != null:
 		_dribble_pad.visible = false
-	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = false
 	if _stamina_bar_bg != null:
 		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
@@ -2251,8 +2153,6 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 	create_tween().tween_property(_result_toast, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
 
 func _advance_after_moment() -> void:
-	_sprint_held = false
-	_match_stamina = minf(_match_stamina_max, _match_stamina + 25.0)
 	for tm in _teammates:
 		tm.visible = false
 	for df in _defenders:
@@ -2411,7 +2311,7 @@ func _draw_aim_and_ring() -> void:
 				_ring_imm.surface_set_color(g_col)
 				_ring_imm.surface_add_vertex(vtx)
 	# eFootball / EA FC directional cursor ring & pointer wedge under player whenever actively dribbling
-	if _is_user_dribbling_active() or _moment_type == MomentType.DRIBBLE:
+	if _is_user_dribbling_active():
 		var ang_f := atan2(_dribble_facing.y, _dribble_facing.x)
 		var arr_col := UITheme.ACCENT_GOLD if _skill_burst_timer > 0.0 else Color("#22D3EE")
 		var tip := Vector3(_player_pos.x + cos(ang_f) * 3.1, 0.06, _player_pos.z + sin(ang_f) * 3.1)
@@ -2475,7 +2375,7 @@ func _draw_aim_and_ring() -> void:
 	var steps_preview := int(lerpf(12.0, 28.0, float(ak + (bm if _moment_type == MomentType.FREE_KICK else 0)) / 180.0))
 	var pts := SlingshotPhysics.predict_trajectory(_ball_pos, launch["velocity"], launch["omega"], ef, steps_preview, 0.04)
 	if pts.size() >= 2:
-		if _moment_type == MomentType.SHOT:
+		if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 			var aims_teammate := false
 			for pt in pts:
 				for tp in _teammate_positions:
@@ -2828,8 +2728,6 @@ func _open_halftime_locker() -> void:
 	_power_lbl.visible = false
 	if _dribble_pad != null:
 		_dribble_pad.visible = false
-	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = false
 	if _stamina_bar_bg != null:
 		_stamina_bar_bg.visible = false
 	if _action_bar != null:
@@ -3004,11 +2902,6 @@ func _sync_stamina_hud() -> void:
 	var st_col: Color = UITheme.ACCENT_GREEN if ratio >= 0.45 else (UITheme.ACCENT_GOLD if ratio >= 0.20 else UITheme.ACCENT_RED)
 	_stamina_fill.color = st_col
 	_stamina_lbl.text = "STM %d%%" % int(round(_match_stamina))
-	if _dribble_sprint_btn != null:
-		var can_sprint := _match_stamina > 8.0
-		_dribble_sprint_btn.disabled = not can_sprint
-		var active_sp := _sprint_held and can_sprint
-		UITheme.style_btn(_dribble_sprint_btn, Color("#0E5A38") if active_sp else Color("#173B66"), UITheme.ACCENT_GOLD if active_sp else UITheme.ACCENT_CYAN, 13)
 
 func _sync_action_bar() -> void:
 	if _action_bar == null:
@@ -3021,8 +2914,6 @@ func _sync_action_bar() -> void:
 		_stamina_bar_bg.visible = open_play
 		if open_play:
 			_sync_stamina_hud()
-	if _dribble_ctrl_bar != null:
-		_dribble_ctrl_bar.visible = open_play
 	if _spin_pad != null:
 		_spin_pad.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY)
 	if _power_lbl != null:
