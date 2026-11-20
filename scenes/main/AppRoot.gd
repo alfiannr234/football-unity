@@ -201,21 +201,13 @@ func _show_career_shell() -> void:
 func _launch_career_match(skip_pre_event: bool = false) -> void:
 	if not skip_pre_event and CareerState.has_active_career:
 		var prof: Dictionary = CareerState.career.get("playerProfile", {})
-		var meta: Dictionary = CareerState.career.get("careerMeta", {})
 		var en: int = int(prof.get("energy", 80))
 		var coach_rel: int = int(prof.get("relations", {}).get("pelatih", 60))
-		var wk: int = int(meta.get("week", 1))
-		var pre_mode: int = 10  # PREMATCH_PREDIKSI (Split-Screen Prediction + Top Skor Spotlight)
-		if en < 45 or coach_rel < 35:
-			pre_mode = 6  # COACH_REJECT ("PELATIH BILANG TIDAK")
-		elif wk == 1 or (wk % 3 == 1):
-			pre_mode = 1  # TIM_INTI whiteboard
-		elif wk % 3 == 2:
-			pre_mode = 10  # PREMATCH_PREDIKSI
-		else:
-			pre_mode = 7  # PREMATCH_TUNNEL
-		_open_cutscene(pre_mode, func(): _launch_career_match(true))
-		return
+		# Only interrupt pre-match with COACH_REJECT when severely fatigued/unfavored;
+		# normal matches open directly into MatchScene's animated Pre-Match Lineup Showcase!
+		if en < 35 or coach_rel < 30:
+			_open_cutscene(6, func(): _launch_career_match(true))
+			return
 
 	_clear_stage()
 	AudioSynth.bgm_track_override = ""
@@ -279,6 +271,9 @@ func _show_post_match(report: Dictionary) -> void:
 func _pick_post_match_event(report: Dictionary) -> int:
 	if not CareerState.has_active_career:
 		return -1
+	# Throttle narrative/minigame events so they only appear once every 1-3 matches
+	if not CareerState.consume_event_cooldown():
+		return -1
 	var meta: Dictionary = CareerState.career.get("careerMeta", {})
 	var sp: Dictionary = CareerState.career.get("sponsor", {})
 	var wk: int = int(meta.get("week", 1))
@@ -301,7 +296,7 @@ func _pick_post_match_event(report: Dictionary) -> int:
 		return 5  # COACH_TRAIT
 	if int(meta.get("transferWindowWeeks", 0)) > 0:
 		return 0  # BURSA_CARDS
-	return 9 if wk % 2 == 0 else 12
+	return 10 if wk % 2 == 0 else 9
 
 func _open_new_career_modal(slot_id: int) -> void:
 	var m: Control = (load("res://scenes/modals/NewCareerModal.gd") as GDScript).new()

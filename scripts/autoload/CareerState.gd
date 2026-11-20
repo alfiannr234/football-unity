@@ -257,6 +257,7 @@ func start_new_career(
 			"albumCards": [],
 			"scoutedByClubId": -1,
 			"scoutInterest": 0,
+			"eventCooldown": 1,
 		},
 		"playerProfile": {
 			"name": clean_name,
@@ -875,6 +876,18 @@ func increment_autographs() -> int:
 	career_updated.emit()
 	return cur
 
+func consume_event_cooldown() -> bool:
+	# Returns true only when cooldown reaches 0, then resets to 1-3 matches so events don't spam!
+	if not has_active_career:
+		return false
+	var meta: Dictionary = career["careerMeta"]
+	var cd: int = int(meta.get("eventCooldown", 0))
+	if cd > 0:
+		return false
+	meta["eventCooldown"] = randi_range(1, 3)
+	save_active_career()
+	return true
+
 func get_division_leaders() -> Dictionary:
 	if not has_active_career:
 		return {"goals": [], "assists": [], "rating": [], "user_goal_rank": 1, "top_goals": 1}
@@ -1060,12 +1073,13 @@ func finish_match(result: Dictionary) -> Dictionary:
 	var total_cash_earned := wage + sp_pay + sp_goal_bonus
 	career["playerProfile"]["cash"] = int(career["playerProfile"]["cash"]) + total_cash_earned
 
-	# Energy drain & weekly recovery
+	# Energy drain (+20% more demanding) & weekly recovery
 	var fisik := get_effective_attribute("fisik")
-	var drain := int(round(lerpf(18.0, 9.0, float(fisik) / 99.0)))
+	var base_drain := lerpf(18.0, 9.0, float(fisik) / 99.0) * 1.20
+	var drain := int(round(base_drain)) + int(result.get("extra_energy_drain", 0))
 	if career["inventory"]["staffHired"].has("kebugaran"):
 		drain = int(round(float(drain) * 0.8))
-	var rec := 10
+	var rec := 8
 	if career["inventory"]["staffHired"].has("fisioterapis"):
 		rec += 8
 	for l_id in career["inventory"]["lifestyleOwned"]:
@@ -1075,7 +1089,10 @@ func finish_match(result: Dictionary) -> Dictionary:
 			rec += 10
 		elif l_id == "vila_mewah":
 			rec += 18
-	career["playerProfile"]["energy"] = clampi(int(career["playerProfile"]["energy"]) - drain + rec, 15, 100)
+	career["playerProfile"]["energy"] = clampi(int(career["playerProfile"]["energy"]) - drain + rec, 12, 100)
+	# Decrement event cooldown counter (events appear only every 1-3 matches)
+	var cur_cd: int = int(career["careerMeta"].get("eventCooldown", 1))
+	career["careerMeta"]["eventCooldown"] = maxi(0, cur_cd - 1)
 
 	# Relations & Legacy points & Followers
 	var rel: Dictionary = career["playerProfile"]["relations"]

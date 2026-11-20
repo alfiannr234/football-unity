@@ -411,6 +411,103 @@ func _run_suite() -> void:
 	ms_inst.set("_ball_pos", Vector3(20.0, 0.5, -57.0))
 	ms_inst.call("_process_ball_flight", 0.02)
 	_assert(is_equal_approx(float(ms_inst.get("_rating")), 6.7), "Key pass to teammate who then fails to score adds +0.2 rating (6.5 -> 6.7)")
+
+	# === NEW FEATURE VERIFICATION: Lineup Intro, Agile Slide Tackles, Portrait Highlights, Cards >2, Injuries, Coach Sub, Energy +20%, Event Cooldown ===
+	# A. Pre-Match Animated Lineup Showcase
+	ms_inst.call("_start_selected_mode")
+	var our_xi: Array = ms_inst.get("_our_lineup")
+	var opp_xi: Array = ms_inst.get("_opp_lineup")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.INTRO and ms_inst.get("_lineup_panel").visible, "Career match opens animated Pre-Match Lineup Showcase (MatchPhase.INTRO)")
+	_assert(our_xi.size() == 11 and opp_xi.size() == 11, "Lineup Showcase populates 11 starters for both User Team and Opponent Team")
+	ms_inst.call("_start_match_kickoff")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.SIMULATING and ms_inst.get("_board_panel").visible and not ms_inst.get("_lineup_panel").visible, "Lineup kickoff transitions cleanly to live 2D Match Board")
+
+	# B. OVR-Scaled Defender Agility & Slide Tackle Pass Interception
+	var agil_low: float = float(ms_inst.call("get_opp_defender_agility", 55))
+	var agil_high: float = float(ms_inst.call("get_opp_defender_agility", 88))
+	_assert(agil_high > agil_low + 0.35, "Defender agility scales meaningfully with opponent OVR (%.2f vs %.2f)" % [agil_low, agil_high])
+	SettingsManager.data["difficulty"] = "NORMAL"
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.TEAMMATE_PASS)
+	ms_inst.set("_incoming_pass_kicked", true)
+	var bpos_sl: Vector3 = ms_inst.get("_ball_pos")
+	var upos_sl: Vector3 = ms_inst.get("_player_pos")
+	var mid_lane: Vector3 = bpos_sl.lerp(upos_sl, 0.45)
+	var sl_defs: Array[Vector3] = [Vector3(mid_lane.x, 0.0, mid_lane.z - 1.6), Vector3(-12.0, 0.0, -40.0), Vector3(12.0, 0.0, -40.0)]
+	ms_inst.set("_defender_positions", sl_defs)
+	var slide_triggered := false
+	for _sl in range(30):
+		if int(ms_inst.get("_phase")) != ms_inst.MatchPhase.INCOMING_PASS:
+			break
+		ms_inst.call("_process_incoming_pass", 0.04)
+		var sl_t: Array = ms_inst.get("_defender_slide_timers")
+		if sl_t.size() > 0 and float(sl_t[0]) > 0.0:
+			slide_triggered = true
+	_assert(slide_triggered and int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT, "Agile opposing defender launches slide tackle and intercepts teammate pass")
+
+	# C. Portrait Highlights (Goal+Assist, GK Save, Yellow/Red Cards & Team >2 Card Banner)
+	ms_inst.call("_start_selected_mode")
+	ms_inst.call("_start_match_kickoff")
+	ms_inst.set("_minute", 23.0)
+	var u_p: Dictionary = ms_inst.call("_get_user_roster_dict")
+	var tm_p: Dictionary = ms_inst.call("_pick_roster_player", true, false, false)
+	ms_inst.call("_add_rich_board_highlight", 23, "GOAL", "GOL TEST!", "Assist oleh rekan", u_p, tm_p, true)
+	var hl_p_box: HBoxContainer = ms_inst.get("_board_hl_portraits")
+	_assert(hl_p_box.get_child_count() == 2 and str(ms_inst.get("_board_hl_badge").text).contains("23'"), "Goal+Assist highlight renders both player portraits and exact minute stamp")
+	ms_inst.call("_trigger_match_card", false, false)
+	ms_inst.call("_trigger_match_card", false, false)
+	_assert(not ms_inst.get("_board_cards_bar").visible, "Team card warning stays hidden when cards <= 2")
+	ms_inst.call("_trigger_match_card", false, false)
+	_assert(ms_inst.get("_board_cards_bar").visible and str(ms_inst.get("_board_cards_lbl").text).contains("3 KARTU KUNING"), "Team card warning displays team count once yellow cards exceed 2")
+	ms_inst.call("_trigger_match_card", true, true)
+	_assert(int(ms_inst.get("_our_reds")) >= 1 and hl_p_box.get_child_count() >= 1, "Red card highlight displays player portrait and updates red count")
+
+	# D. Player Injury Outcomes (Cannot Return -> Immediate Sub; <=10m -> Returns; >10m -> Coach Sub after 10m)
+	ms_inst.set("_minute", 30.0)
+	ms_inst.call("_trigger_match_injury", true, 0, -1)
+	_assert(hl_p_box.get_child_count() == 2 and str(ms_inst.get("_board_hl_badge").text).contains("30'"), "Severe injury immediately substitutes player with both OUT & IN portraits")
+	ms_inst.set("_minute", 40.0)
+	ms_inst.call("_trigger_match_injury", true, 1, 6)
+	var injs_a: Array = ms_inst.get("_active_injuries")
+	var rec_player: Dictionary = injs_a[injs_a.size() - 1]["player"]
+	ms_inst.set("_minute", 46.0)
+	ms_inst.call("_process_active_injuries")
+	_assert(not bool(rec_player.get("injured", true)) and not bool(rec_player.get("subbed_out", false)), "Temporary injury <= 10 min recovers and returns player to pitch")
+	ms_inst.set("_minute", 50.0)
+	ms_inst.call("_trigger_match_injury", false, 1, 14)
+	var injs_b: Array = ms_inst.get("_active_injuries")
+	var long_inj_p: Dictionary = injs_b[injs_b.size() - 1]["player"]
+	ms_inst.set("_minute", 60.0)
+	ms_inst.call("_process_active_injuries")
+	_assert(bool(long_inj_p.get("subbed_out", false)) and ms_inst.get("_active_injuries").is_empty(), "Injury recovery > 10 min triggers coach substitution after 10 minutes")
+
+	# E. Coach Substitutes User (Low Energy OR Poor Performance)
+	ms_inst.call("_start_selected_mode")
+	ms_inst.call("_start_match_kickoff")
+	ms_inst.set("_minute", 35.0)
+	ms_inst.set("_user_match_energy", 18.0)
+	ms_inst.call("_check_coach_user_substitution")
+	_assert(bool(ms_inst.get("_user_subbed_out")) and ms_inst.get("_board_sub_banner").visible, "Coach substitutes user when live energy is nearly depleted")
+	ms_inst.call("_start_selected_mode")
+	ms_inst.call("_start_match_kickoff")
+	ms_inst.set("_minute", 65.0)
+	ms_inst.set("_user_match_energy", 75.0)
+	ms_inst.set("_rating", 5.2)
+	ms_inst.call("_check_coach_user_substitution")
+	_assert(bool(ms_inst.get("_user_subbed_out")) and int(ms_inst.get("_user_sub_minute")) == 65, "Coach substitutes user when match performance rating is poor")
+
+	# F. Live Energy Drain (+20% heavier) & Event Cooldown (1-3 matches)
+	ms_inst.call("_start_selected_mode")
+	ms_inst.call("_start_match_kickoff")
+	var e_start: float = float(ms_inst.get("_user_match_energy"))
+	for _s in range(12):
+		ms_inst.call("_process_simulation", 0.25)
+	_assert(float(ms_inst.get("_user_match_energy")) < e_start - 2.0, "In-match user energy drains continuously during live simulation")
+	CareerState.career["careerMeta"]["eventCooldown"] = 2
+	_assert(not CareerState.consume_event_cooldown(), "Event cooldown blocks cutscene while remaining matches > 0")
+	CareerState.career["careerMeta"]["eventCooldown"] = 0
+	var allowed_ev: bool = CareerState.consume_event_cooldown()
+	var next_cd: int = int(CareerState.career["careerMeta"]["eventCooldown"])
+	_assert(allowed_ev and next_cd >= 1 and next_cd <= 3, "Event cooldown fires at 0 and resets strictly between 1-3 matches (next=%d)" % next_cd)
 	ms_inst.queue_free()
 
 	var VolleyScr: GDScript = load("res://scenes/minigames/VolleyMinigame.gd")
