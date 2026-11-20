@@ -4,8 +4,8 @@ signal match_completed(report: Dictionary)
 signal mode_exited
 
 enum RunMode { CAREER_MATCH, PRACTICE_MODE, DUEL_MODE, MOVIOLA_REPLAY }
-enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, FULLTIME }
-enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS }
+enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, HEADER_TIMING, QTE_DRIBBLE_DUEL, QTE_LONG_CONTROL, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, FULLTIME }
+enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS, HEADER_CROSS, DRIBBLE_DUEL, LONG_PASS_CONTROL }
 
 var run_mode: RunMode = RunMode.CAREER_MATCH
 var duel_target: Dictionary = {}
@@ -51,6 +51,8 @@ var _stamina_bar_bg: PanelContainer
 var _stamina_fill: ColorRect
 var _stamina_lbl: Label
 var _result_toast: Label
+var _rating_delta_lbl: Label
+var _qte_overlay: ShrinkingQTEOverlay
 var _exit_btn: Button
 var _pause_btn: Button
 var _pause_panel: Control
@@ -144,6 +146,22 @@ var _gk_sway_clock: float = 0.0
 var _kick_offside_flags: Array[bool] = []
 var _kick_offside_line_z: float = -35.0
 var _goal_timeline: Array[Dictionary] = []
+var _shot_on_target_credit: bool = false
+var _key_pass_awarded: bool = false
+var _qte_progress: float = 0.0
+var _qte_duration: float = 1.35
+var _qte_perfect_tol: float = 0.12
+var _qte_good_tol: float = 0.24
+var _qte_label: String = ""
+var _qte_resolved: bool = false
+var _cross_start: Vector3 = Vector3.ZERO
+var _cross_target: Vector3 = Vector3.ZERO
+var _cross_peak_y: float = 5.2
+var _cross_passer_idx: int = 0
+var _header_aim_vel: Vector3 = Vector3.ZERO
+var _header_aim_omega: Vector3 = Vector3.ZERO
+var _duel_player_start: Vector3 = Vector3.ZERO
+var _duel_def_start: Vector3 = Vector3.ZERO
 var _best_pass_openness: float = 0.0
 var _last_pass_state: String = ""
 
@@ -775,6 +793,29 @@ func _build_hud() -> void:
 	_result_toast.visible = false
 	add_child(_result_toast)
 
+	# Live Rating Delta Sub-Badge right beneath Outcome Toast (+0.1 / +0.2 / -0.3)
+	_rating_delta_lbl = Label.new()
+	_rating_delta_lbl.set_anchors_preset(Control.PRESET_CENTER)
+	_rating_delta_lbl.offset_left = -220
+	_rating_delta_lbl.offset_right = 220
+	_rating_delta_lbl.offset_top = 34
+	_rating_delta_lbl.offset_bottom = 66
+	_rating_delta_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_rating_delta_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_rating_delta_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_rating_delta_lbl.add_theme_font_size_override("font_size", 16)
+	_rating_delta_lbl.add_theme_color_override("font_outline_color", Color.BLACK)
+	_rating_delta_lbl.add_theme_constant_override("outline_size", 4)
+	_rating_delta_lbl.visible = false
+	add_child(_rating_delta_lbl)
+
+	# Shrinking Circle Quick-Time-Event Overlay (Header Timing, 1v1 Dribble Duel, Long Pass Control)
+	_qte_overlay = ShrinkingQTEOverlay.new()
+	_qte_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_qte_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_qte_overlay.visible = false
+	add_child(_qte_overlay)
+
 func _start_selected_mode() -> void:
 	_score_us = 0
 	_score_them = 0
@@ -876,6 +917,12 @@ func _process(delta: float) -> void:
 				_process_dribble_control(delta)
 			_update_pass_openness_ui()
 			_draw_aim_and_ring()
+		MatchPhase.HEADER_TIMING:
+			_process_header_timing(delta)
+		MatchPhase.QTE_DRIBBLE_DUEL:
+			_process_qte_dribble_duel(delta)
+		MatchPhase.QTE_LONG_CONTROL:
+			_process_qte_long_control(delta)
 		MatchPhase.TEAMMATE_PENALTY_WAIT:
 			_process_teammate_penalty_wait(delta)
 		MatchPhase.BALL_IN_FLIGHT:
@@ -890,6 +937,8 @@ func _process(delta: float) -> void:
 			_result_timer -= delta
 			if _result_timer <= 0.0:
 				_result_toast.visible = false
+				if _rating_delta_lbl != null:
+					_rating_delta_lbl.visible = false
 				_advance_after_moment()
 
 func _process_simulation(delta: float) -> void:
@@ -946,15 +995,21 @@ func _process_simulation(delta: float) -> void:
 		_next_moment_idx += 1
 		var r := randf()
 		var m_type := MomentType.SHOT
-		if r < 0.18:
+		if r < 0.14:
+			m_type = MomentType.HEADER_CROSS
+		elif r < 0.27:
+			m_type = MomentType.DRIBBLE_DUEL
+		elif r < 0.40:
+			m_type = MomentType.LONG_PASS_CONTROL
+		elif r < 0.52:
 			m_type = MomentType.TEAMMATE_PASS
-		elif r < 0.38:
+		elif r < 0.66:
+			m_type = MomentType.SHOT
+		elif r < 0.78:
 			m_type = MomentType.PASS
-		elif r < 0.54:
-			m_type = MomentType.DRIBBLE
-		elif r < 0.70:
+		elif r < 0.89:
 			m_type = MomentType.FREE_KICK
-		elif r < 0.82:
+		else:
 			m_type = MomentType.PENALTY
 		if _board_panel != null:
 			_board_panel.visible = false
@@ -1008,6 +1063,14 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_gk_sway_clock = 0.0
 	_kick_offside_flags.clear()
 	_kick_offside_line_z = -35.0
+	_shot_on_target_credit = false
+	_key_pass_awarded = false
+	_qte_progress = 0.0
+	_qte_resolved = false
+	if _qte_overlay != null:
+		_qte_overlay.visible = false
+	if _rating_delta_lbl != null:
+		_rating_delta_lbl.visible = false
 
 	# Setup positions on the attacking top half (goal at z = -52.5)
 	for tm in _teammates:
@@ -1036,6 +1099,15 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 			return
 		MomentType.TEAMMATE_PASS:
 			_setup_teammate_pass_to_user()
+			return
+		MomentType.HEADER_CROSS:
+			_setup_header_cross_moment()
+			return
+		MomentType.DRIBBLE_DUEL:
+			_setup_dribble_duel_qte()
+			return
+		MomentType.LONG_PASS_CONTROL:
+			_setup_long_pass_control_qte()
 			return
 		MomentType.PENALTY:
 			_player_pos = Vector3(0.0, 0.0, -40.2)
@@ -1165,6 +1237,15 @@ func _configure_moment_camera() -> void:
 	if _moment_type == MomentType.TEAMMATE_PENALTY:
 		_cam_target_pos = Vector3(0.0, 7.8, -22.0)
 		_cam_look_pos = Vector3(0.0, 0.7, -42.5)
+	elif _moment_type == MomentType.HEADER_CROSS:
+		_cam_target_pos = _player_pos + Vector3(0.0, 8.6, 15.5)
+		_cam_look_pos = Vector3(_player_pos.x * 0.35, 1.3, -47.0)
+	elif _moment_type == MomentType.DRIBBLE_DUEL:
+		_cam_target_pos = _player_pos + Vector3(1.8, 4.6, 8.5)
+		_cam_look_pos = Vector3(_player_pos.x * 0.5, 0.8, _player_pos.z - 8.0)
+	elif _moment_type == MomentType.LONG_PASS_CONTROL:
+		_cam_target_pos = _player_pos + Vector3(0.0, 9.2, 16.0)
+		_cam_look_pos = Vector3(_player_pos.x * 0.5, 1.5, _player_pos.z - 2.0)
 	elif persp == "LAPANGAN" or ((_moment_type == MomentType.PASS or _moment_type == MomentType.DRIBBLE) and persp != "BELAKANG"):
 		# Tactical High-Angle Camera
 		var tac_h: float = 14.5 if persp == "LAPANGAN" else 11.5
@@ -1186,6 +1267,15 @@ func _update_camera(delta: float) -> void:
 	elif _phase == MatchPhase.TEAMMATE_CARRY or _phase == MatchPhase.INCOMING_PASS:
 		_cam_target_pos = _cam_target_pos.lerp(_ball_pos + Vector3(0.0, 6.2, 13.5), delta * 5.0)
 		_cam_look_pos = _cam_look_pos.lerp(Vector3(_ball_pos.x * 0.45, 0.7, minf(_ball_pos.z - 6.0, -45.0)), delta * 5.5)
+	elif _phase == MatchPhase.HEADER_TIMING:
+		_cam_target_pos = _cam_target_pos.lerp(_player_pos + Vector3(0.0, 7.2, 13.5), delta * 5.0)
+		_cam_look_pos = _cam_look_pos.lerp(_player_pos.lerp(_ball_pos, 0.35) + Vector3(0.0, 1.2, -3.0), delta * 6.0)
+	elif _phase == MatchPhase.QTE_DRIBBLE_DUEL:
+		_cam_target_pos = _cam_target_pos.lerp(_player_pos + Vector3(1.5, 4.4, 8.2), delta * 5.5)
+		_cam_look_pos = _cam_look_pos.lerp(_player_pos + Vector3(0.0, 0.8, -6.5), delta * 6.0)
+	elif _phase == MatchPhase.QTE_LONG_CONTROL:
+		_cam_target_pos = _cam_target_pos.lerp(_player_pos + Vector3(0.0, 8.2, 14.5), delta * 4.5)
+		_cam_look_pos = _cam_look_pos.lerp(_player_pos.lerp(_ball_pos, 0.42) + Vector3(0.0, 1.2, 0.0), delta * 5.5)
 	elif _phase == MatchPhase.REBOUND_SCRAMBLE:
 		_cam_target_pos = _cam_target_pos.lerp(_ball_pos + Vector3(0.0, 7.6, 15.0), delta * 4.5)
 		_cam_look_pos = _cam_look_pos.lerp(Vector3(_ball_pos.x * 0.55, 0.6, minf(_ball_pos.z - 4.0, -43.0)), delta * 5.5)
@@ -1208,6 +1298,14 @@ func _input(event: InputEvent) -> void:
 			_replay_orbit_dragging = event.pressed
 		elif event is InputEventMouseMotion and _replay_orbit_dragging:
 			_replay_orbit_angle += event.relative.x * 0.012
+		return
+	if _phase in [MatchPhase.HEADER_TIMING, MatchPhase.QTE_DRIBBLE_DUEL, MatchPhase.QTE_LONG_CONTROL]:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			if event.position.y > 76:
+				_handle_qte_tap()
+		elif event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode == KEY_SPACE or event.keycode == KEY_ENTER:
+				_handle_qte_tap()
 		return
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return
@@ -1239,6 +1337,8 @@ func _release_slingshot() -> void:
 		_power_lbl.text = ""
 		return
 	_moment_banner.visible = false
+	if _rating_delta_lbl != null:
+		_rating_delta_lbl.visible = false
 	_aim_imm.clear_surfaces()
 	_ring_imm.clear_surfaces()
 
@@ -1258,15 +1358,26 @@ func _release_slingshot() -> void:
 		_moment_type == MomentType.FREE_KICK,
 		diff_mult, true
 	)
-	_ball_vel = launch["velocity"]
-	_ball_omega = launch["omega"]
-	_flight_timer = 0.0
+	_shot_on_target_credit = false
+	_key_pass_awarded = false
 	# Snapshot FIFA Law 11 Offside positions at the exact instant the ball is kicked
 	_kick_offside_line_z = _get_offside_line_z()
 	_kick_offside_flags.clear()
 	for ti in range(_teammate_positions.size()):
 		var is_off: bool = (_moment_type != MomentType.PENALTY) and _is_teammate_offside(ti)
 		_kick_offside_flags.append(is_off)
+
+	if _moment_type == MomentType.HEADER_CROSS:
+		# Step 1 complete: lock user's desired header direction, then launch high aerial cross from wing teammate!
+		_header_aim_vel = launch["velocity"]
+		_header_aim_vel.y = clampf(_header_aim_vel.y * 0.52, -1.5, 4.6)
+		_header_aim_omega = launch["omega"] * 0.55
+		_launch_header_cross_timing()
+		return
+
+	_ball_vel = launch["velocity"]
+	_ball_omega = launch["omega"]
+	_flight_timer = 0.0
 	_phase = MatchPhase.BALL_IN_FLIGHT
 	_player_sprite.frame = 7  # back-view kick frame
 	_camera_shake = 0.35 * float(launch["power_ratio"])
@@ -1358,6 +1469,8 @@ func _process_ball_flight(delta: float) -> void:
 			AudioSynth.play_post()
 			_camera_shake = 0.7
 			_post_rebound_eligible = true
+			if not _shot_by_teammate:
+				_credit_on_target_shot("KENA TIANG")
 		elif hit == "goal":
 			_handle_goal_scored()
 			return
@@ -1383,8 +1496,14 @@ func _process_ball_flight(delta: float) -> void:
 				if i < _defenders.size():
 					_defenders[i].frame = 3
 				AudioSynth.play_save()
+				if _shot_by_teammate:
+					_credit_key_pass_if_pending()
+					_update_last_shot("BLOCKED")
+					_show_moment_result("TEMBAKAN REKAN DIBLOK BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.35)
+					return
 				if _moment_type == MomentType.PASS:
 					_ball_vel = Vector3(-_ball_vel.x * 0.4, 2.2, 6.0)
+					_adjust_rating(-0.25, "UMPAN DIPOTONG")
 					_update_last_shot("BLOCKED")
 					_show_moment_result("UMPAN DIPOTONG LAWAN!", UITheme.ACCENT_RED, 1.3)
 					return
@@ -1394,18 +1513,20 @@ func _process_ball_flight(delta: float) -> void:
 					return
 				_ball_vel.z = absf(_ball_vel.z) * 0.45
 				_ball_vel.x += randf_range(-2.5, 2.5)
+				_adjust_rating(-0.20, "DIBLOK BEK")
 				_update_last_shot("BLOCKED")
 				_show_moment_result("DIBLOK BEK!", UITheme.ACCENT_RED, 1.3)
 				return
 
-		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, and FREE_KICK passes — with FIFA Law 11 Offside check!)
-		if not _shot_by_teammate and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
-			var catch_rad: float = 2.25 if (_moment_type == MomentType.PASS or _moment_type == MomentType.FREE_KICK) else 1.85
+		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, FREE_KICK, HEADER_CROSS — with FIFA Law 11 Offside check!)
+		if not _shot_by_teammate and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
+			var catch_rad: float = 2.25 if (_moment_type in [MomentType.PASS, MomentType.FREE_KICK, MomentType.HEADER_CROSS]) else 1.85
 			for ti in range(_teammate_positions.size()):
 				var tm_pos := _teammate_positions[ti]
 				if Vector2(_ball_pos.x - tm_pos.x, _ball_pos.z - tm_pos.z).length() < catch_rad and _ball_pos.y < 1.95:
 					if ti < _kick_offside_flags.size() and _kick_offside_flags[ti]:
 						AudioSynth.play_whistle(true)
+						_adjust_rating(-0.25, "OFFSIDE")
 						_update_last_shot("OFFSIDE")
 						_ticker_lbl.text = "Bendera hakim garis terangkat! Rekan berada di posisi OFFSIDE saat umpan dilepas."
 						_draw_offside_line_freeze(_kick_offside_line_z)
@@ -1413,7 +1534,7 @@ func _process_ball_flight(delta: float) -> void:
 						return
 					if ti < _teammates.size():
 						_teammates[ti].frame = 7
-					if _moment_type == MomentType.SHOT or _moment_type == MomentType.DRIBBLE:
+					if _moment_type in [MomentType.SHOT, MomentType.DRIBBLE, MomentType.HEADER_CROSS]:
 						_moment_type = MomentType.PASS
 					_passes_won += 1
 					_start_teammate_carry(ti, true)
@@ -1424,6 +1545,10 @@ func _process_ball_flight(delta: float) -> void:
 			_update_gk_ai(dt)
 			if Vector2(_ball_pos.x - _gk_pos.x, _ball_pos.z - _gk_pos.z).length() < 0.98 and _ball_pos.y < 2.25:
 				AudioSynth.play_save()
+				if _shot_by_teammate:
+					_credit_key_pass_if_pending()
+				else:
+					_credit_on_target_shot("DITEPIS KIPER")
 				var rebound_chance := 0.62 if (_shot_by_teammate or _moment_type == MomentType.PENALTY or _ball_vel.length() > 21.0) else 0.48
 				if randf() < rebound_chance and _ball_pos.z < -42.0:
 					var parry_dir := signf(_ball_pos.x - _gk_pos.x)
@@ -1458,12 +1583,20 @@ func _process_ball_flight(delta: float) -> void:
 
 	# Check Out of Bounds or Stopped
 	if _ball_pos.z < -56.0 or absf(_ball_pos.x) > 36.0 or _flight_timer > 3.2 or (_flight_timer > 0.6 and _ball_vel.length() < 1.2):
+		if _shot_by_teammate:
+			_credit_key_pass_if_pending()
+			_update_last_shot("WIDE")
+			_show_moment_result("TEMBAKAN REKAN MELEBAR!", UITheme.ACCENT_GOLD if _key_pass_awarded else Color("#F97316"), 1.35)
+			return
 		if _moment_type == MomentType.PASS:
+			_adjust_rating(-0.25, "UMPAN GAGAL")
 			_update_last_shot("WIDE")
 			_show_moment_result("UMPAN TERLALU JAUH!", Color("#F97316"), 1.3)
 			return
 		if _moment_type == MomentType.PENALTY or _moment_type == MomentType.TEAMMATE_PENALTY:
 			_save_moviola_clip("PENALTI GAGAL")
+		if not _shot_on_target_credit:
+			_adjust_rating(-0.30, "MELEBAR")
 		_update_last_shot("WIDE")
 		_show_moment_result("MELEBAR!", Color("#F97316"), 1.3)
 
@@ -1543,8 +1676,8 @@ func _get_moment_time_scales() -> Dictionary:
 
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return {"teammate": 1.0, "defender_speed": base_def_spd, "active_dribble": false}
-	if _moment_type == MomentType.FREE_KICK:
-		# Teammates stand stationary in optimal positions during free kick aiming
+	if _moment_type == MomentType.FREE_KICK or _moment_type == MomentType.HEADER_CROSS:
+		# Teammates stand stationary in optimal positions during free kick & aerial cross header aiming
 		return {"teammate": 0.0, "defender_speed": 0.0, "active_dribble": false}
 	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 		if _is_user_dribbling_active():
@@ -1611,6 +1744,7 @@ func _animate_gk_idle(delta: float) -> void:
 						"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
 					})
 					AudioSynth.play_save()
+					_adjust_rating(-0.30, "DIREBUT BEK")
 					_show_moment_result("DIREBUT BEK!", UITheme.ACCENT_RED, 1.2)
 					return
 			else:
@@ -1630,8 +1764,8 @@ func _animate_gk_idle(delta: float) -> void:
 	_sync_3d_sprites()
 
 func _animate_teammates(delta: float) -> void:
-	# During Free Kick aiming, teammates stay completely stationary in their optimal set-piece positions
-	if _phase == MatchPhase.KEY_MOMENT_AIM and _moment_type == MomentType.FREE_KICK:
+	# During Free Kick & Aerial Cross Header aiming, teammates stay stationary in optimal positions
+	if _phase == MatchPhase.KEY_MOMENT_AIM and (_moment_type == MomentType.FREE_KICK or _moment_type == MomentType.HEADER_CROSS):
 		for i in range(_teammates.size()):
 			if _teammates[i].visible:
 				_teammates[i].frame = 4
@@ -1805,11 +1939,12 @@ func _process_teammate_carry(delta: float) -> void:
 
 	if hit_def:
 		AudioSynth.play_save()
+		_credit_key_pass_if_pending()
 		_shot_by_teammate = false
 		_carry_assist_pending = false
 		_update_last_shot("BLOCKED")
 		_add_board_event(int(_minute), "INFO", "%d' Rekan yang membawa bola dihentikan bek lawan!" % int(_minute), false)
-		_show_moment_result("REKAN DIHENTIKAN BEK!", UITheme.ACCENT_RED, 1.35)
+		_show_moment_result("REKAN DIHENTIKAN BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.35)
 		return
 
 	# Opportunity: carrying teammate passes back to our rushing striker (one-two)!
@@ -1968,7 +2103,7 @@ func _enter_user_follow_up_shot(title_msg: String, sub_msg: String) -> void:
 	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.95)
 	_moment_title_lbl.text = title_msg
 	_moment_sub_lbl.text = sub_msg
-	_ticker_lbl.text = "Umpan rekan matang! Giring bebas atau langsung tembak/umpan!"
+	_ticker_lbl.text = "Peluang terbuka! Giring bebas atau langsung tembak/umpan!"
 	_moment_banner.visible = true
 	_update_pass_openness_ui()
 	_sync_action_bar()
@@ -2077,6 +2212,10 @@ func _process_rebound_scramble(delta: float) -> void:
 		if Vector2(_gk_pos.x - _ball_pos.x, _gk_pos.z - _ball_pos.z).length() < 1.18:
 			_gk_sprite.frame = 3
 			AudioSynth.play_save()
+			if _carry_assist_pending:
+				_credit_key_pass_if_pending()
+			elif not _shot_on_target_credit and not _shot_by_teammate:
+				_adjust_rating(-0.15, "REBOUND GAGAL")
 			_show_moment_result("REBOUND DIAMANKAN KIPER!", UITheme.ACCENT_CYAN, 1.35)
 			return
 		for i in range(_defender_positions.size()):
@@ -2084,6 +2223,10 @@ func _process_rebound_scramble(delta: float) -> void:
 				if i < _defenders.size():
 					_defenders[i].frame = 3
 				AudioSynth.play_save()
+				if _carry_assist_pending:
+					_credit_key_pass_if_pending()
+				elif not _shot_on_target_credit and not _shot_by_teammate:
+					_adjust_rating(-0.15, "REBOUND GAGAL")
 				_show_moment_result("REBOUND DISAPU BEK LAWAN!", UITheme.ACCENT_RED, 1.35)
 				return
 		if Vector2(_player_pos.x - _ball_pos.x, _player_pos.z - _ball_pos.z).length() < 1.25 and _ball_pos.z < -24.0:
@@ -2097,6 +2240,10 @@ func _process_rebound_scramble(delta: float) -> void:
 				return
 
 	if _rebound_timer > 3.2 or _ball_pos.z < -56.0 or _ball_pos.z > -16.0 or absf(_ball_pos.x) > 36.0:
+		if _carry_assist_pending:
+			_credit_key_pass_if_pending()
+		elif not _shot_on_target_credit and not _shot_by_teammate:
+			_adjust_rating(-0.15, "REBOUND GAGAL")
 		_show_moment_result("BOLA REBOUND KELUAR!", Color("#F97316"), 1.25)
 
 func _setup_teammate_penalty() -> void:
@@ -2198,7 +2345,7 @@ func _handle_goal_scored() -> void:
 		var tm_name: String = _pick_squad_member_name(true)
 		if _carry_assist_pending:
 			_my_assists += 1
-			_rating = minf(10.0, _rating + 1.1)
+			_adjust_rating(1.1, "ASSIST")
 			_update_score_label()
 			_update_last_shot("GOAL")
 			_add_board_event(int(_minute), "GOAL", "%d' ASSIST! Rekan tuntaskan umpanmu menjadi GOL!" % int(_minute), true)
@@ -2209,7 +2356,7 @@ func _handle_goal_scored() -> void:
 				create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
 			_show_moment_result("ASSIST! REKAN CETAK GOL!", UITheme.ACCENT_GOLD, 1.6)
 			return
-		_rating = minf(10.0, _rating + 0.35)
+		_adjust_rating(0.35, "GOL TIM")
 		_update_score_label()
 		_add_board_event(int(_minute), "GOAL", "%d' GOL REKAN SETIM!" % int(_minute), true)
 		_save_moviola_clip("GOL REKAN SETIM!")
@@ -2224,7 +2371,7 @@ func _handle_goal_scored() -> void:
 		_penalties_scored += 1
 	elif _moment_type == MomentType.FREE_KICK:
 		_freekicks_scored += 1
-	_rating = minf(10.0, _rating + 1.3)
+	_adjust_rating(1.3, "GOL")
 	_duel_score += 2
 	_update_score_label()
 	_update_last_shot("GOAL")
@@ -2262,6 +2409,8 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
+	if _qte_overlay != null:
+		_qte_overlay.visible = false
 	_result_toast.text = msg
 	_result_toast.add_theme_color_override("font_color", col)
 	_result_toast.pivot_offset = _result_toast.size * 0.5
@@ -2283,7 +2432,12 @@ func _advance_after_moment() -> void:
 			return
 		_minute_lbl.text = "%d/5" % _practice_round
 		_score_lbl.text = "LATIHAN (%d GOL)" % _my_goals
-		var p_next := MomentType.TEAMMATE_PASS if _practice_round == 3 else (MomentType.FREE_KICK if _practice_round % 2 == 0 else MomentType.SHOT)
+		var p_next := MomentType.SHOT
+		match _practice_round:
+			2: p_next = MomentType.HEADER_CROSS
+			3: p_next = MomentType.DRIBBLE_DUEL
+			4: p_next = MomentType.LONG_PASS_CONTROL
+			5: p_next = MomentType.FREE_KICK
 		_trigger_key_moment(p_next)
 		return
 
@@ -2438,10 +2592,12 @@ func _draw_aim_and_ring() -> void:
 		for vtx in [tip, b_r, b_l]:
 			_ring_imm.surface_set_color(arr_col)
 			_ring_imm.surface_add_vertex(vtx)
-	# Draw live teammate movement rings, free-kick target rings, & Offside line warning!
-	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK]:
+	# Draw live teammate movement rings, free-kick/header target rings, & Offside line warning!
+	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS]:
 		var any_offside := false
 		for ti in range(_teammate_positions.size()):
+			if _moment_type == MomentType.HEADER_CROSS and ti == _cross_passer_idx:
+				continue
 			var tp: Vector3 = _teammate_positions[ti]
 			var is_off: bool = _is_teammate_offside(ti)
 			if is_off:
@@ -2461,7 +2617,7 @@ func _draw_aim_and_ring() -> void:
 				for vtx in [p0_in, p0_out, p1_out, p0_in, p1_out, p1_in]:
 					_ring_imm.surface_set_color(tm_col)
 					_ring_imm.surface_add_vertex(vtx)
-			if _moment_type != MomentType.FREE_KICK and ti < _teammate_vels.size() and _teammate_vels[ti].length() > 0.35:
+			if _moment_type != MomentType.FREE_KICK and _moment_type != MomentType.HEADER_CROSS and ti < _teammate_vels.size() and _teammate_vels[ti].length() > 0.35:
 				var vdir := _teammate_vels[ti].normalized()
 				var side_v := Vector3(-vdir.z, 0.0, vdir.x) * 0.22
 				var r_start := tp + Vector3(0.0, 0.05, 0.0) + vdir * 1.4
@@ -2505,13 +2661,22 @@ func _draw_aim_and_ring() -> void:
 	_power_lbl.text = "%d%%" % pct
 	_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
 
+	var preview_origin: Vector3 = Vector3(_player_pos.x, 1.55, _player_pos.z) if _moment_type == MomentType.HEADER_CROSS else _ball_pos
+	var preview_vel: Vector3 = launch["velocity"]
+	var preview_omega: Vector3 = launch["omega"]
+	if _moment_type == MomentType.HEADER_CROSS:
+		preview_vel.y = clampf(preview_vel.y * 0.52, -1.5, 4.6)
+		preview_omega *= 0.55
+
 	var steps_preview := int(lerpf(12.0, 28.0, float(ak + (bm if _moment_type == MomentType.FREE_KICK else 0)) / 180.0))
-	var pts := SlingshotPhysics.predict_trajectory(_ball_pos, launch["velocity"], launch["omega"], ef, steps_preview, 0.04)
+	var pts := SlingshotPhysics.predict_trajectory(preview_origin, preview_vel, preview_omega, ef, steps_preview, 0.04)
 	if pts.size() >= 2:
-		if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK]:
+		if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS]:
 			var aims_tm_idx: int = -1
 			for pt in pts:
 				for ti in range(_teammate_positions.size()):
+					if _moment_type == MomentType.HEADER_CROSS and ti == _cross_passer_idx:
+						continue
 					var tp: Vector3 = _teammate_positions[ti]
 					if Vector2(pt.x - tp.x, pt.z - tp.z).length() < 2.2:
 						aims_tm_idx = ti
@@ -2523,7 +2688,7 @@ func _draw_aim_and_ring() -> void:
 					_power_lbl.text = "%d%% • OFFSIDE!" % pct
 					_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_RED)
 				else:
-					_power_lbl.text = "%d%% • UMPAN" % pct
+					_power_lbl.text = "%d%% • %s" % [pct, ("SUNDUL UMPAN" if _moment_type == MomentType.HEADER_CROSS else "UMPAN")]
 		_aim_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in range(pts.size() - 1):
 			var p0 := pts[i]
@@ -2560,6 +2725,395 @@ func _draw_ball_trail() -> void:
 		_trail_imm.surface_add_vertex(_trail_points[i])
 	_trail_imm.surface_end()
 
+func _adjust_rating(delta_r: float, reason: String = "") -> void:
+	_rating = clampf(_rating + delta_r, 3.0, 10.0)
+	if _rating_delta_lbl != null:
+		var sign_s: String = "+" if delta_r >= 0.0 else ""
+		var tag_s: String = ("  (%s)" % reason) if not reason.is_empty() else ""
+		_rating_delta_lbl.text = "RATING %s%.1f%s  •  %.1f" % [sign_s, delta_r, tag_s, _rating]
+		_rating_delta_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if delta_r > 0.0 else UITheme.ACCENT_RED)
+		_rating_delta_lbl.visible = true
+
+func _credit_on_target_shot(reason: String) -> void:
+	if _shot_on_target_credit:
+		return
+	_shot_on_target_credit = true
+	_adjust_rating(0.1, reason)
+
+func _credit_key_pass_if_pending() -> void:
+	if _key_pass_awarded or not _carry_assist_pending:
+		return
+	_key_pass_awarded = true
+	_adjust_rating(0.2, "UMPAN KUNCI")
+
+func _configure_qte_timing(stat_val: int) -> void:
+	var diff_s: String = str(SettingsManager.data.get("difficulty", "NORMAL"))
+	match diff_s:
+		"MUDAH": _qte_duration = 1.65
+		"SULIT": _qte_duration = 1.12
+		"EKSTREM": _qte_duration = 0.96
+		_: _qte_duration = 1.35
+	var stat_t: float = clampf(float(stat_val) / 99.0, 0.0, 1.0)
+	_qte_perfect_tol = lerpf(0.09, 0.14, stat_t)
+	_qte_good_tol = lerpf(0.19, 0.28, stat_t)
+	_qte_progress = 0.0
+	_qte_resolved = false
+
+func _update_qte_overlay_pos(world_pt: Vector3) -> void:
+	if _qte_overlay == null:
+		return
+	var scr := Vector2(480.0, 290.0)
+	if _camera != null and not _camera.is_position_behind(world_pt):
+		var proj := _camera.unproject_position(world_pt)
+		scr = Vector2(clampf(proj.x, 230.0, 730.0), clampf(proj.y, 185.0, 390.0))
+	_qte_overlay.configure_state(scr, _qte_progress, _qte_perfect_tol, _qte_good_tol, _qte_label)
+	_qte_overlay.visible = true
+	_qte_overlay.queue_redraw()
+
+# ---------------------------------------------------------------------------
+# NEW INTERACTIVE MOMENT 1: AERIAL CROSS HEADER (AIM -> LOB -> TIMED HEADER)
+# ---------------------------------------------------------------------------
+func _setup_header_cross_moment() -> void:
+	_phase = MatchPhase.KEY_MOMENT_AIM
+	_moment_type = MomentType.HEADER_CROSS
+	var side: float = -1.0 if randf() < 0.5 else 1.0
+	_player_pos = Vector3(randf_range(-3.2, 3.2), 0.0, randf_range(-43.0, -39.5))
+	var wing_pos := Vector3(side * 15.5, 0.0, -35.8)
+	_cross_passer_idx = 0
+	_cross_start = Vector3(wing_pos.x - side * 0.6, 0.15, wing_pos.z)
+	_cross_target = Vector3(_player_pos.x, 1.55, _player_pos.z)
+	_cross_peak_y = 5.4
+	_ball_pos = _cross_start
+
+	# Teammate 0: wing crosser; Teammates 1 & 2: box attacking options for header layoff!
+	var tm_spots := [
+		wing_pos,
+		Vector3(-side * 5.2, 0.0, -42.5),
+		Vector3(clampf(_player_pos.x + side * 4.5, -10.0, 10.0), 0.0, -40.5),
+	]
+	for i in range(tm_spots.size()):
+		if i < _teammates.size():
+			_teammates[i].visible = true
+			_teammate_positions.append(tm_spots[i])
+			_teammate_vels.append(Vector3.ZERO)
+			_teammate_targets.append(tm_spots[i])
+			_teammate_open_scores.append(3.4)
+
+	# Defenders inside box (placed slightly deeper so teammates start cleanly onside)
+	var def_spots := [
+		Vector3(_player_pos.x + side * 1.9, 0.0, -44.2),
+		Vector3(-side * 4.0, 0.0, -44.5),
+	]
+	for i in range(def_spots.size()):
+		if i < _defenders.size():
+			_defenders[i].visible = true
+			_defender_positions.append(def_spots[i])
+			_defender_dirs.append(1.0)
+
+	_moment_title_lbl.text = "UMPAN LAMBUNG! ARAHKAN SUNDULAN"
+	_moment_sub_lbl.text = "Tarik ketapel untuk arah sundulan ke GAWANG atau REKAN, lalu tap saat bola pas!"
+	_ticker_lbl.text = "Rekan siap melepas umpan lambung — tentukan arah sundulanmu dulu!"
+	_moment_banner.visible = true
+	_spin_pad.visible = true
+	_power_lbl.visible = true
+	_sync_action_bar()
+	_configure_moment_camera()
+	_sync_3d_sprites()
+	_draw_aim_and_ring()
+	AudioSynth.play_whistle(false)
+
+func _launch_header_cross_timing() -> void:
+	_phase = MatchPhase.HEADER_TIMING
+	var ak := CareerState.get_effective_attribute("akurasi") if CareerState.has_active_career else 68
+	var fis := CareerState.get_effective_attribute("fisik") if CareerState.has_active_career else 68
+	_configure_qte_timing(int((ak + fis) / 2))
+	_qte_label = "SUNDUL SEKARANG!"
+	_spin_pad.visible = false
+	_power_lbl.visible = false
+	if _cross_passer_idx < _teammates.size():
+		_teammates[_cross_passer_idx].frame = 7
+	_moment_title_lbl.text = "BOLA LAMBUNG DATANG!"
+	_moment_sub_lbl.text = "Tunggu momen tepat saat bola sampai di kepalamu lalu TAP / KLIK / SPASI!"
+	_ticker_lbl.text = "Bola lambung datang! Tunggu momen tepat menyundul!"
+	_moment_banner.visible = true
+	_trail_points.clear()
+	_trail_imm.clear_surfaces()
+	AudioSynth.play_kick(0.82)
+	_update_qte_overlay_pos(_cross_target)
+
+func _process_header_timing(delta: float) -> void:
+	_qte_progress += delta / maxf(0.4, _qte_duration)
+	var t_arc: float = clampf(_qte_progress, 0.0, 1.18)
+	var p: Vector3 = _cross_start.lerp(_cross_target, minf(1.0, t_arc))
+	if t_arc <= 1.0:
+		p.y = lerpf(_cross_start.y, _cross_target.y, t_arc) + sin(t_arc * PI) * _cross_peak_y
+	else:
+		# Ball sails slightly past user if late
+		var past_dir := (_cross_target - _cross_start).normalized()
+		p = _cross_target + Vector3(past_dir.x, -0.45, past_dir.z) * ((t_arc - 1.0) * 14.0)
+	_ball_pos = p
+	_trail_points.append(_ball_pos)
+	if _trail_points.size() > 20:
+		_trail_points.pop_front()
+	_draw_ball_trail()
+	_sync_3d_sprites()
+	_update_qte_overlay_pos(_cross_target)
+
+	if _qte_progress > 1.24 and not _qte_resolved:
+		_qte_resolved = true
+		if _qte_overlay != null:
+			_qte_overlay.visible = false
+		_adjust_rating(-0.25, "TERLAMBAT SUNDUL")
+		AudioSynth.play_save()
+		_show_moment_result("TERLAMBAT MENYUNDUL!", UITheme.ACCENT_RED, 1.35)
+
+# ---------------------------------------------------------------------------
+# NEW INTERACTIVE MOMENT 2: 1v1 DRIBBLE DUEL (SHRINKING CIRCLE QTE)
+# ---------------------------------------------------------------------------
+func _setup_dribble_duel_qte() -> void:
+	_phase = MatchPhase.QTE_DRIBBLE_DUEL
+	_moment_type = MomentType.DRIBBLE_DUEL
+	var drib := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
+	_configure_qte_timing(drib)
+	_qte_label = "KECOH BEK!"
+	_spin_pad.visible = false
+	_power_lbl.visible = false
+	if _dribble_pad != null:
+		_dribble_pad.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
+
+	var sx: float = randf_range(-5.0, 5.0)
+	_player_pos = Vector3(sx, 0.0, -26.5)
+	_duel_player_start = _player_pos
+	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.85)
+	_duel_def_start = Vector3(sx + randf_range(-0.6, 0.6), 0.0, -34.2)
+
+	# Defender 0 faces user 1v1; Defenders 1 & 2 cover further back
+	var def_spots := [
+		_duel_def_start,
+		Vector3(clampf(sx - 6.5, -16.0, 16.0), 0.0, -40.5),
+		Vector3(clampf(sx + 6.5, -16.0, 16.0), 0.0, -41.0),
+	]
+	for i in range(def_spots.size()):
+		if i < _defenders.size():
+			_defenders[i].visible = true
+			_defender_positions.append(def_spots[i])
+			_defender_dirs.append(1.0)
+
+	# 3 attacking teammates onside ready after user beats the 1v1 defender
+	var tm_spots := [
+		Vector3(clampf(sx + 7.5, -16.0, 16.0), 0.0, -34.0),
+		Vector3(clampf(sx - 7.0, -16.0, 16.0), 0.0, -35.5),
+		Vector3(clampf(-sx * 0.5, -12.0, 12.0), 0.0, -30.5),
+	]
+	for i in range(tm_spots.size()):
+		if i < _teammates.size():
+			_teammates[i].visible = true
+			_teammate_positions.append(tm_spots[i])
+			_teammate_vels.append(Vector3(0.0, 0.0, -2.5))
+			_teammate_targets.append(Vector3(tm_spots[i].x, 0.0, -46.5))
+			_teammate_open_scores.append(3.2)
+
+	_moment_title_lbl.text = "DUEL 1v1 DRIBEL!"
+	_moment_sub_lbl.text = "Bek menghadang! TAP / KLIK / SPASI saat lingkaran mengecil pas di cincin hijau!"
+	_ticker_lbl.text = "Duel satu lawan satu! Waktunya mengecoh bek lawan!"
+	_moment_banner.visible = true
+	_sync_action_bar()
+	_configure_moment_camera()
+	_sync_3d_sprites()
+	_update_qte_overlay_pos(_player_pos + Vector3(0.0, 1.4, -2.0))
+	AudioSynth.play_whistle(false)
+
+func _process_qte_dribble_duel(delta: float) -> void:
+	_qte_progress += delta / maxf(0.4, _qte_duration)
+	var t_app: float = clampf(_qte_progress, 0.0, 1.15)
+	var stride_back: int = 5 if fmod(_anim_clock, 0.26) < 0.13 else 6
+	var stride_front: int = 1 if fmod(_anim_clock, 0.28) < 0.14 else 2
+	_player_pos = _duel_player_start.lerp(Vector3(_duel_player_start.x, 0.0, _duel_def_start.z + 2.4), minf(1.0, t_app))
+	_player_sprite.frame = stride_back
+	var hop := absf(sin(_anim_clock * 15.0)) * 0.055
+	_ball_pos = Vector3(_player_pos.x, 0.115 + hop, _player_pos.z - 0.82)
+	if not _defender_positions.is_empty():
+		_defender_positions[0] = _duel_def_start.lerp(Vector3(_duel_player_start.x, 0.0, _duel_def_start.z + 1.1), minf(1.0, t_app))
+		_defenders[0].frame = stride_front
+	_sync_3d_sprites()
+	_update_qte_overlay_pos(_player_pos + Vector3(0.0, 1.4, -1.2))
+
+	if _qte_progress > 1.24 and not _qte_resolved:
+		_qte_resolved = true
+		if _qte_overlay != null:
+			_qte_overlay.visible = false
+		if not _defenders.is_empty():
+			_defenders[0].frame = 3
+		AudioSynth.play_save()
+		_adjust_rating(-0.30, "DRIBEL GAGAL")
+		_show_moment_result("DRIBEL GAGAL! DIREBUT BEK", UITheme.ACCENT_RED, 1.35)
+
+# ---------------------------------------------------------------------------
+# NEW INTERACTIVE MOMENT 3: LONG PASS FIRST-TOUCH CONTROL (SHRINKING CIRCLE QTE)
+# ---------------------------------------------------------------------------
+func _setup_long_pass_control_qte() -> void:
+	_phase = MatchPhase.QTE_LONG_CONTROL
+	_moment_type = MomentType.LONG_PASS_CONTROL
+	var drib := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
+	var fis := CareerState.get_effective_attribute("fisik") if CareerState.has_active_career else 68
+	_configure_qte_timing(int((drib + fis) / 2))
+	_qte_duration *= 1.12
+	_qte_label = "KONTROL BOLA!"
+	_spin_pad.visible = false
+	_power_lbl.visible = false
+	if _dribble_pad != null:
+		_dribble_pad.visible = false
+	if _stamina_bar_bg != null:
+		_stamina_bar_bg.visible = false
+
+	var side: float = -1.0 if randf() < 0.5 else 1.0
+	_player_pos = Vector3(clampf(-side * randf_range(3.5, 7.5), -11.0, 11.0), 0.0, randf_range(-32.5, -27.5))
+	var passer_pos := Vector3(side * 13.5, 0.0, -7.5)
+	_cross_start = Vector3(passer_pos.x, 0.15, passer_pos.z - 0.6)
+	_cross_target = Vector3(_player_pos.x, 0.32, _player_pos.z - 0.55)
+	_cross_peak_y = 6.2
+	_ball_pos = _cross_start
+
+	var tm_spots := [
+		passer_pos,
+		Vector3(clampf(_player_pos.x + side * 7.5, -16.0, 16.0), 0.0, _player_pos.z - 4.0),
+		Vector3(clampf(-_player_pos.x * 0.5, -13.0, 13.0), 0.0, _player_pos.z - 6.0),
+	]
+	for i in range(tm_spots.size()):
+		if i < _teammates.size():
+			_teammates[i].visible = true
+			_teammate_positions.append(tm_spots[i])
+			_teammate_vels.append(Vector3(0.0, 0.0, -2.6))
+			_teammate_targets.append(Vector3(tm_spots[i].x, 0.0, -46.5))
+			_teammate_open_scores.append(3.2)
+	_teammates[0].frame = 7
+
+	var def_spots := [
+		Vector3(clampf(_player_pos.x + side * 2.4, -14.0, 14.0), 0.0, _player_pos.z - 7.5),
+		Vector3(clampf(tm_spots[1].x - side * 1.5, -16.0, 16.0), 0.0, tm_spots[1].z - 3.5),
+		Vector3(clampf(tm_spots[2].x + side * 1.5, -16.0, 16.0), 0.0, tm_spots[2].z - 3.2),
+	]
+	for i in range(def_spots.size()):
+		if i < _defenders.size():
+			_defenders[i].visible = true
+			_defender_positions.append(def_spots[i])
+			_defender_dirs.append(1.0)
+
+	_moment_title_lbl.text = "UMPAN JAUH MELAMBUNG!"
+	_moment_sub_lbl.text = "TAP / KLIK / SPASI tepat saat lingkaran pas untuk mengontrol bola!"
+	_ticker_lbl.text = "Rekan mengirim umpan lambung jauh — siapkan sentuhan pertamamu!"
+	_moment_banner.visible = true
+	_trail_points.clear()
+	_trail_imm.clear_surfaces()
+	_sync_action_bar()
+	_configure_moment_camera()
+	_sync_3d_sprites()
+	_update_qte_overlay_pos(_player_pos + Vector3(0.0, 1.3, 0.0))
+	AudioSynth.play_kick(0.92)
+
+func _process_qte_long_control(delta: float) -> void:
+	_qte_progress += delta / maxf(0.4, _qte_duration)
+	var t_arc: float = clampf(_qte_progress, 0.0, 1.18)
+	var p: Vector3 = _cross_start.lerp(_cross_target, minf(1.0, t_arc))
+	if t_arc <= 1.0:
+		p.y = lerpf(_cross_start.y, _cross_target.y, t_arc) + sin(t_arc * PI) * _cross_peak_y
+	else:
+		p = _cross_target + Vector3(0.0, 0.4, -6.5) * (t_arc - 1.0)
+	_ball_pos = p
+	_trail_points.append(_ball_pos)
+	if _trail_points.size() > 22:
+		_trail_points.pop_front()
+	_draw_ball_trail()
+	_sync_3d_sprites()
+	_update_qte_overlay_pos(_player_pos + Vector3(0.0, 1.3, 0.0))
+
+	if _qte_progress > 1.24 and not _qte_resolved:
+		_qte_resolved = true
+		if _qte_overlay != null:
+			_qte_overlay.visible = false
+		AudioSynth.play_save()
+		_adjust_rating(-0.30, "GAGAL KONTROL")
+		_show_moment_result("GAGAL KONTROL BOLA!", UITheme.ACCENT_RED, 1.35)
+
+func _handle_qte_tap() -> void:
+	if _qte_resolved:
+		return
+	_qte_resolved = true
+	if _qte_overlay != null:
+		_qte_overlay.visible = false
+	var err: float = absf(_qte_progress - 1.0)
+	var is_perfect: bool = (err <= _qte_perfect_tol)
+	var is_good: bool = (err <= _qte_good_tol)
+
+	if _phase == MatchPhase.HEADER_TIMING:
+		_moment_banner.visible = false
+		if is_good:
+			_player_sprite.frame = 7
+			var pow_scale: float = 1.08 if is_perfect else 0.94
+			_ball_pos = Vector3(_player_pos.x, 1.55, _player_pos.z - 0.35)
+			_ball_vel = _header_aim_vel * pow_scale
+			if not is_perfect:
+				_ball_vel.x += randf_range(-1.4, 1.4)
+			_ball_omega = _header_aim_omega
+			_flight_timer = 0.0
+			_phase = MatchPhase.BALL_IN_FLIGHT
+			_camera_shake = 0.45 if is_perfect else 0.25
+			AudioSynth.play_kick(0.95 if is_perfect else 0.72)
+			if is_perfect:
+				_adjust_rating(0.15, "SUNDULAN SEMPURNA")
+			_ticker_lbl.text = "SUNDULAN SEMPURNA!" if is_perfect else "Sundulan terarah!"
+			_shots_telemetry.append({
+				"type": "HEADER_CROSS", "outcome": "WIDE",
+				"pitchCoord": {"x": clampf((_ball_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _ball_pos.z) / 52.5, 0.05, 0.95)},
+				"goalCoord": {"x": 0.5, "y": 0.5},
+				"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
+			})
+		else:
+			var early_s: String = "TERLALU CEPAT MENYUNDUL!" if _qte_progress < 1.0 else "SUNDULAN MELESET!"
+			AudioSynth.play_save()
+			_adjust_rating(-0.25, "SUNDULAN GAGAL")
+			_show_moment_result(early_s, UITheme.ACCENT_RED, 1.35)
+		return
+
+	if _phase == MatchPhase.QTE_DRIBBLE_DUEL:
+		if is_good:
+			_dribbles_won += 1
+			_adjust_rating(0.30 if is_perfect else 0.20, "BEK TERLEWATI")
+			var side_ev: float = 1.0 if _player_pos.x <= 0.0 else -1.0
+			_player_pos = Vector3(clampf(_player_pos.x + side_ev * 2.2, -24.0, 24.0), 0.0, clampf(_duel_def_start.z - 2.6, -46.0, -20.0))
+			if not _defender_positions.is_empty():
+				_defender_positions[0] = Vector3(_duel_def_start.x - side_ev * 1.5, 0.0, _duel_def_start.z + 3.2)
+				_defenders[0].frame = 3
+			AudioSynth.play_ring_tap(true)
+			_enter_user_follow_up_shot(
+				"BEK TERLEWATI! (%s)" % ("SEMPURNA!" if is_perfect else "BAGUS!"),
+				"Ruang terbuka! Gerak bebas, tembak ke gawang, atau umpan rekan!"
+			)
+		else:
+			if not _defenders.is_empty():
+				_defenders[0].frame = 3
+			AudioSynth.play_save()
+			_adjust_rating(-0.30, "DRIBEL GAGAL")
+			_show_moment_result("DRIBEL GAGAL! DIREBUT BEK", UITheme.ACCENT_RED, 1.35)
+		return
+
+	if _phase == MatchPhase.QTE_LONG_CONTROL:
+		if is_good:
+			_adjust_rating(0.20 if is_perfect else 0.10, "KONTROL SEMPURNA")
+			_trail_points.clear()
+			_trail_imm.clear_surfaces()
+			AudioSynth.play_ring_tap(true)
+			_enter_user_follow_up_shot(
+				"KONTROL %s!" % ("SEMPURNA" if is_perfect else "BAGUS"),
+				"Bola jinak di kakimu! Giring bebas atau langsung tembak/umpan!"
+			)
+		else:
+			AudioSynth.play_save()
+			_adjust_rating(-0.30, "GAGAL KONTROL")
+			_show_moment_result("GAGAL KONTROL BOLA!", UITheme.ACCENT_RED, 1.35)
+
 func _moment_type_str() -> String:
 	match _moment_type:
 		MomentType.PASS: return "PASS"
@@ -2567,6 +3121,9 @@ func _moment_type_str() -> String:
 		MomentType.FREE_KICK: return "FREE_KICK"
 		MomentType.PENALTY: return "PENALTY"
 		MomentType.TEAMMATE_PASS: return "TEAMMATE_PASS"
+		MomentType.HEADER_CROSS: return "HEADER_CROSS"
+		MomentType.DRIBBLE_DUEL: return "DRIBBLE_DUEL"
+		MomentType.LONG_PASS_CONTROL: return "LONG_PASS_CONTROL"
 		_: return "OPEN_PLAY"
 
 func _update_score_label() -> void:
@@ -3271,3 +3828,49 @@ class DribbleJoystickPad extends Control:
 		draw_circle(knob, 17.0, active_col)
 		draw_circle(knob - Vector2(4.0, 4.0), 5.0, Color(1.0, 1.0, 1.0, 0.65))
 		draw_arc(knob, 18.0, 0.0, TAU, 24, Color.WHITE, 2.0)
+
+
+class ShrinkingQTEOverlay extends Control:
+	var center_pos: Vector2 = Vector2(480.0, 290.0)
+	var progress: float = 0.0
+	var perfect_tol: float = 0.12
+	var good_tol: float = 0.24
+	var prompt_label: String = "TAP!"
+
+	func configure_state(pos: Vector2, prog: float, p_tol: float, g_tol: float, lbl: String) -> void:
+		center_pos = pos
+		progress = prog
+		perfect_tol = p_tol
+		good_tol = g_tol
+		prompt_label = lbl
+
+	func _draw() -> void:
+		var c := center_pos
+		var target_r: float = 46.0
+		var start_r: float = 128.0
+		var shrink_r: float = maxf(16.0, lerpf(start_r, target_r, progress))
+		var band_px: float = maxf(8.0, (start_r - target_r) * good_tol)
+		var err: float = absf(progress - 1.0)
+		var in_perfect: bool = (err <= perfect_tol)
+		var in_good: bool = (err <= good_tol)
+
+		# Subtle dark backing disc
+		draw_circle(c, target_r + band_px + 6.0, Color(0.02, 0.05, 0.11, 0.56))
+		# Sweet-spot green target zone ring
+		draw_arc(c, target_r, 0.0, TAU, 48, Color(0.16, 0.85, 0.45, 0.34), band_px * 1.45)
+		draw_arc(c, target_r, 0.0, TAU, 48, Color("#FACC15") if in_perfect else Color("#4ADE80"), 3.2)
+		# Inner center pulse dot
+		draw_circle(c, 8.0, Color("#FACC15") if in_perfect else Color(0.18, 0.82, 0.92, 0.78))
+
+		# Shrinking outer ring!
+		var ring_col: Color = Color("#FACC15") if in_perfect else (Color("#4ADE80") if in_good else (Color("#EF4444") if progress > 1.0 + good_tol else Color("#F8FAFC")))
+		draw_arc(c, shrink_r, 0.0, TAU, 48, Color(ring_col.r, ring_col.g, ring_col.b, 0.32), 9.0)
+		draw_arc(c, shrink_r, 0.0, TAU, 48, ring_col, 4.0)
+
+		# Crisp action label & tap instruction below ring
+		var fnt := UITheme.get_display_font()
+		var lbl_y := c.y + target_r + band_px + 24.0
+		draw_rect(Rect2(c.x - 120.0, lbl_y - 18.0, 240.0, 42.0), Color(0.03, 0.07, 0.14, 0.88))
+		draw_rect(Rect2(c.x - 120.0, lbl_y - 18.0, 240.0, 42.0), ring_col, false, 2.0)
+		draw_string(fnt, Vector2(c.x - 116.0, lbl_y + 1.0), prompt_label, HORIZONTAL_ALIGNMENT_CENTER, 232.0, 14, ring_col)
+		draw_string(UITheme.get_ui_font(), Vector2(c.x - 116.0, lbl_y + 17.0), "TAP / KLIK / SPASI SAAT PAS!", HORIZONTAL_ALIGNMENT_CENTER, 232.0, 10, Color("#E2E8F0"))

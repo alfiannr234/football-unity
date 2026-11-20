@@ -248,6 +248,28 @@ func _capture() -> void:
 	await _wait_frames(6)
 	await _snap("37_match_offside_warning.png")
 
+	# New Interactive Moments: Aerial Cross Header QTE, 1v1 Dribble Duel QTE, Long Pass Control QTE
+	ms.call("_trigger_key_moment", ms.MomentType.HEADER_CROSS)
+	ms._drag_start = Vector2(480, 290)
+	ms._drag_current = Vector2(495, 420)
+	ms.call("_release_slingshot")
+	ms._qte_progress = 0.72
+	ms.call("_process_header_timing", 0.02)
+	await _wait_frames(4)
+	await _snap("38_match_header_qte.png")
+
+	ms.call("_trigger_key_moment", ms.MomentType.DRIBBLE_DUEL)
+	ms._qte_progress = 0.88
+	ms.call("_process_qte_dribble_duel", 0.02)
+	await _wait_frames(4)
+	await _snap("39_match_dribble_duel_qte.png")
+
+	ms.call("_trigger_key_moment", ms.MomentType.LONG_PASS_CONTROL)
+	ms._qte_progress = 0.96
+	ms.call("_process_qte_long_control", 0.02)
+	await _wait_frames(4)
+	await _snap("40_match_long_control_qte.png")
+
 	# Clean up test save slot 1? Wait: leave or clean? Let's clean Slot 1 so user starts fresh OR keep? Better clean Slot 1 so Home Screen starts clean!
 	CareerState.delete_slot(1)
 	quit(0)
