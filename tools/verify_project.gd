@@ -158,12 +158,28 @@ func _run_suite() -> void:
 	_assert(cmap["CASUAL_STYLES"].size() == 5 and cmap["GALA_STYLES"].size() == 5, "CharacterStyleCatalog has 5 casual and 5 gala outfits")
 
 	var CutsceneScr: GDScript = load("res://scenes/modals/EventCutsceneModal.gd")
-	for c_mode in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
+	for c_mode in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
 		var cm: Control = CutsceneScr.new()
 		cm.configure(c_mode)
 		root.add_child(cm)
+		if c_mode == 13:
+			var sc_crests: Array = cm.find_children("*", "ClubCrest", true, false)
+			_assert(sc_crests.size() >= 2 and int(CareerState.career["careerMeta"].get("scoutedByClubId", -1)) >= 0, "SCOUT_DOSSIER displays scouting team's ClubCrest logo on dossier & header")
 		cm.queue_free()
-	_assert(true, "EventCutsceneModal initializes cleanly for all modes 0..13 (incl. New 3)")
+	_assert(true, "EventCutsceneModal initializes cleanly for all modes 0..15 (incl. POTM & POTY awards)")
+
+	# Verify KiniTab has NO manual Event button below MAIN LAGA and shows Scout team crest when scouted
+	var KiniScr: GDScript = load("res://scenes/tabs/KiniTab.gd")
+	var kini_inst: Control = KiniScr.new()
+	root.add_child(kini_inst)
+	var kini_btns: Array = kini_inst.find_children("*", "Button", true, false)
+	var has_event_btn := false
+	for kb in kini_btns:
+		if str((kb as Button).text).contains("EVENT PEKAN"):
+			has_event_btn = true
+	var kini_crests: Array = kini_inst.find_children("*", "ClubCrest", true, false)
+	_assert(not has_event_btn and kini_crests.size() >= 3, "KiniTab removes manual Event button below match and displays scouting ClubCrest logo")
+	kini_inst.queue_free()
 
 	# New 3 Album Cards, Autographs, Division Leaders & Probabilistic Dilemmas
 	_assert(GameData.album_cards_catalog.size() == 19, "GameData exposes 19 collectible album cards")
@@ -298,7 +314,7 @@ func _run_suite() -> void:
 	ms_inst.call("_process_ball_flight", 0.02)
 	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT and str(ms_inst.get("_result_toast").text).contains("OFFSIDE"), "Passing to offside teammate triggers OFFSIDE call and stops play")
 
-	# Passing from SHOT into an ONSIDE forward-running teammate initiates animated TEAMMATE_CARRY with NO pass-back -> 3D shot / assist!
+	# Passing from SHOT into an ONSIDE forward-running teammate near penalty box triggers direct execution (TEAMMATE_CARRY); midfield pass transfers user control!
 	ms_inst.call("_trigger_key_moment", 0)  # SHOT
 	var tm0_p: Vector3 = ms_inst.get("_teammate_positions")[0]
 	_assert(not bool(ms_inst.call("_is_teammate_offside", 0)), "Freshly spawned open-play teammates start ONSIDE")
@@ -308,19 +324,37 @@ func _run_suite() -> void:
 	ms_inst.set("_ball_pos", tm0_p + Vector3(0.1, 0.5, 0.1))
 	ms_inst.set("_ball_vel", Vector3(0.0, 0.0, -8.0))
 	ms_inst.call("_process_ball_flight", 0.02)
-	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_shot_by_teammate")) and bool(ms_inst.get("_carry_assist_pending")) and not bool(ms_inst.get("_carry_pass_back")), "Aiming pass to teammate launches animated TEAMMATE_CARRY and never passes back to user")
-	ms_inst.set("_carry_pass_back", false)
-	ms_inst.set("_carry_shoot_at", 0.35)
-	# Move defenders far away for clean carry->shot check, then verify carrier shoots 3D ball in flight & assist scores!
-	for di in range(ms_inst.get("_defender_positions").size()):
-		ms_inst.get("_defender_positions")[di] = Vector3(28.0, 0.0, -15.0)
-	for _cs in range(5):
-		if int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY:
-			ms_inst.call("_process_teammate_carry", 0.12)
-	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.BALL_IN_FLIGHT and bool(ms_inst.get("_shot_by_teammate")), "Carrying teammate strikes real 3D shot toward goal")
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_shot_by_teammate")) and bool(ms_inst.get("_carry_assist_pending")) if tm0_p.z < -31.5 else (int(ms_inst.get("_phase")) == ms_inst.MatchPhase.KEY_MOMENT_AIM and int(ms_inst.get("_controlling_teammate_idx")) == 0), "Pass near penalty area lets teammate execute directly; midfield transfers control")
+	# Move controlled midfield teammate with joystick & score -> credits user +1 assist
+	ms_inst.call("_enter_teammate_user_control", 0, true)
+	var tm0_before: Vector3 = ms_inst.get("_teammate_positions")[0]
+	ms_inst.set("_dribble_input", Vector2(0.0, -1.0))
+	ms_inst.call("_process_dribble_control", 0.12)
+	ms_inst.set("_dribble_input", Vector2.ZERO)
+	_assert(ms_inst.get("_teammate_positions")[0].z < tm0_before.z - 0.1, "Joystick moves the controlled teammate smoothly")
+	ms_inst.set("_shot_by_teammate", true)
+	ms_inst.set("_carry_assist_pending", true)
 	var pre_assists: int = int(ms_inst.get("_my_assists"))
 	ms_inst.call("_handle_goal_scored")
 	_assert(int(ms_inst.get("_my_assists")) == pre_assists + 1, "Teammate goal from user pass credits user assist (+1)")
+
+	# Midfield teammate passing to ANOTHER teammate in midfield or box who scores awards User +0.1 rating!
+	ms_inst.call("_enter_teammate_user_control", 0, true)
+	var tm_arr_c: Array[Vector3] = ms_inst.get("_teammate_positions")
+	tm_arr_c[1] = Vector3(-4.0, 0.0, -35.0)
+	ms_inst.set("_teammate_positions", tm_arr_c)
+	ms_inst.set("_kick_offside_flags", [false, false, false])
+	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
+	ms_inst.set("_flight_timer", 0.2)
+	ms_inst.set("_ball_pos", Vector3(-4.0, 0.5, -35.0))
+	ms_inst.set("_ball_vel", Vector3(0.0, 0.0, -8.0))
+	ms_inst.call("_process_ball_flight", 0.02)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.TEAMMATE_CARRY and bool(ms_inst.get("_user_hockey_assist_eligible")), "Controlled teammate passing into box triggers immediate teammate execution with +0.1 combo bonus")
+	var pre_combo_r: float = float(ms_inst.get("_rating"))
+	ms_inst.set("_shot_by_teammate", true)
+	ms_inst.set("_carry_assist_pending", false)
+	ms_inst.call("_handle_goal_scored")
+	_assert(float(ms_inst.get("_rating")) >= pre_combo_r + 0.09, "Goal from teammate-to-teammate pass rewards user +0.1 rating")
 
 	# Incoming teammate pass opportunity (MomentType.TEAMMATE_PASS -> INCOMING_PASS -> KEY_MOMENT_AIM SHOT)
 	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.TEAMMATE_PASS)
@@ -410,7 +444,7 @@ func _run_suite() -> void:
 	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
 	ms_inst.set("_ball_pos", Vector3(20.0, 0.5, -57.0))
 	ms_inst.call("_process_ball_flight", 0.02)
-	_assert(is_equal_approx(float(ms_inst.get("_rating")), 6.7), "Key pass to teammate who then fails to score adds +0.2 rating (6.5 -> 6.7)")
+	_assert(is_equal_approx(float(ms_inst.get("_rating")), 6.6), "Key pass to teammate who then fails to score adds +0.1 rating without penalty (6.5 -> 6.6)")
 
 	# === NEW FEATURE VERIFICATION: Lineup Intro, Agile Slide Tackles, Portrait Highlights, Cards >2, Injuries, Coach Sub, Energy +20%, Event Cooldown ===
 	# A. Pre-Match Animated Lineup Showcase
@@ -508,6 +542,124 @@ func _run_suite() -> void:
 	var allowed_ev: bool = CareerState.consume_event_cooldown()
 	var next_cd: int = int(CareerState.career["careerMeta"]["eventCooldown"])
 	_assert(allowed_ev and next_cd >= 1 and next_cd <= 3, "Event cooldown fires at 0 and resets strictly between 1-3 matches (next=%d)" % next_cd)
+	# G. Automatic Pre-Match & Post-Match Events, Stationary/OVR-Reflex GK AI, Rare Cards/Injuries, Larger Highlights, POTM & POTY
+	# G1. GK stays stationary without pacing left/right during open-play/penalty idle aiming
+	SettingsManager.set_setting("difficulty", "NORMAL")
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.PENALTY)
+	var gk_x0: float = float(ms_inst.get("_gk_pos").x)
+	for _gi in range(10):
+		ms_inst.call("_animate_gk_idle", 0.1)
+	var gk_x1: float = float(ms_inst.get("_gk_pos").x)
+	_assert(is_equal_approx(gk_x0, gk_x1), "AI Goalkeeper does not pace left/right idly before shot")
+
+	# G2. GK reflex & dive/parry speed scales by Opponent GK OVR
+	var gk_low: Dictionary = ms_inst.call("get_opp_gk_profile", 54)
+	var gk_high: Dictionary = ms_inst.call("get_opp_gk_profile", 90)
+	_assert(float(gk_high["reaction_delay"]) < float(gk_low["reaction_delay"]) and float(gk_high["dive_speed"]) > float(gk_low["dive_speed"]) and float(gk_high["reach"]) > float(gk_low["reach"]), "GK reflex delay, dive speed, and parry reach scale cleanly with OVR")
+	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
+	ms_inst.set("_gk_pos", Vector3(0.0, 0.0, -51.6))
+	ms_inst.set("_gk_react_timer", 0.0)
+	ms_inst.set("_ball_pos", Vector3(2.2, 1.0, -40.0))
+	ms_inst.set("_ball_vel", Vector3(0.5, 0.4, -22.0))
+	ms_inst.set("_ball_omega", Vector3.ZERO)
+	ms_inst.call("_update_gk_ai", 0.12)
+	_assert(float(ms_inst.get("_gk_pos").x) > 0.25 and absf(float(ms_inst.get("_gk_dive_dir"))) > 0.5, "GK dives actively to intercept/parry incoming shot")
+
+	# G3. Enlarged Highlight Portrait Cards & Rare Injuries/Cards Cap
+	ms_inst.call("_start_selected_mode")
+	ms_inst.call("_start_match_kickoff")
+	var hl_u: Dictionary = ms_inst.call("_get_user_roster_dict")
+	ms_inst.call("_add_rich_board_highlight", 18, "GOAL", "GOL BESAR", "Highlight diperbesar", hl_u, {}, true)
+	var hl_card: PanelContainer = ms_inst.get("_board_hl_portraits").get_child(0) as PanelContainer
+	_assert(hl_card.custom_minimum_size.x >= 140.0 and hl_card.custom_minimum_size.y >= 120.0, "Match highlight portrait card is enlarged cleanly (>= 140x120 px)")
+	for sim_i in range(25):
+		ms_inst.set("_minute", 10.0 + float(sim_i) * 3.0)
+		ms_inst.call("_push_random_sim_event")
+	_assert(int(ms_inst.get("_our_yellows")) + int(ms_inst.get("_opp_yellows")) <= 3 and int(ms_inst.get("_our_reds")) + int(ms_inst.get("_opp_reds")) <= 2 and int(ms_inst.get("_total_injuries_match")) <= 1, "Injuries, yellow cards, and red cards remain realistically rare per match")
+
+	# G4. Automatic Pre-Match Event Cooldown in AppRoot & Monthly/Annual Award Events
+	CareerState.career["careerMeta"]["preEventCooldown"] = 0
+	_assert(CareerState.consume_prematch_event_cooldown(), "Pre-match automatic event cooldown fires when due and resets 1-3 matches")
+
+	# H. Batch B Gameplay: Open-Space Pass Chase, Advancing Harder GK, OVR Teammate Slowdown, Faster Defenders, GK Build-Up, Corner Kick, Contextual Events
+	# H1. Pass into open pitch space (either explicit PASS or open-play SHOT aimed away from goal) triggers live chase instead of WIDE fail
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.PASS)
+	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
+	ms_inst.set("_flight_timer", 0.65)
+	ms_inst.set("_ball_pos", Vector3(6.5, 0.12, -26.0))
+	ms_inst.set("_ball_vel", Vector3(1.2, 0.0, -2.5))
+	ms_inst.call("_process_ball_flight", 0.02)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.REBOUND_SCRAMBLE and bool(ms_inst.get("_scramble_is_loose_pass")), "Pass into empty pitch space triggers live chase instead of WIDE")
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.SHOT)
+	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
+	ms_inst.set("_flight_timer", 0.30)
+	ms_inst.set("_ball_pos", Vector3(11.5, 0.25, -24.0))
+	ms_inst.set("_ball_vel", Vector3(11.0, 0.0, -7.0))
+	ms_inst.call("_process_ball_flight", 0.02)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.REBOUND_SCRAMBLE and bool(ms_inst.get("_scramble_is_loose_pass")), "Open-play angled pass toward empty wing space initiates teammate/opponent ball chase")
+
+	# H2. Opposing GK stays on line outside penalty box, advances only inside penalty box with defender-like slow/move timing & OVR-reduced speed
+	SettingsManager.set_setting("difficulty", "NORMAL")
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.SHOT)
+	ms_inst.set("_ball_pos", Vector3(0.0, 0.12, -26.0))
+	for _gz_out in range(8):
+		ms_inst.call("_animate_gk_idle", 0.08)
+	_assert(is_equal_approx(float(ms_inst.get("_gk_pos").z), -51.6), "AI GK stays on goal line when ball is outside penalty area")
+	ms_inst.set("_ball_pos", Vector3(0.0, 0.12, -41.0))
+	var gk_z0: float = float(ms_inst.get("_gk_pos").z)
+	ms_inst.set("_dribble_input", Vector2.ZERO)
+	for _gz in range(10):
+		ms_inst.call("_animate_gk_idle", 0.08)
+	var gk_slow_adv: float = float(ms_inst.get("_gk_pos").z) - gk_z0
+	_assert(gk_slow_adv > 0.10 and is_equal_approx(float(ms_inst.get("_gk_pos").x), 0.0), "AI GK advances inside penalty area without idle X oscillation")
+	var gk_prof_low: Dictionary = ms_inst.call("get_opp_gk_profile", 52)
+	var gk_prof_hi: Dictionary = ms_inst.call("get_opp_gk_profile", 88)
+	_assert(float(gk_prof_low["rush_speed"]) < float(gk_prof_hi["rush_speed"]) and float(gk_prof_hi["rush_speed"]) <= 3.8, "Opponent GK rush speed scales cleanly with OVR and stays moderated")
+
+	# H3. Teammate speed slowed cleanly (<1.0 OVR scale) & faster defenders vs MUDAH freeze
+	var tm_scale_val: float = float(ms_inst.call("get_teammate_speed_scale"))
+	var def_agil_hi: float = float(ms_inst.call("get_opp_defender_agility", 88))
+	SettingsManager.set_setting("difficulty", "MUDAH")
+	ms_inst.set("_dribble_input", Vector2.ZERO)
+	ms_inst.set("_dragging", false)
+	var mudah_idle: Dictionary = ms_inst.call("_get_moment_time_scales")
+	SettingsManager.set_setting("difficulty", "NORMAL")
+	var normal_idle: Dictionary = ms_inst.call("_get_moment_time_scales")
+	_assert(tm_scale_val > 0.65 and tm_scale_val < 0.97 and def_agil_hi >= 1.50, "Teammate speed scales conservatively below 1.0 while defenders gain higher OVR agility")
+	_assert(float(mudah_idle["defender_speed"]) == 0.0 and float(normal_idle["defender_speed"]) > 0.0, "Defenders freeze idly on MUDAH while advancing faster on NORMAL+")
+
+	# H4. Friendly GK Build-up moment -> passes from own keeper to friendly defender (not directly user)
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.GK_BUILDUP)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.INCOMING_PASS and bool(ms_inst.get("_incoming_pass_is_our_gk")) and float(ms_inst.get("_our_gk_pos").z) > 40.0, "GK_BUILDUP initiates pass from friendly goalkeeper in own half")
+	for _gb in range(28):
+		if int(ms_inst.get("_phase")) == ms_inst.MatchPhase.INCOMING_PASS:
+			ms_inst.call("_process_incoming_pass", 0.10)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.KEY_MOMENT_AIM and int(ms_inst.get("_controlling_teammate_idx")) == 0 and not bool(ms_inst.get("_incoming_pass_is_our_gk")), "GK build-up pass arrives at friendly defender for backline build-up control")
+
+	# H5. Corner Kick both User Taker & Teammate Taker (non-offside + QTE)
+	ms_inst.call("setup_corner_variant", true)
+	_assert(int(ms_inst.get("_moment_type")) == ms_inst.MomentType.CORNER_KICK, "Corner variant user taker activates CORNER_KICK")
+	_assert(bool(ms_inst.get("_corner_taker_is_user")) and absf(float(ms_inst.get("_ball_pos").x)) > 25.0 and not bool(ms_inst.call("_is_teammate_offside", 0)), "User-taken corner positions ball at corner flag with zero offside")
+	ms_inst.call("setup_corner_variant", false)
+	ms_inst.set("_drag_start", Vector2(480.0, 290.0))
+	ms_inst.set("_drag_current", Vector2(480.0, 420.0))
+	ms_inst.call("_release_slingshot")
+	_assert(not bool(ms_inst.get("_corner_taker_is_user")) and int(ms_inst.get("_phase")) == ms_inst.MatchPhase.HEADER_TIMING, "Teammate-taken corner triggers aerial QTE finish in box")
+
+	# H6. Contextual Pre-Match vs Post-Match Dilemma Filtering
+	var pre_ids: Array[String] = []
+	for _d in range(12):
+		var dd: Dictionary = CareerState.pick_contextual_dilemma("PRE")
+		pre_ids.append(str(dd.get("id", "")))
+		_assert(str(dd.get("timing", "PRE")) == "PRE", "Pre-match picker strictly excludes POST-only events like GK penalty duel")
+	_assert(not ("adu_penalti_kiper" in pre_ids), "GK penalty challenge never appears before a match")
+	var post_d: Dictionary = CareerState.pick_contextual_dilemma("POST", {"goals": 1, "score_us": 2, "score_them": 1})
+	_assert(str(post_d.get("timing", "")) == "POST", "Post-match picker exclusively returns POST-conditioned dilemmas")
+	var sc_low: Color = UITheme.get_stat_color(48)
+	var sc_high: Color = UITheme.get_stat_color(94)
+	_assert(sc_low.r > sc_high.r and sc_high.g > sc_low.g, "Stat attribute color progresses cleanly from orange toward green")
+	var ovr_prog: Dictionary = CareerState.get_ovr_progress()
+	_assert(ovr_prog.has("progress") and float(ovr_prog["progress"]) >= 0.0 and float(ovr_prog["progress"]) <= 1.0, "OVR progress computes fraction toward next OVR level")
 	ms_inst.queue_free()
 
 	var VolleyScr: GDScript = load("res://scenes/minigames/VolleyMinigame.gd")
@@ -524,9 +676,17 @@ func _run_suite() -> void:
 	# Check Sweden Div 3 size separately before simulating season (Sweden is nation 0)
 	_assert(GameData.get_clubs_in_division(0, 3).size() == 32, "Sweden Div 3 has 32 teams")
 
-	# Simulate full 45-week season
+	# Simulate full 45-week season and verify Monthly (POTM) + Annual (POTY) award events trigger!
+	var potm_seen := false
+	var poty_seen := false
 	for _w in range(45):
-		CareerState.sim_current_match()
+		var rep: Dictionary = CareerState.sim_current_match()
+		if not rep.get("potm_award", {}).is_empty():
+			potm_seen = true
+		if not rep.get("poty_award", {}).is_empty():
+			poty_seen = true
+	_assert(potm_seen and CareerState.career["careerMeta"].get("potmHistory", []).size() >= 6, "Player of the Month (POTM) award evaluates & triggers across season months")
+	_assert(poty_seen and CareerState.career["careerMeta"].get("potyHistory", []).size() >= 1, "Player of the Year (POTY) gala award evaluates at end of season")
 	_assert(CareerState.career["careerMeta"]["lastMatchdayResults"].size() >= 8, "Matchday simulation populates HASIL division scores")
 	_assert(int(CareerState.career["careerMeta"]["year"]) == 2, "45 matches rolls over cleanly into Year 2 (got Year %d)" % int(CareerState.career["careerMeta"]["year"]))
 	_assert(int(CareerState.career["playerProfile"]["age"]) == 17, "Player ages to 17 on Season 2")

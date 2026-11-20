@@ -607,37 +607,45 @@ func _init_sponsors_and_dilemmas() -> void:
 	dilemmas_catalog = [
 		{
 			"id": "dinner_nora",
+			"timing": "POST",
 			"scene": "dinner",
-			"text": "Makan malam klub, dan obrolan di mejamu sudah satu jam membahas Nora. Dia sudah lama menatapmu.",
+			"title": "MAKAN MALAM TIM",
+			"text": "Seusai pertandingan, makan malam klub digelar dan obrolan di mejamu sudah satu jam membahas Nora. Dia menatap ke arahmu.",
 			"choices": [
 				{"label": "DEKATI", "sub": "+2 Pers • mulai kenalan", "effects": {"pers": 2, "fans": 3, "energy": -4, "ruangGanti": 2}},
-				{"label": "BIARKAN", "sub": "Fokus ke latihan besok", "effects": {"pelatih": 2, "energy": 3}},
+				{"label": "BIARKAN", "sub": "Fokus ke pemulihan esok", "effects": {"pelatih": 2, "energy": 3}},
 				{"label": "PIKIR DULU", "sub": "Simpan energi", "effects": {"energy": 1}},
 			]
 		},
 		{
 			"id": "latihan_ekstra",
+			"timing": "PRE",
 			"scene": "locker",
-			"text": "Pelatih Henrik Jakobsson menawari sesi tendangan bebas tambahan setelah latihan sore selesai.",
+			"title": "LATIHAN PRA-LAGA",
+			"text": "Menjelang pertandingan berikutnya, pelatih mengajakmu sesi tendangan bebas & penyelesaian tambahan setelah latihan taktik selesai.",
 			"choices": [
-				{"label": "IKUT LATIHAN", "sub": "+4 Pelatih • +35 XP", "effects": {"pelatih": 4, "energy": -8, "xp": 35}},
-				{"label": "ISTIRAHAT", "sub": "+6 Energi", "effects": {"energy": 6, "pelatih": -1}},
+				{"label": "IKUT LATIHAN", "sub": "+4 Pelatih • +35 XP • -8 Energi", "effects": {"pelatih": 4, "energy": -8, "xp": 35}},
+				{"label": "ISTIRAHAT", "sub": "+6 Energi • simpan tenaga", "effects": {"energy": 6, "pelatih": -1}},
 			]
 		},
 		{
 			"id": "wawancara_pers",
+			"timing": "PRE",
 			"scene": "press",
-			"text": "Wartawan lokal meminta komentar eksklusif soal peluang promosi klub musim ini.",
+			"title": "KONFERENSI PRA-LAGA",
+			"text": "Menjelang kick-off, wartawan lokal meminta komentar eksklusif soal peluang tim meraih kemenangan di laga ini.",
 			"choices": [
-				{"label": "OPTIMIS JUARA", "sub": "+5 Fans • +4 Pers", "effects": {"fans": 5, "pers": 4, "pelatih": -1}},
-				{"label": "PUJI TIM", "sub": "+4 Ruang Ganti • +3 Pelatih", "effects": {"ruangGanti": 4, "pelatih": 3}},
-				{"label": "TOLAK HALUS", "sub": "-2 Pers • fokus laga", "effects": {"pers": -2, "energy": 2}},
+				{"label": "OPTIMIS MENANG", "sub": "+5 Fans • +4 Pers • -1 Pelatih", "effects": {"fans": 5, "pers": 4, "pelatih": -1}},
+				{"label": "PUJI KERJA TIM", "sub": "+4 Ruang Ganti • +3 Pelatih", "effects": {"ruangGanti": 4, "pelatih": 3}},
+				{"label": "FOKUS LAPANGAN", "sub": "-2 Pers • +2 Energi", "effects": {"pers": -2, "energy": 2}},
 			]
 		},
 		{
 			"id": "tawaran_agen",
+			"timing": "PRE",
 			"scene": "office",
-			"text": "Agenmu menawarkan acara jumpa fans di pusat kota akhir pekan ini.",
+			"title": "TAWARAN AGEN",
+			"text": "Menjelang hari pertandingan, agenmu menawarkan acara temu suporter singkat di pusat kota.",
 			"choices": [
 				{"label": "HADIR", "sub": "+$1.500 • +6 Fans • -6 Energi", "effects": {"cash": 1500, "fans": 6, "agen": 3, "energy": -6}},
 				{"label": "TOLAK", "sub": "+4 Energi • -2 Agen", "effects": {"energy": 4, "agen": -2}},
@@ -645,46 +653,51 @@ func _init_sponsors_and_dilemmas() -> void:
 		},
 		{
 			"id": "konflik_ruang_ganti",
+			"timing": "PRE",
 			"scene": "locker",
-			"text": "Kapten tim menegur pemain muda lain karena terlalu egois di kotak penalti.",
+			"title": "BRIEFING PRA-LAGA",
+			"text": "Di ruang ganti sebelum laga dimulai, kapten tim menegur pemain muda lain karena terlalu egois saat serangan balik.",
 			"choices": [
-				{"label": "BELAIN KAPTEN", "sub": "+4 Pelatih • +3 Ruang Ganti", "color": "#1E5668", "effects": {"pelatih": 4, "ruangGanti": 3}},
-				{"label": "TENANGKAN SEMUA", "sub": "+5 Ruang Ganti", "color": "#6E4B1F", "effects": {"ruangGanti": 5, "fans": 1}},
+				{"label": "DUKUNG KAPTEN", "sub": "+4 Pelatih • +3 Ruang Ganti", "color": "#1E5668", "effects": {"pelatih": 4, "ruangGanti": 3}},
+				{"label": "TENANGKAN SEMUA", "sub": "+5 Ruang Ganti • +1 Fans", "color": "#6E4B1F", "effects": {"ruangGanti": 5, "fans": 1}},
 			]
 		},
 		{
 			"id": "soal_pers_terbuka",
+			"timing": "POST",
 			"scene": "press",
 			"title": "SETELAH LAGA",
-			"text": "Mikrofon di depan wajah dan satu pertanyaan terbuka. Apa pun jawabanmu, itu menggambarkanmu.",
+			"text": "Setelah peluit akhir, mikrofon disodorkan ke depan wajahmu dengan satu pertanyaan terbuka tentang hasil laga hari ini.",
 			"choices": [
-				{"label": "SOAL TIM", "sub": "+8 Ruang Ganti • ±0 Pers • -3 Suporter", "color": "#7B4F1D", "effects": {"ruangGanti": 8, "fans": -3}},
+				{"label": "SOAL TIM", "sub": "+8 Ruang Ganti • -3 Suporter", "color": "#7B4F1D", "effects": {"ruangGanti": 8, "fans": -3}},
 				{"label": "SOAL TARGET", "sub": "+9 Pers • -2 Ruang Ganti • -3 Pelatih", "color": "#5E3578", "effects": {"pers": 9, "ruangGanti": -2, "pelatih": -3}},
-				{"label": "SOAL SUPORTER", "sub": "+8 Suporter • ±0 Pers • -1 Ruang Ganti", "color": "#733A5A", "effects": {"fans": 8, "ruangGanti": -1}},
+				{"label": "SOAL SUPORTER", "sub": "+8 Suporter • -1 Ruang Ganti", "color": "#733A5A", "effects": {"fans": 8, "ruangGanti": -1}},
 			]
 		},
 		{
 			"id": "adu_penalti_kiper",
+			"timing": "POST",
 			"scene": "pitch",
-			"title": "SETELAH LAGA",
-			"text": "Kiper menantangmu adu penalti seusai latihan dan separuh ruang ganti tinggal untuk menonton dan memanas-manasi.",
+			"title": "SETELAH LAGA • TANTANGAN KIPER",
+			"text": "Setelah pertandingan berakhir, kiper rekanmu menantangmu adu penalti sebelum masuk ruang ganti dan separuh skuad ikut menonton!",
 			"choices": [
 				{
-					"label": "TERIMA", "sub": "68% : +7 Ruang Ganti +4 Pelatih | Gagal -4 Ruang Ganti", "color": "#5E3578",
+					"label": "TERIMA TANTANGAN", "sub": "68% : +7 Ruang Ganti +4 Pelatih | Gagal -4 Ruang Ganti", "color": "#5E3578",
 					"chance": 0.68,
 					"effects": {"ruangGanti": 7, "pelatih": 4},
 					"fail_effects": {"ruangGanti": -4},
-					"win_text": "Kamu memenangi adu penalti. Ruang ganti bersorak.",
-					"fail_text": "Kiper menepis tendangan penentuanmu. Ruang ganti meledek sepanjang malam.",
+					"win_text": "Tendanganmu tak terbendung! Kamu memenangi adu penalti kontra kiper rekanmu.",
+					"fail_text": "Kiper rekan menepis penaltimu dengan cekatan. Ruang ganti meledek sepanjang malam.",
 				},
-				{"label": "MANDI", "sub": "-3 Ruang Ganti", "color": "#7B4F1D", "effects": {"ruangGanti": -3}, "win_text": "Kamu langsung kembali ke ruang ganti tanpa meladeni tantangan."},
+				{"label": "LANGSUNG MANDI", "sub": "-3 Ruang Ganti", "color": "#7B4F1D", "effects": {"ruangGanti": -3}, "win_text": "Kamu memilih langsung memulihkan tenaga di ruang ganti."},
 			]
 		},
 		{
 			"id": "hari_libur_aktivitas",
+			"timing": "POST",
 			"scene": "home",
-			"title": "HARI LIBUR",
-			"text": "Hari tanpa kewajiban. Kamu bisa bersantai di rumah, keluar bersama grup, atau menambah jam gym sendiri.",
+			"title": "HARI LIBUR PASCA-LAGA",
+			"text": "Jeda hari libur seusai pertandingan. Kamu bisa istirahat total di rumah, keluar bersama skuad, atau menambah porsi gym.",
 			"choices": [
 				{"label": "ISTIRAHAT SAJA", "sub": "+12 Energi • -3 Ruang Ganti • -4 Pelatih", "color": "#1E5668", "effects": {"energy": 12, "ruangGanti": -3, "pelatih": -4}},
 				{"label": "KELUAR BARENG TIM", "sub": "+9 Ruang Ganti • -4 Pelatih • -6 Energi", "color": "#7B4F1D", "effects": {"ruangGanti": 9, "pelatih": -4, "energy": -6}},
@@ -693,9 +706,10 @@ func _init_sponsors_and_dilemmas() -> void:
 		},
 		{
 			"id": "rumor_transfer_pers",
+			"timing": "PRE",
 			"scene": "press",
-			"title": "RUMOR TRANSFER",
-			"text": "Beredar kabar klub luar mengincarmu dan pers menyodorkan mikrofon ke wajahmu. Apa pun katamu didengar semua orang: tribunmu dan ruang direksi mereka.",
+			"title": "RUMOR TRANSFER PRA-LAGA",
+			"text": "Jelang pertandingan, beredar kabar pemandu bakat klub lain hadir mengincarmu dan pers meminta jawaban tegasmu.",
 			"choices": [
 				{"label": "AKU TERBUKA SEMUA", "sub": "+7 Pers • -6 Suporter", "color": "#5E3578", "effects": {"pers": 7, "fans": -6}},
 				{"label": "AKU FOKUS DI SINI", "sub": "+7 Suporter • +2 Pelatih • kamu berjanji", "color": "#733A5A", "effects": {"fans": 7, "pelatih": 2}},

@@ -1,6 +1,7 @@
 extends Control
 
 signal start_match_requested
+signal sim_match_requested
 signal open_dilemma_requested
 signal open_squad_requested
 
@@ -55,6 +56,25 @@ func refresh() -> void:
 	ct2.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
 	cvb.add_child(ct1)
 	cvb.add_child(ct2)
+
+	var scout_cid: int = int(CareerState.career["careerMeta"].get("scoutedByClubId", -1))
+	if scout_cid >= 0 and scout_cid < GameData.clubs.size():
+		var sc_club: Dictionary = GameData.clubs[scout_cid]
+		var sc_badge := PanelContainer.new()
+		sc_badge.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A1A0E"), UITheme.ACCENT_GOLD, 1, 4))
+		var sc_hb := HBoxContainer.new()
+		sc_hb.add_theme_constant_override("separation", 5)
+		sc_badge.add_child(sc_hb)
+		var sc_cr := ClubCrest.new()
+		sc_cr.custom_minimum_size = Vector2(24, 24)
+		sc_cr.set_club(scout_cid)
+		sc_hb.add_child(sc_cr)
+		var sc_l := Label.new()
+		sc_l.text = "SCOUT\n%s" % str(sc_club.get("code", "KLUB"))
+		sc_l.add_theme_font_size_override("font_size", 9)
+		sc_l.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		sc_hb.add_child(sc_l)
+		chb.add_child(sc_badge)
 
 	if tw > 0:
 		var tw_badge := PanelContainer.new()
@@ -222,27 +242,14 @@ func refresh() -> void:
 	UITheme.style_btn(sim_btn, Color("#1C3454"), UITheme.BORDER_CYAN, 14)
 	sim_btn.pressed.connect(func():
 		AudioSynth.play_click()
-		CareerState.sim_current_match()
+		sim_match_requested.emit()
 	)
 	play_hb.add_child(sim_btn)
 
-	# Weekly Dilemma Card (PEKAN INI)
-	var dilemma_done := int(CareerState.career["careerMeta"].get("dilemmaDoneWeek", 0)) == week
-	var dil_btn := Button.new()
-	if dilemma_done:
-		dil_btn.text = "✓ EVENT PEKAN INI SELESAI"
-		dil_btn.disabled = true
-	else:
-		dil_btn.text = "★ EVENT PEKAN INI: KETUK UNTUK SELESAIKAN DILEMA"
-		UITheme.style_btn(dil_btn, UITheme.ACCENT_PURPLE, Color("#A78BFA"), 12)
-	dil_btn.custom_minimum_size = Vector2(0, 40)
-	dil_btn.pressed.connect(func(): AudioSynth.play_click(); open_dilemma_requested.emit())
-	right_col.add_child(dil_btn)
-
-	# Next 3 Upcoming Fixtures strip
+	# Next 4 Upcoming Fixtures strip (events now run automatically before & after matches!)
 	right_col.add_child(UITheme.make_section_header("JADWAL BERIKUTNYA"))
 	var sched: Array = CareerState.career["schedule"]
-	for w_off in range(1, 4):
+	for w_off in range(1, 5):
 		var idx := (week - 1) + w_off
 		if idx < sched.size():
 			var fx: Dictionary = sched[idx]

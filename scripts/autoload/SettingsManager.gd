@@ -98,10 +98,10 @@ func get_difficulty_params() -> Dictionary:
 	match str(data.get("difficulty", "NORMAL")):
 		"MUDAH":
 			return {
-				"gk_reaction": 0.45,
-				"gk_speed": 4.0,
+				"gk_reaction": 0.38,
+				"gk_speed": 3.8,
 				"defender_speed": 0.0,
-				"dribble_defender_speed": 0.85,
+				"dribble_defender_speed": 1.15,
 				"aim_defender_scale": 0.0,
 				"aim_teammate_scale": 0.0,
 				"steal_dist": 0.0,
@@ -113,13 +113,13 @@ func get_difficulty_params() -> Dictionary:
 			}
 		"SULIT":
 			return {
-				"gk_reaction": 0.16,
-				"gk_speed": 6.5,
-				"defender_speed": 2.5,
-				"dribble_defender_speed": 3.1,
-				"aim_defender_scale": 0.48,
+				"gk_reaction": 0.14,
+				"gk_speed": 6.4,
+				"defender_speed": 3.05,
+				"dribble_defender_speed": 3.85,
+				"aim_defender_scale": 0.54,
 				"aim_teammate_scale": 0.38,
-				"steal_dist": 1.12,
+				"steal_dist": 1.16,
 				"can_steal": true,
 				"chance_delta": 0,
 				"aim_spread_mult": 1.15,
@@ -128,13 +128,13 @@ func get_difficulty_params() -> Dictionary:
 			}
 		"EKSTREM":
 			return {
-				"gk_reaction": 0.09,
-				"gk_speed": 7.6,
-				"defender_speed": 3.6,
-				"dribble_defender_speed": 4.1,
-				"aim_defender_scale": 0.62,
+				"gk_reaction": 0.08,
+				"gk_speed": 7.5,
+				"defender_speed": 4.25,
+				"dribble_defender_speed": 4.95,
+				"aim_defender_scale": 0.68,
 				"aim_teammate_scale": 0.52,
-				"steal_dist": 1.25,
+				"steal_dist": 1.28,
 				"can_steal": true,
 				"chance_delta": -1,
 				"aim_spread_mult": 1.35,
@@ -143,16 +143,16 @@ func get_difficulty_params() -> Dictionary:
 			}
 		_:
 			return {
-				"gk_reaction": 0.28,
+				"gk_reaction": 0.22,
 				"gk_speed": 5.2,
-				"defender_speed": 1.6,
-				"dribble_defender_speed": 2.2,
-				"aim_defender_scale": 0.34,
+				"defender_speed": 2.15,
+				"dribble_defender_speed": 2.85,
+				"aim_defender_scale": 0.40,
 				"aim_teammate_scale": 0.22,
-				"steal_dist": 0.95,
+				"steal_dist": 0.98,
 				"can_steal": true,
 				"chance_delta": 0,
 				"aim_spread_mult": 0.90,
-				"desc_id": "Rekan & lawan melambat saat belum bergerak atau membidik; bek merebut jika terlalu dekat.",
-				"desc_en": "NORMAL: teammates & opponents move slowly while idle or aiming; tackles at closer range.",
+				"desc_id": "Rekan & lawan melambat saat belum bergerak atau membidik; bek cepat menekan & merebut.",
+				"desc_en": "NORMAL: teammates & opponents move slowly while idle or aiming; faster defenders press.",
 			}

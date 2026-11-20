@@ -186,6 +186,7 @@ func _show_career_shell() -> void:
 	_career_shell.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_career_shell.back_to_home.connect(func(): _show_home())
 	_career_shell.start_match_requested.connect(func(): _launch_career_match())
+	_career_shell.sim_match_requested.connect(func(): _handle_quick_sim())
 	_career_shell.open_dilemma_requested.connect(func(): _open_dilemma_modal())
 	_career_shell.open_settings_requested.connect(func(): _open_settings_modal())
 	_career_shell.open_friends_requested.connect(func(): _open_friends_modal())
@@ -201,13 +202,26 @@ func _show_career_shell() -> void:
 func _launch_career_match(skip_pre_event: bool = false) -> void:
 	if not skip_pre_event and CareerState.has_active_career:
 		var prof: Dictionary = CareerState.career.get("playerProfile", {})
+		var meta: Dictionary = CareerState.career.get("careerMeta", {})
+		var wk: int = int(meta.get("week", 1))
 		var en: int = int(prof.get("energy", 80))
 		var coach_rel: int = int(prof.get("relations", {}).get("pelatih", 60))
-		# Only interrupt pre-match with COACH_REJECT when severely fatigued/unfavored;
-		# normal matches open directly into MatchScene's animated Pre-Match Lineup Showcase!
-		if en < 35 or coach_rel < 30:
-			_open_cutscene(6, func(): _launch_career_match(true))
-			return
+		if int(meta.get("preMatchDoneWeek", 0)) != wk:
+			# Critical low energy / low coach relation warning
+			if en < 35 or coach_rel < 30:
+				meta["preMatchDoneWeek"] = wk
+				_open_cutscene(6, func(): _launch_career_match(true))
+				return
+			# Automatic Pre-Match Event (throttled every 1-3 matches, strictly PRE timing!)
+			if CareerState.consume_prematch_event_cooldown():
+				meta["preMatchDoneWeek"] = wk
+				if int(meta.get("dilemmaDoneWeek", 0)) != wk and (wk == 1 or wk % 2 == 1):
+					CareerState.pick_contextual_dilemma("PRE")
+					_open_dilemma_modal(func(): _launch_career_match(true))
+					return
+				var pre_modes: Array[int] = [10, 7, 1]  # PREMATCH_PREDIKSI, PREMATCH_TUNNEL, TIM_INTI
+				_open_cutscene(pre_modes[wk % pre_modes.size()], func(): _launch_career_match(true))
+				return
 
 	_clear_stage()
 	AudioSynth.bgm_track_override = ""
@@ -261,42 +275,74 @@ func _show_post_match(report: Dictionary) -> void:
 	pm.call("show_report", report)
 	pm.connect("replay_requested", func(clip: Dictionary): _launch_moviola_replay(clip, false))
 	pm.connect("finished", func():
-		var post_mode: int = _pick_post_match_event(report)
 		_show_career_shell()
-		if post_mode >= 0:
-			_open_cutscene(post_mode)
+		_trigger_post_match_chain(report)
 	)
 	_stage_layer.add_child(pm)
 
-func _pick_post_match_event(report: Dictionary) -> int:
+func _handle_quick_sim() -> void:
+	if not CareerState.has_active_career:
+		return
+	var report := CareerState.sim_current_match()
+	if not report.is_empty():
+		_trigger_post_match_chain(report)
+
+func _trigger_post_match_chain(report: Dictionary) -> void:
+	if not CareerState.has_active_career:
+		return
+	var potm: Dictionary = report.get("potm_award", {})
+	var poty: Dictionary = report.get("poty_award", {})
+	if not potm.is_empty():
+		if not poty.is_empty():
+			_open_cutscene(14, func(): _open_cutscene(15))
+		else:
+			_open_cutscene(14)
+		return
+	if not poty.is_empty():
+		_open_cutscene(15)
+		return
+
+	if not CareerState.consume_event_cooldown():
+		return
+	var meta: Dictionary = CareerState.career.get("careerMeta", {})
+	var wk: int = int(meta.get("week", 1))
+	if int(meta.get("dilemmaDoneWeek", 0)) != wk and (wk % 2 == 0):
+		CareerState.pick_contextual_dilemma("POST", report)
+		_open_dilemma_modal()
+		return
+	var post_mode: int = _pick_post_match_event(report, false)
+	if post_mode >= 0:
+		_open_cutscene(post_mode)
+
+func _pick_post_match_event(report: Dictionary, check_cd: bool = true) -> int:
 	if not CareerState.has_active_career:
 		return -1
 	# Throttle narrative/minigame events so they only appear once every 1-3 matches
-	if not CareerState.consume_event_cooldown():
+	if check_cd and not CareerState.consume_event_cooldown():
 		return -1
 	var meta: Dictionary = CareerState.career.get("careerMeta", {})
 	var sp: Dictionary = CareerState.career.get("sponsor", {})
 	var wk: int = int(meta.get("week", 1))
 	var won: bool = int(report.get("score_us", 0)) > int(report.get("score_them", 0))
+	var draw: bool = int(report.get("score_us", 0)) == int(report.get("score_them", 0))
+	var rtg: float = float(report.get("rating", 6.2))
 	if not bool(meta.get("initiationDone", false)):
-		return 3  # MAKAN_NYANYI
+		return 3  # MAKAN_NYANYI (team initiation dinner)
 	if bool(report.get("motm", false)) or int(report.get("my_goals", 0)) >= 2:
 		return 13 if (wk % 2 == 0 and int(meta.get("scoutedByClubId", -1)) < 0) else 8  # SCOUT_DOSSIER or MVP_SHOWCASE
-	if won and wk % 4 == 1:
-		return 11  # LEMPAKAN_JERSEY (shirt throw into stands)
+	if (won or draw) and wk % 4 == 1:
+		return 11  # LEMPAKAN_JERSEY (celebrate with fans only after positive result)
 	if won and wk % 4 == 2:
-		return 12  # GUNTUR_DRUM (fan chant rhythm)
-	if wk % 4 == 3:
-		return 9  # TEKEN_JERSEY (airport terminal autograph)
-	if float(report.get("rating", 6.2)) >= 7.5 and wk % 3 == 0:
-		return 13  # SCOUT_DOSSIER + KARTU BARU!
+		return 12  # GUNTUR_DRUM (fan chant celebration after win)
+	if rtg >= 7.3 and wk % 3 == 0:
+		return 13  # SCOUT_DOSSIER (only when form impresses scouts!)
 	if not str(sp.get("activeId", "")).is_empty() and (int(meta.get("clapperDoneSeason", 0)) != int(meta.get("year", 1)) or wk % 5 == 0):
 		return 4  # SPONSOR_SHOOT Take 7
-	if float(report.get("rating", 6.2)) >= 7.2:
-		return 5  # COACH_TRAIT
-	if int(meta.get("transferWindowWeeks", 0)) > 0:
+	if rtg >= 7.1:
+		return 5  # COACH_TRAIT (earned on strong match rating)
+	if int(meta.get("transferWindowWeeksLeft", 0)) > 0:
 		return 0  # BURSA_CARDS
-	return 10 if wk % 2 == 0 else 9
+	return 9 if (won or draw or wk % 2 == 1) else 5
 
 func _open_new_career_modal(slot_id: int) -> void:
 	var m: Control = (load("res://scenes/modals/NewCareerModal.gd") as GDScript).new()
@@ -344,9 +390,11 @@ func _open_cutscene(mode_idx: int, on_done: Callable = Callable()) -> void:
 		cm.connect("finished", on_done)
 	_modal_layer.add_child(cm)
 
-func _open_dilemma_modal() -> void:
+func _open_dilemma_modal(on_done: Callable = Callable()) -> void:
 	var m: Control = (load("res://scenes/modals/DilemmaModal.gd") as GDScript).new()
 	m.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if on_done.is_valid():
+		m.connect("closed", on_done)
 	_modal_layer.add_child(m)
 
 func _open_settings_modal() -> void:

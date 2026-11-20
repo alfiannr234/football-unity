@@ -2,6 +2,7 @@ extends Control
 
 signal back_to_home
 signal start_match_requested
+signal sim_match_requested
 signal open_dilemma_requested
 signal open_settings_requested
 signal open_friends_requested
@@ -14,6 +15,7 @@ signal open_cutscene_requested(mode_idx: int)
 signal open_volley_requested
 
 var _active_tab: String = "KINI"
+var _ovr_ring: OvrBorderBar
 var _ovr_label: Label
 var _name_label: Label
 var _sub_label: Label
@@ -63,10 +65,19 @@ func _build_shell() -> void:
 	row1.add_theme_constant_override("separation", 8)
 	hud_vb.add_child(row1)
 
+	_ovr_ring = OvrBorderBar.new()
+	_ovr_ring.custom_minimum_size = Vector2(46, 44)
+	row1.add_child(_ovr_ring)
+
 	var ovr_box := PanelContainer.new()
-	ovr_box.custom_minimum_size = Vector2(40, 38)
-	ovr_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#122640"), Color("#A67C52"), 2, 4))
-	row1.add_child(ovr_box)
+	ovr_box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ovr_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ovr_box.offset_left = 4
+	ovr_box.offset_top = 4
+	ovr_box.offset_right = -4
+	ovr_box.offset_bottom = -4
+	ovr_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#122640"), Color("#4B6484"), 1, 3))
+	_ovr_ring.add_child(ovr_box)
 	_ovr_label = Label.new()
 	_ovr_label.text = "60"
 	_ovr_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -166,6 +177,7 @@ func _build_shell() -> void:
 	var KiniScript := load("res://scenes/tabs/KiniTab.gd")
 	_kini_tab = KiniScript.new()
 	_kini_tab.start_match_requested.connect(func(): start_match_requested.emit())
+	_kini_tab.sim_match_requested.connect(func(): sim_match_requested.emit())
 	_kini_tab.open_dilemma_requested.connect(func(): open_dilemma_requested.emit())
 	_kini_tab.open_squad_requested.connect(func(): open_cutscene_requested.emit(1))
 
@@ -317,6 +329,14 @@ func refresh_hud() -> void:
 	var m: Dictionary = CareerState.career["careerMeta"]
 
 	_ovr_label.text = str(int(p["ovr"]))
+	if is_instance_valid(_ovr_ring):
+		var ovr_prog: Dictionary = CareerState.get_ovr_progress()
+		_ovr_ring.configure(float(ovr_prog.get("progress", 0.0)), bool(ovr_prog.get("will_level_up", false)))
+		var pts_need: int = int(ovr_prog.get("points_to_next", 0))
+		if int(ovr_prog.get("ovr", 60)) >= 99:
+			_ovr_ring.tooltip_text = "OVR Maksimal 99"
+		else:
+			_ovr_ring.tooltip_text = "OVR %d -> butuh %d poin atribut lagi ke OVR %d%s" % [int(ovr_prog["ovr"]), pts_need, int(ovr_prog["ovr"]) + 1, (" (SIAP NAIK!)" if bool(ovr_prog["will_level_up"]) else "")]
 	_name_label.text = str(p["name"])
 	_sub_label.text = "%d THN • LEVEL %d" % [int(p["age"]), int(p["level"])]
 	_cash_label.text = UITheme.format_cash(int(p["cash"]))
@@ -345,3 +365,51 @@ func refresh_hud() -> void:
 			b.text = "DUNIA\nBUKA • %dP" % tw
 		else:
 			b.text = k
+
+class OvrBorderBar extends Control:
+	var _progress: float = 0.0
+	var _ready_up: bool = false
+
+	func configure(progress: float, ready_up: bool) -> void:
+		_progress = clampf(progress, 0.0, 1.0)
+		_ready_up = ready_up
+		queue_redraw()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2(1.5, 1.5), size - Vector2(3.0, 3.0))
+		if r.size.x <= 2.0 or r.size.y <= 2.0:
+			return
+		var bg_col := Color("#1B2D44")
+		draw_rect(r, bg_col, false, 3.0)
+		if _progress <= 0.005:
+			return
+		var fill_col := UITheme.ACCENT_GREEN if _ready_up else UITheme.ACCENT_GOLD
+		var tl := r.position
+		var tr := Vector2(r.position.x + r.size.x, r.position.y)
+		var br := r.position + r.size
+		var bl := Vector2(r.position.x, r.position.y + r.size.y)
+		var top_mid := Vector2((tl.x + tr.x) * 0.5, tl.y)
+		var segs: Array = [
+			[top_mid, tr],
+			[tr, br],
+			[br, bl],
+			[bl, tl],
+			[tl, top_mid],
+		]
+		var total_len: float = 0.0
+		for seg in segs:
+			total_len += (seg[1] as Vector2).distance_to(seg[0] as Vector2)
+		var rem: float = total_len * _progress
+		for seg in segs:
+			if rem <= 0.0:
+				break
+			var p0: Vector2 = seg[0]
+			var p1: Vector2 = seg[1]
+			var slen: float = p0.distance_to(p1)
+			if rem >= slen:
+				draw_line(p0, p1, fill_col, 3.0, false)
+				rem -= slen
+			else:
+				var end_pt: Vector2 = p0.lerp(p1, rem / maxf(0.001, slen))
+				draw_line(p0, end_pt, fill_col, 3.0, false)
+				rem = 0.0

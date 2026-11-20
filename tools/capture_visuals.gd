@@ -162,8 +162,20 @@ func _capture() -> void:
 	app._modal_layer.get_child(0).queue_free()
 	await _wait_frames(2)
 
-	app.call("_open_cutscene", 13)  # SCOUT_DOSSIER
+	app.call("_open_cutscene", 13)  # SCOUT_DOSSIER (with scouting club's logo on dossier & pill!)
 	await _snap("36_cutscene_scout_dossier.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	CareerState.evaluate_player_of_the_month(3)
+	app.call("_open_cutscene", 14)  # POTM_AWARD
+	await _snap("44_cutscene_potm_award.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	CareerState.evaluate_player_of_the_year(1, 1)
+	app.call("_open_cutscene", 15)  # POTY_AWARD
+	await _snap("45_cutscene_poty_award.png")
 	app._modal_layer.get_child(0).queue_free()
 	await _wait_frames(2)
 
@@ -316,6 +328,28 @@ func _capture() -> void:
 	await _wait_frames(2)
 	await _snap("43_match_defender_slide.png")
 
-	# Clean up test save slot 1? Wait: leave or clean? Let's clean Slot 1 so user starts fresh OR keep? Better clean Slot 1 so Home Screen starts clean!
+	# Batch B Captures: Corner Kick (User Taker Curved Aim), GK Build-Up, & Controlled Teammate
+	ms.call("setup_corner_variant", true)
+	ms._dragging = true
+	ms._drag_start = Vector2(480, 310)
+	ms._drag_current = Vector2(495, 445)
+	ms._spin_offset = Vector2(-0.7, 0.05)
+	ms.call("_draw_aim_and_ring")
+	await _wait_frames(8)
+	await _snap("46_match_corner_kick.png")
+
+	ms.call("_trigger_key_moment", ms.MomentType.GK_BUILDUP)
+	ms.set("_incoming_pass_kicked", true)
+	ms.set("_incoming_pass_timer", 0.65)
+	ms.call("_process_incoming_pass", 0.08)
+	await _wait_frames(8)
+	await _snap("47_match_gk_buildup.png")
+
+	ms.call("_trigger_key_moment", ms.MomentType.SHOT)
+	ms.call("_enter_teammate_user_control", 0, true)
+	await _wait_frames(8)
+	await _snap("48_match_teammate_control.png")
+
+	# Clean up test save slot 1 so Home Screen starts clean!
 	CareerState.delete_slot(1)
 	quit(0)

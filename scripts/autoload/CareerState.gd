@@ -9,6 +9,7 @@ const SAVES_DIR := "user://saves/"
 const META_PATH := "user://saves/slots_meta.json"
 const GLOBAL_PATH := "user://global_profile.json"
 const TOTAL_WORLD_PLAYERS := 21289
+const SEASON_MONTHS: Array[String] = ["AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER", "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI"]
 
 var active_slot: int = -1
 var has_active_career: bool = false
@@ -258,6 +259,22 @@ func start_new_career(
 			"scoutedByClubId": -1,
 			"scoutInterest": 0,
 			"eventCooldown": 1,
+			"preEventCooldown": 0,
+			"preMatchDoneWeek": 0,
+			"monthMatches": 0,
+			"monthGoals": 0,
+			"monthAssists": 0,
+			"monthTotalRating": 0.0,
+			"monthMotm": 0,
+			"seasonMatches": 0,
+			"seasonGoals": 0,
+			"seasonAssists": 0,
+			"seasonTotalRating": 0.0,
+			"seasonMotm": 0,
+			"potmHistory": [],
+			"potyHistory": [],
+			"lastPotmAward": {},
+			"lastPotyAward": {},
 		},
 		"playerProfile": {
 			"name": clean_name,
@@ -638,6 +655,29 @@ func recalculate_ovr() -> void:
 			s["name"] = career["playerProfile"]["name"].capitalize()
 			s["number"] = career["playerProfile"]["appearance"].get("shirt_num", 9)
 
+func get_ovr_progress() -> Dictionary:
+	if not has_active_career:
+		return {"ovr": 60, "progress": 0.0, "points_to_next": 5, "will_level_up": false}
+	var attrs: Dictionary = career["playerProfile"]["attributes"]
+	var total := 0.0
+	for k in GameData.ATTRIBUTE_KEYS:
+		total += float(attrs.get(k, 60))
+	var cnt: float = float(maxi(1, GameData.ATTRIBUTE_KEYS.size()))
+	var boot_id := int(career["playerProfile"]["appearance"].get("boot_id", 0))
+	var boot_bonus := int(GameData.boots_catalog[clampi(boot_id, 0, 10)]["bonus_val"])
+	var boot_eff: int = int(boot_bonus * 0.4)
+	var exact_ovr: float = (total / cnt) + float(boot_eff)
+	var cur_ovr: int = clampi(int(round(exact_ovr)), 45, 99)
+	if cur_ovr >= 99:
+		return {"ovr": 99, "progress": 1.0, "points_to_next": 0, "will_level_up": false}
+	var progress: float = clampf(exact_ovr - (float(cur_ovr) - 0.5), 0.0, 1.0)
+	var cur_sum: int = int(round(total))
+	var needed_pts: int = 1
+	while clampi(int(round(float(cur_sum + needed_pts) / cnt)) + boot_eff, 45, 99) <= cur_ovr and needed_pts < 25:
+		needed_pts += 1
+	var sp: int = int(career["playerProfile"].get("skillPoints", 0))
+	return {"ovr": cur_ovr, "progress": progress, "points_to_next": needed_pts, "will_level_up": (sp >= needed_pts)}
+
 func get_effective_attribute(attr_key: String) -> int:
 	if not has_active_career:
 		return 60
@@ -888,6 +928,293 @@ func consume_event_cooldown() -> bool:
 	save_active_career()
 	return true
 
+func consume_prematch_event_cooldown() -> bool:
+	if not has_active_career:
+		return false
+	var meta: Dictionary = career["careerMeta"]
+	var cd: int = int(meta.get("preEventCooldown", 0))
+	if cd > 0:
+		return false
+	meta["preEventCooldown"] = randi_range(1, 3)
+	save_active_career()
+	return true
+
+func pick_contextual_dilemma(timing: String, report: Dictionary = {}) -> Dictionary:
+	if not has_active_career:
+		return GameData.dilemmas_catalog[0]
+	var meta: Dictionary = career["careerMeta"]
+	var prof: Dictionary = career["playerProfile"]
+	var wk: int = int(meta.get("week", 1))
+	var pool: Array[Dictionary] = []
+	for d in GameData.dilemmas_catalog:
+		var t_s: String = str(d.get("timing", "POST"))
+		if t_s != timing and t_s != "ANY":
+			continue
+		var did: String = str(d.get("id", ""))
+		# Only show transfer rumors when scouting interest or higher OVR justifies it
+		if did == "rumor_transfer_pers" and int(meta.get("scoutedByClubId", -1)) < 0 and int(meta.get("scoutInterest", 0)) < 5 and int(prof.get("ovr", 60)) < 62:
+			continue
+		pool.append(d)
+	if pool.is_empty():
+		pool = [GameData.dilemmas_catalog[0]]
+
+	var picked: Dictionary = pool[wk % pool.size()]
+	if timing == "POST":
+		var eng: int = int(prof.get("energy", 80))
+		var my_g: int = int(report.get("my_goals", 0))
+		if eng < 66 and randf() < 0.45:
+			for d in pool:
+				if str(d.get("id", "")) == "hari_libur_aktivitas":
+					picked = d
+					break
+		elif my_g >= 1 and randf() < 0.45:
+			for d in pool:
+				if str(d.get("id", "")) == "adu_penalti_kiper":
+					picked = d
+					break
+	elif timing == "PRE":
+		var rel_coach: int = int(prof.get("relations", {}).get("pelatih", 60))
+		if int(meta.get("scoutedByClubId", -1)) >= 0 and randf() < 0.45:
+			for d in pool:
+				if str(d.get("id", "")) == "rumor_transfer_pers":
+					picked = d
+					break
+		elif rel_coach < 55 and randf() < 0.45:
+			for d in pool:
+				if str(d.get("id", "")) == "latihan_ekstra":
+					picked = d
+					break
+
+	meta["currentDilemma"] = picked
+	save_active_career()
+	return picked
+
+func get_season_month_index(wk: int) -> int:
+	return clampi(int(floor(float(wk - 1) / 4.5)), 0, SEASON_MONTHS.size() - 1)
+
+func get_season_month_name(wk: int) -> String:
+	return SEASON_MONTHS[get_season_month_index(wk)]
+
+func ensure_scout_target_club() -> int:
+	if not has_active_career or GameData.clubs.is_empty():
+		return -1
+	var meta: Dictionary = career["careerMeta"]
+	var existing_id: int = int(meta.get("scoutedByClubId", -1))
+	var my_cid: int = int(career["playerProfile"].get("clubId", 0))
+	if existing_id >= 0 and existing_id < GameData.clubs.size() and existing_id != my_cid:
+		return existing_id
+	var my_club: Dictionary = get_current_club()
+	var target_ovr: int = maxi(62, int(career["playerProfile"].get("ovr", 60)) + 4)
+	var picked_id: int = (my_cid + 17) % GameData.clubs.size()
+	var best_diff: int = 999
+	for c in GameData.clubs:
+		var cid: int = int(c["id"])
+		if cid == my_cid:
+			continue
+		var c_div: int = int(c.get("division", 3))
+		var c_ovr: int = int(c.get("ovr", 60))
+		if c_div > int(my_club.get("division", 3)):
+			continue
+		var d: int = abs(c_ovr - target_ovr)
+		if d < best_diff:
+			best_diff = d
+			picked_id = cid
+			if d <= 2 and cid != (my_cid + 1):
+				break
+	meta["scoutedByClubId"] = picked_id
+	save_active_career()
+	return picked_id
+
+func evaluate_player_of_the_month(month_idx: int) -> Dictionary:
+	if not has_active_career:
+		return {}
+	var meta: Dictionary = career["careerMeta"]
+	var prof: Dictionary = career["playerProfile"]
+	var st: Dictionary = career["stats"]
+	var m_matches: int = maxi(1, int(meta.get("monthMatches", 1)))
+	var m_goals: int = int(meta.get("monthGoals", 0))
+	var m_assists: int = int(meta.get("monthAssists", 0))
+	var m_motm: int = int(meta.get("monthMotm", 0))
+	var m_avg_r: float = snappedf(float(meta.get("monthTotalRating", 6.5)) / float(m_matches), 0.1)
+	var m_name: String = SEASON_MONTHS[clampi(month_idx, 0, SEASON_MONTHS.size() - 1)]
+	var yr: int = int(meta.get("year", 1))
+	var club: Dictionary = get_current_club()
+	var user_score: float = m_avg_r * 10.0 + float(m_goals) * 8.0 + float(m_assists) * 5.0 + float(m_motm) * 4.5
+
+	var div_clubs := GameData.get_clubs_in_division(int(club["nation_id"]), int(club["division"]))
+	var candidates: Array[Dictionary] = [{
+		"name": str(prof.get("name", "PEMAIN")).to_upper(),
+		"club_id": int(club["id"]),
+		"club_code": str(club["code"]),
+		"goals": m_goals,
+		"assists": m_assists,
+		"avg_rating": m_avg_r,
+		"score": user_score,
+		"seed": 999,
+		"is_user": true,
+	}]
+
+	var rival_names := ["Viktor Lindqvist", "Mateo Alvarez", "Emil Holm", "Lukas Svensson", "Rafael Costa", "Sora Takahashi"]
+	for i in range(2):
+		var rc: Dictionary = div_clubs[(i * 7 + month_idx * 3 + 1) % div_clubs.size()] if div_clubs.size() > 1 else GameData.clubs[(int(club["id"]) + i + 1) % GameData.clubs.size()]
+		if int(rc["id"]) == int(club["id"]) and GameData.clubs.size() > 2:
+			rc = GameData.clubs[(int(club["id"]) + i + 2) % GameData.clubs.size()]
+		var h: int = abs((yr * 37 + month_idx * 19 + i * 29) % 100)
+		var r_g: int = 1 + (h % 3)
+		var r_a: int = (h / 5) % 3
+		var r_rtg: float = snappedf(6.8 + float(h % 9) * 0.1, 0.1)
+		var r_score: float = r_rtg * 10.0 + float(r_g) * 8.0 + float(r_a) * 5.0
+		candidates.append({
+			"name": rival_names[(month_idx + i) % rival_names.size()].to_upper(),
+			"club_id": int(rc["id"]),
+			"club_code": str(rc["code"]),
+			"goals": r_g,
+			"assists": r_a,
+			"avg_rating": r_rtg,
+			"score": r_score,
+			"seed": 400 + month_idx * 13 + i * 31,
+			"is_user": false,
+		})
+
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if not is_equal_approx(float(a["score"]), float(b["score"])):
+			return float(a["score"]) > float(b["score"])
+		return bool(a["is_user"])
+	)
+	var u_rank: int = 1
+	for idx in range(candidates.size()):
+		if bool(candidates[idx]["is_user"]):
+			u_rank = idx + 1
+			break
+	var won: bool = (u_rank == 1)
+	if won:
+		prof["cash"] = int(prof["cash"]) + 3500
+		meta["legacyPoints"] = int(meta["legacyPoints"]) + 6
+		st["potmCount"] = int(st.get("potmCount", 0)) + 1
+		var rel: Dictionary = prof["relations"]
+		rel["fans"] = clampi(int(rel["fans"]) + 5, 0, 100)
+		rel["pers"] = clampi(int(rel["pers"]) + 5, 0, 100)
+		_push_news("LIGA", "%s terpilih sebagai PEMAIN TERBAIK BULAN %s (Musim %d)!" % [prof["name"], m_name, yr])
+	else:
+		meta["legacyPoints"] = int(meta["legacyPoints"]) + 2
+		_push_news("LIGA", "%s masuk nominasi Top 3 Pemain Terbaik Bulan %s." % [prof["name"], m_name])
+
+	var award := {
+		"kind": "POTM",
+		"month": m_name,
+		"year": yr,
+		"won": won,
+		"user_rank": u_rank,
+		"winner_name": str(candidates[0]["name"]),
+		"candidates": candidates,
+		"user_stats": {"matches": m_matches, "goals": m_goals, "assists": m_assists, "avg_rating": m_avg_r},
+	}
+	meta["lastPotmAward"] = award
+	var hist: Array = meta.get("potmHistory", [])
+	hist.append({"month": m_name, "year": yr, "won": won, "rank": u_rank})
+	meta["potmHistory"] = hist
+	meta["monthMatches"] = 0
+	meta["monthGoals"] = 0
+	meta["monthAssists"] = 0
+	meta["monthTotalRating"] = 0.0
+	meta["monthMotm"] = 0
+	_update_legacy_tier()
+	return award
+
+func evaluate_player_of_the_year(finished_year: int, league_pos: int) -> Dictionary:
+	if not has_active_career:
+		return {}
+	var meta: Dictionary = career["careerMeta"]
+	var prof: Dictionary = career["playerProfile"]
+	var st: Dictionary = career["stats"]
+	var s_matches: int = maxi(1, int(meta.get("seasonMatches", st.get("matches", 1))))
+	var s_goals: int = int(meta.get("seasonGoals", 0))
+	var s_assists: int = int(meta.get("seasonAssists", 0))
+	var s_motm: int = int(meta.get("seasonMotm", 0))
+	var s_avg_r: float = snappedf(float(meta.get("seasonTotalRating", 6.5 * float(s_matches))) / float(s_matches), 0.1)
+	var club: Dictionary = get_current_club()
+	var team_bonus: float = 14.0 if league_pos == 1 else (7.0 if league_pos <= 3 else 0.0)
+	var user_score: float = s_avg_r * 12.0 + float(s_goals) * 2.6 + float(s_assists) * 1.8 + float(s_motm) * 3.2 + team_bonus
+
+	var div_clubs := GameData.get_clubs_in_division(int(club["nation_id"]), int(club["division"]))
+	var candidates: Array[Dictionary] = [{
+		"name": str(prof.get("name", "PEMAIN")).to_upper(),
+		"club_id": int(club["id"]),
+		"club_code": str(club["code"]),
+		"goals": s_goals,
+		"assists": s_assists,
+		"avg_rating": s_avg_r,
+		"score": user_score,
+		"seed": 999,
+		"is_user": true,
+	}]
+
+	var stars := ["Corentin Zimmer", "Charlie Irving", "Pedro Resende", "Max Torres", "Ana Ruiz"]
+	for i in range(2):
+		var rc: Dictionary = div_clubs[(i * 9 + finished_year * 5 + 2) % div_clubs.size()] if div_clubs.size() > 1 else GameData.clubs[(int(club["id"]) + i + 3) % GameData.clubs.size()]
+		if int(rc["id"]) == int(club["id"]) and GameData.clubs.size() > 2:
+			rc = GameData.clubs[(int(club["id"]) + i + 4) % GameData.clubs.size()]
+		var h: int = abs((finished_year * 53 + i * 41 + int(club["division"]) * 17) % 100)
+		var r_g: int = maxi(8, 12 + (h % 14))
+		var r_a: int = maxi(4, 6 + ((h / 3) % 9))
+		var r_rtg: float = snappedf(7.1 + float(h % 9) * 0.1, 0.1)
+		var r_score: float = r_rtg * 12.0 + float(r_g) * 2.6 + float(r_a) * 1.8 + 8.0
+		candidates.append({
+			"name": stars[(finished_year + i) % stars.size()].to_upper(),
+			"club_id": int(rc["id"]),
+			"club_code": str(rc["code"]),
+			"goals": r_g,
+			"assists": r_a,
+			"avg_rating": r_rtg,
+			"score": r_score,
+			"seed": 700 + finished_year * 23 + i * 47,
+			"is_user": false,
+		})
+
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if not is_equal_approx(float(a["score"]), float(b["score"])):
+			return float(a["score"]) > float(b["score"])
+		return bool(a["is_user"])
+	)
+	var u_rank: int = 1
+	for idx in range(candidates.size()):
+		if bool(candidates[idx]["is_user"]):
+			u_rank = idx + 1
+			break
+	var won: bool = (u_rank == 1)
+	if won:
+		var t_name := "PEMAIN TERBAIK TAHUN INI (MUSIM %d)" % finished_year
+		career["trophiesList"].append({"name": t_name, "season": finished_year, "type": "INDIVIDU"})
+		st["trophies"] = int(st["trophies"]) + 1
+		st["potyCount"] = int(st.get("potyCount", 0)) + 1
+		prof["cash"] = int(prof["cash"]) + 15000
+		meta["legacyPoints"] = int(meta["legacyPoints"]) + 25
+		_push_news("DUNIA", "GALA MUSIM %d: %s dinobatkan PEMAIN TERBAIK TAHUN INI!" % [finished_year, prof["name"]])
+	else:
+		meta["legacyPoints"] = int(meta["legacyPoints"]) + 8
+		_push_news("DUNIA", "GALA MUSIM %d: %s finis # %d dalam penghargaan Pemain Terbaik Tahun Ini." % [finished_year, prof["name"], u_rank])
+
+	var award := {
+		"kind": "POTY",
+		"year": finished_year,
+		"won": won,
+		"user_rank": u_rank,
+		"winner_name": str(candidates[0]["name"]),
+		"candidates": candidates,
+		"user_stats": {"matches": s_matches, "goals": s_goals, "assists": s_assists, "avg_rating": s_avg_r, "league_pos": league_pos},
+	}
+	meta["lastPotyAward"] = award
+	var yhist: Array = meta.get("potyHistory", [])
+	yhist.append({"year": finished_year, "won": won, "rank": u_rank})
+	meta["potyHistory"] = yhist
+	meta["seasonMatches"] = 0
+	meta["seasonGoals"] = 0
+	meta["seasonAssists"] = 0
+	meta["seasonTotalRating"] = 0.0
+	meta["seasonMotm"] = 0
+	_update_legacy_tier()
+	return award
+
 func get_division_leaders() -> Dictionary:
 	if not has_active_career:
 		return {"goals": [], "assists": [], "rating": [], "user_goal_rank": 1, "top_goals": 1}
@@ -1090,9 +1417,25 @@ func finish_match(result: Dictionary) -> Dictionary:
 		elif l_id == "vila_mewah":
 			rec += 18
 	career["playerProfile"]["energy"] = clampi(int(career["playerProfile"]["energy"]) - drain + rec, 12, 100)
-	# Decrement event cooldown counter (events appear only every 1-3 matches)
+	# Decrement event cooldown counters (events appear only every 1-3 matches)
 	var cur_cd: int = int(career["careerMeta"].get("eventCooldown", 1))
 	career["careerMeta"]["eventCooldown"] = maxi(0, cur_cd - 1)
+	var cur_pre_cd: int = int(career["careerMeta"].get("preEventCooldown", 0))
+	career["careerMeta"]["preEventCooldown"] = maxi(0, cur_pre_cd - 1)
+
+	# Accumulate monthly & seasonal stats for Player of the Month / Player of the Year awards
+	career["careerMeta"]["monthMatches"] = int(career["careerMeta"].get("monthMatches", 0)) + 1
+	career["careerMeta"]["monthGoals"] = int(career["careerMeta"].get("monthGoals", 0)) + my_g
+	career["careerMeta"]["monthAssists"] = int(career["careerMeta"].get("monthAssists", 0)) + my_a
+	career["careerMeta"]["monthTotalRating"] = float(career["careerMeta"].get("monthTotalRating", 0.0)) + rating
+	if is_motm:
+		career["careerMeta"]["monthMotm"] = int(career["careerMeta"].get("monthMotm", 0)) + 1
+	career["careerMeta"]["seasonMatches"] = int(career["careerMeta"].get("seasonMatches", 0)) + 1
+	career["careerMeta"]["seasonGoals"] = int(career["careerMeta"].get("seasonGoals", 0)) + my_g
+	career["careerMeta"]["seasonAssists"] = int(career["careerMeta"].get("seasonAssists", 0)) + my_a
+	career["careerMeta"]["seasonTotalRating"] = float(career["careerMeta"].get("seasonTotalRating", 0.0)) + rating
+	if is_motm:
+		career["careerMeta"]["seasonMotm"] = int(career["careerMeta"].get("seasonMotm", 0)) + 1
 
 	# Relations & Legacy points & Followers
 	var rel: Dictionary = career["playerProfile"]["relations"]
@@ -1139,9 +1482,18 @@ func finish_match(result: Dictionary) -> Dictionary:
 	career["contract"]["clubPoints"] = clampi(int(career["contract"]["clubPoints"]) + 1 + (1 if us > them else 0), 0, 200)
 	career["contract"]["clubRequestsLevel"] = clampi(1 + int(int(career["contract"]["clubPoints"]) / 35), 1, 6)
 
+	var max_wks: int = int(career["careerMeta"].get("maxWeeks", 45))
+	var cur_m_idx: int = get_season_month_index(week)
+	var next_m_idx: int = get_season_month_index(week + 1) if week < max_wks else -1
+	var potm_award: Dictionary = {}
+	if next_m_idx != cur_m_idx and int(career["careerMeta"].get("monthMatches", 0)) >= 2:
+		potm_award = evaluate_player_of_the_month(cur_m_idx)
+
+	var poty_award: Dictionary = {}
 	var season_ended := false
 	var season_summary := {}
-	if week >= int(career["careerMeta"]["maxWeeks"]):
+	if week >= max_wks:
+		poty_award = evaluate_player_of_the_year(int(career["careerMeta"]["year"]), get_user_league_position())
 		season_summary = _rollover_season()
 		season_ended = true
 	else:
@@ -1174,6 +1526,8 @@ func finish_match(result: Dictionary) -> Dictionary:
 		"follower_gain": follower_gain,
 		"season_ended": season_ended,
 		"season_summary": season_summary,
+		"potm_award": potm_award,
+		"poty_award": poty_award,
 		"goal_timeline": result.get("goal_timeline", []),
 	}
 	career_updated.emit()

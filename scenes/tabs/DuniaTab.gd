@@ -133,6 +133,34 @@ func _render_buka() -> void:
 	sl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if tw > 0 else UITheme.ACCENT_RED)
 	st_panel.add_child(sl)
 
+	var scout_cid: int = int(CareerState.career["careerMeta"].get("scoutedByClubId", -1))
+	if scout_cid >= 0 and scout_cid < GameData.clubs.size():
+		var sc_c: Dictionary = GameData.clubs[scout_cid]
+		_body.add_child(UITheme.make_section_header("SCOUT TIM YANG MENGINCARMU"))
+		var sc_card := PanelContainer.new()
+		sc_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A1A0E"), UITheme.ACCENT_GOLD, 2, 6))
+		_body.add_child(sc_card)
+		var sc_hb := HBoxContainer.new()
+		sc_hb.add_theme_constant_override("separation", 10)
+		sc_card.add_child(sc_hb)
+		var sc_cr := ClubCrest.new()
+		sc_cr.custom_minimum_size = Vector2(44, 44)
+		sc_cr.set_club(scout_cid)
+		sc_hb.add_child(sc_cr)
+		var sc_vb := VBoxContainer.new()
+		sc_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sc_hb.add_child(sc_vb)
+		var s_t1 := Label.new()
+		s_t1.text = "%s (%s • DIV %d)" % [str(sc_c.get("name", "KLUB")).to_upper(), GameData.nations[int(sc_c.get("nation_id", 0))]["name"], int(sc_c.get("division", 2))]
+		s_t1.add_theme_font_override("font", UITheme.get_display_font())
+		s_t1.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		var s_t2 := Label.new()
+		s_t2.text = "OVR %d  •  Minat Scout %d%%" % [int(sc_c.get("ovr", 68)), int(CareerState.career["careerMeta"].get("scoutInterest", 25))]
+		s_t2.add_theme_font_size_override("font_size", 11)
+		s_t2.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+		sc_vb.add_child(s_t1)
+		sc_vb.add_child(s_t2)
+
 	_body.add_child(UITheme.make_section_header("AGENMU • CARI KLUB BARU"))
 	for opt in [
 		["TAWARKAN KE SEMUA KLUB", 2404],

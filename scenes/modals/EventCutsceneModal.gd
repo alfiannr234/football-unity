@@ -26,6 +26,8 @@ enum CutsceneMode {
 	LEMPAKAN_JERSEY,
 	GUNTUR_DRUM,
 	SCOUT_DOSSIER,
+	POTM_AWARD,
+	POTY_AWARD,
 }
 
 var _mode: CutsceneMode = CutsceneMode.TIM_INTI
@@ -151,6 +153,10 @@ func _render_mode() -> void:
 			_build_guntur_drum()
 		CutsceneMode.SCOUT_DOSSIER:
 			_build_scout_dossier()
+		CutsceneMode.POTM_AWARD:
+			_build_potm_award()
+		CutsceneMode.POTY_AWARD:
+			_build_poty_award()
 
 func _add_backdrop(tex_path: String) -> void:
 	var bg := TextureRect.new()
@@ -2354,10 +2360,15 @@ func _build_scout_dossier() -> void:
 	var pname: String = str(prof.get("name", "PEMAIN")).to_upper().split(" ")[-1].left(10)
 	var pos_c: String = str(prof.get("naturalPosition", "ST"))
 	var age_n: int = int(prof.get("age", 16))
-	var scout_club: Dictionary = GameData.clubs[mini(GameData.clubs.size() - 1, maxi(0, int(prof.get("clubId", 0)) + 17))]
+	var sc_id: int = CareerState.ensure_scout_target_club() if CareerState.has_active_career else 17
+	if sc_id < 0 or sc_id >= GameData.clubs.size():
+		sc_id = mini(GameData.clubs.size() - 1, maxi(0, int(prof.get("clubId", 0)) + 17))
+	var scout_club: Dictionary = GameData.clubs[sc_id]
+	var sc_nat: String = str(GameData.nations[clampi(int(scout_club.get("nation_id", 0)), 0, GameData.nations.size() - 1)].get("name", ""))
 	var card_res: Dictionary = CareerState.unlock_album_card("scout_pantau")
 	if CareerState.has_active_career:
 		CareerState.career["careerMeta"]["scoutedByClubId"] = int(scout_club["id"])
+		CareerState.career["careerMeta"]["scoutInterest"] = maxi(25, int(CareerState.career["careerMeta"].get("scoutInterest", 0)) + 15)
 		CareerState.save_active_career()
 
 	# Dark atmospheric room with custom pixel Scout holding dossier
@@ -2381,11 +2392,8 @@ func _build_scout_dossier() -> void:
 		room.draw_rect(Rect2(cx - 32, cy - 40, 64, 24), Color("#94A3B8"))   # grey beard
 		# Open scouting dossier held in front of chest
 		room.draw_rect(Rect2(cx - 140, cy + 28, 280, 96), Color("#181410"))
-		room.draw_rect(Rect2(cx - 134, cy + 34, 128, 84), Color("#D8CEBC"))
+		room.draw_rect(Rect2(cx - 134, cy + 34, 128, 84), Color("#132033"))
 		room.draw_rect(Rect2(cx + 6, cy + 34, 128, 84), Color("#E6DEC8"))
-		# Crest emblem on left dossier page
-		room.draw_circle(Vector2(cx - 70, cy + 76), 30.0, Color("#EAB308"))
-		room.draw_circle(Vector2(cx - 70, cy + 76), 14.0, Color("#111827"))
 		# Scout notes on right dossier page (NAME / POS AGE / red-underlined PANTAU)
 		var fnt := UITheme.get_display_font()
 		room.draw_string(fnt, Vector2(cx + 16, cy + 58), pname, HORIZONTAL_ALIGNMENT_LEFT, 114, 13, Color("#1E293B"))
@@ -2395,27 +2403,37 @@ func _build_scout_dossier() -> void:
 	)
 	_stage.add_child(room)
 
-	# Top-Left Header Pill: SCOUT + Club Name
+	# Real ClubCrest Logo of Scouting Team printed prominently inside Left Dossier Page!
+	var dossier_crest := ClubCrest.new()
+	dossier_crest.set_club(int(scout_club["id"]))
+	dossier_crest.set_anchors_preset(Control.PRESET_CENTER)
+	dossier_crest.offset_left = -108
+	dossier_crest.offset_right = -32
+	dossier_crest.offset_top = 5
+	dossier_crest.offset_bottom = 81
+	_stage.add_child(dossier_crest)
+
+	# Top-Left Header Pill: SCOUT MENGINCARMU + Team Logo + Club Name & Division
 	var tag := PanelContainer.new()
 	tag.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	tag.offset_left = 20
 	tag.offset_top = 18
-	tag.offset_right = 380
-	tag.offset_bottom = 70
-	tag.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1F1B12", 0.94), UITheme.ACCENT_GOLD, 2, 6))
+	tag.offset_right = 440
+	tag.offset_bottom = 78
+	tag.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1F1B12", 0.96), UITheme.ACCENT_GOLD, 2, 8))
 	_stage.add_child(tag)
 	var thb := HBoxContainer.new()
-	thb.add_theme_constant_override("separation", 10)
+	thb.add_theme_constant_override("separation", 12)
 	tag.add_child(thb)
 	var cr := ClubCrest.new()
-	cr.custom_minimum_size = Vector2(36, 36)
+	cr.custom_minimum_size = Vector2(46, 46)
 	cr.set_club(int(scout_club["id"]))
 	thb.add_child(cr)
 	var tl := Label.new()
-	tl.text = "SCOUT\n%s" % str(scout_club["name"]).to_upper()
+	tl.text = "SCOUT MENGINCARMU!\n%s (%s • DIV %d • OVR %d)" % [str(scout_club["name"]).to_upper(), sc_nat.to_upper(), int(scout_club.get("division", 2)), int(scout_club.get("ovr", 68))]
 	tl.add_theme_font_override("font", UITheme.get_display_font())
 	tl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	tl.add_theme_font_size_override("font_size", 12)
+	tl.add_theme_font_size_override("font_size", 11)
 	thb.add_child(tl)
 
 	var next_b := Button.new()
@@ -2552,3 +2570,291 @@ func _build_kartu_baru_overlay(card_res: Dictionary) -> void:
 		queue_free()
 	)
 	vb.add_child(ok_b)
+
+# ---------------------------------------------------------------------------
+# 15. PEMAIN TERBAIK BULAN INI (PLAYER OF THE MONTH CEREMONY)
+# ---------------------------------------------------------------------------
+func _build_potm_award() -> void:
+	var award: Dictionary = {}
+	if CareerState.has_active_career:
+		award = CareerState.career.get("careerMeta", {}).get("lastPotmAward", {})
+	if award.is_empty():
+		award = CareerState.evaluate_player_of_the_month(0) if CareerState.has_active_career else {
+			"month": "OKTOBER", "year": 1, "won": true, "user_rank": 1,
+			"candidates": [
+				{"name": "ALFIAN", "club_id": 0, "club_code": "DED", "goals": 4, "assists": 2, "avg_rating": 8.4, "seed": 999, "is_user": true},
+				{"name": "VIKTOR", "club_id": 1, "club_code": "SVA", "goals": 3, "assists": 1, "avg_rating": 7.6, "seed": 411, "is_user": false},
+				{"name": "MATEO", "club_id": 2, "club_code": "HAM", "goals": 2, "assists": 2, "avg_rating": 7.4, "seed": 442, "is_user": false},
+			],
+		}
+	var won: bool = bool(award.get("won", true))
+	var m_name: String = str(award.get("month", "OKTOBER"))
+	var yr: int = int(award.get("year", 1))
+	var cands: Array = award.get("candidates", [])
+	_add_backdrop("res://assets/sprites/backgrounds/press_wall.png")
+	if won:
+		_spawn_confetti(UITheme.ACCENT_GOLD)
+		AudioSynth.play_achievement()
+
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 48
+	vb.offset_right = -48
+	vb.offset_top = 14
+	vb.offset_bottom = -14
+	vb.add_theme_constant_override("separation", 8)
+	_stage.add_child(vb)
+
+	var hdr := PanelContainer.new()
+	hdr.add_theme_stylebox_override("panel", UITheme.make_box(Color("#4E320E") if won else Color("#182840"), UITheme.ACCENT_GOLD if won else UITheme.ACCENT_CYAN, 2, 10))
+	vb.add_child(hdr)
+	var h_lbl := Label.new()
+	h_lbl.text = "★ PEMAIN TERBAIK BULAN %s (MUSIM %d) ★\n%s" % [m_name, yr, ("SELAMAT! KAMU MERAIH GELAR BULAN INI (+$3.500)" if won else "KAMU MASUK NOMINASI TOP 3 (#%d)" % int(award.get("user_rank", 2)))]
+	h_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	h_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	h_lbl.add_theme_font_size_override("font_size", 15)
+	h_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if won else UITheme.ACCENT_CYAN)
+	hdr.add_child(h_lbl)
+
+	var pod_hb := HBoxContainer.new()
+	pod_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pod_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	pod_hb.add_theme_constant_override("separation", 12)
+	vb.add_child(pod_hb)
+
+	for i in range(mini(3, cands.size())):
+		var cd: Dictionary = cands[i]
+		var is_u: bool = bool(cd.get("is_user", false))
+		var is_win: bool = (i == 0)
+		var cid: int = clampi(int(cd.get("club_id", 0)), 0, maxi(0, GameData.clubs.size() - 1))
+		var club_d: Dictionary = GameData.clubs[cid] if not GameData.clubs.is_empty() else {}
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#38280E") if is_win else (Color("#162B46") if is_u else Color("#121A26")), UITheme.ACCENT_GOLD if is_win else (UITheme.ACCENT_CYAN if is_u else UITheme.BORDER_STEEL), 2 if (is_win or is_u) else 1, 8))
+		pod_hb.add_child(card)
+		var cvb := VBoxContainer.new()
+		cvb.alignment = BoxContainer.ALIGNMENT_CENTER
+		cvb.add_theme_constant_override("separation", 4)
+		card.add_child(cvb)
+
+		var rk_hb := HBoxContainer.new()
+		rk_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+		rk_hb.add_theme_constant_override("separation", 6)
+		cvb.add_child(rk_hb)
+		var cr := ClubCrest.new()
+		cr.custom_minimum_size = Vector2(26, 26)
+		cr.set_club(cid)
+		rk_hb.add_child(cr)
+		var r_lbl := Label.new()
+		r_lbl.text = "#%d %s" % [i + 1, ("PEMENANG" if is_win else "NOMINASI")]
+		r_lbl.add_theme_font_override("font", UITheme.get_display_font())
+		r_lbl.add_theme_font_size_override("font_size", 11)
+		r_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_win else Color("#CBD5E1"))
+		rk_hb.add_child(r_lbl)
+
+		var av := PixelAvatar.new()
+		av.custom_minimum_size = Vector2(76, 108) if is_win else Vector2(64, 92)
+		av.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		if is_u and CareerState.has_active_career:
+			av.configure_from_career()
+		else:
+			av.configure_from_seed(int(cd.get("seed", 10 + i)), club_d, 9 + i)
+		av.show_mvp_trophy = is_win
+		av.anim_mode = "MVP" if is_win else "CHEER"
+		cvb.add_child(av)
+
+		var nm_l := Label.new()
+		nm_l.text = str(cd.get("name", "PEMAIN"))
+		nm_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm_l.add_theme_font_override("font", UITheme.get_display_font())
+		nm_l.add_theme_font_size_override("font_size", 12)
+		nm_l.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_u else Color.WHITE)
+		cvb.add_child(nm_l)
+
+		var st_l := Label.new()
+		st_l.text = "RTG %.1f • %dG %dA" % [float(cd.get("avg_rating", 7.2)), int(cd.get("goals", 0)), int(cd.get("assists", 0))]
+		st_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		st_l.add_theme_font_size_override("font_size", 10)
+		st_l.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+		cvb.add_child(st_l)
+
+	var ch_hb := HBoxContainer.new()
+	ch_hb.add_theme_constant_override("separation", 10)
+	vb.add_child(ch_hb)
+
+	var b1 := Button.new()
+	b1.text = "DEDIKASIKAN UNTUK TIM\n(+6 RUANG GANTI • +4 PELATIH • +45 XP)"
+	b1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b1.custom_minimum_size = Vector2(0, 52)
+	UITheme.style_btn(b1, Color("#173B66"), UITheme.ACCENT_CYAN, 11)
+	b1.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.apply_cutscene_effects({"ruangGanti": 6, "pelatih": 4, "xp": 45})
+		finished.emit()
+		queue_free()
+	)
+	ch_hb.add_child(b1)
+
+	var b2 := Button.new()
+	b2.text = "JANJIKAN LEBIH TAJAM LAGI\n(+7 FANS • +450 PENGIKUT • +45 XP)"
+	b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b2.custom_minimum_size = Vector2(0, 52)
+	UITheme.style_btn(b2, Color("#4E320E"), UITheme.ACCENT_GOLD, 11)
+	b2.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.apply_cutscene_effects({"fans": 7, "followers": 450, "xp": 45})
+		finished.emit()
+		queue_free()
+	)
+	ch_hb.add_child(b2)
+
+# ---------------------------------------------------------------------------
+# 16. PEMAIN TERBAIK TAHUN INI (ANNUAL GALA PLAYER OF THE YEAR CEREMONY)
+# ---------------------------------------------------------------------------
+func _build_poty_award() -> void:
+	var award: Dictionary = {}
+	if CareerState.has_active_career:
+		award = CareerState.career.get("careerMeta", {}).get("lastPotyAward", {})
+	if award.is_empty():
+		award = CareerState.evaluate_player_of_the_year(1, 1) if CareerState.has_active_career else {
+			"year": 1, "won": true, "user_rank": 1,
+			"candidates": [
+				{"name": "ALFIAN", "club_id": 0, "club_code": "DED", "goals": 22, "assists": 10, "avg_rating": 8.3, "seed": 999, "is_user": true},
+				{"name": "CORENTIN ZIMMER", "club_id": 1, "club_code": "SVA", "goals": 19, "assists": 8, "avg_rating": 7.9, "seed": 723, "is_user": false},
+				{"name": "CHARLIE IRVING", "club_id": 2, "club_code": "HAM", "goals": 16, "assists": 11, "avg_rating": 7.8, "seed": 770, "is_user": false},
+			],
+		}
+	var won: bool = bool(award.get("won", true))
+	var yr: int = int(award.get("year", 1))
+	var cands: Array = award.get("candidates", [])
+
+	# Gala Sunburst Rays Backdrop
+	var rays := Control.new()
+	rays.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rays.draw.connect(func():
+		var sz := rays.size
+		rays.draw_rect(Rect2(Vector2.ZERO, sz), Color("#100B1C"))
+		var center := Vector2(sz.x * 0.5, sz.y * 0.42)
+		var rad := sz.length()
+		for i in range(18):
+			var a0 := float(i) / 18.0 * TAU + _fx_time * 0.14
+			var a1 := a0 + TAU / 36.0
+			var pts := PackedVector2Array([center, center + Vector2(cos(a0), sin(a0)) * rad, center + Vector2(cos(a1), sin(a1)) * rad])
+			rays.draw_colored_polygon(pts, Color(0.98, 0.80, 0.22, 0.10))
+	)
+	_stage.add_child(rays)
+	_spawn_confetti(UITheme.ACCENT_GOLD)
+	AudioSynth.play_achievement()
+
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 44
+	vb.offset_right = -44
+	vb.offset_top = 12
+	vb.offset_bottom = -12
+	vb.add_theme_constant_override("separation", 8)
+	_stage.add_child(vb)
+
+	var hdr := PanelContainer.new()
+	hdr.add_theme_stylebox_override("panel", UITheme.make_box(Color("#5C3D0E"), UITheme.ACCENT_GOLD, 3, 10))
+	vb.add_child(hdr)
+	var hl := Label.new()
+	hl.text = "★ GALA PENGHARGAAN • PEMAIN TERBAIK TAHUN INI (MUSIM %d) ★\n%s" % [yr, ("PENGHARGAAN TERTINGGI! KAMU PEMAIN TERBAIK MUSIM %d (+$15.000 • +25 LEGACY)" % yr if won else "FINALIS GALA (#%d) • TERUS TINGKATKAN REKORMU!" % int(award.get("user_rank", 2)))]
+	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hl.add_theme_font_override("font", UITheme.get_display_font())
+	hl.add_theme_font_size_override("font_size", 14)
+	hl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	hdr.add_child(hl)
+
+	var pod_hb := HBoxContainer.new()
+	pod_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pod_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	pod_hb.add_theme_constant_override("separation", 12)
+	vb.add_child(pod_hb)
+
+	for i in range(mini(3, cands.size())):
+		var cd: Dictionary = cands[i]
+		var is_u: bool = bool(cd.get("is_user", false))
+		var is_win: bool = (i == 0)
+		var cid: int = clampi(int(cd.get("club_id", 0)), 0, maxi(0, GameData.clubs.size() - 1))
+		var club_d: Dictionary = GameData.clubs[cid] if not GameData.clubs.is_empty() else {}
+		var card := PanelContainer.new()
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#402D0E") if is_win else (Color("#1B2840") if is_u else Color("#141928")), UITheme.ACCENT_GOLD if is_win else UITheme.ACCENT_CYAN, 2 if (is_win or is_u) else 1, 10))
+		pod_hb.add_child(card)
+		var cvb := VBoxContainer.new()
+		cvb.alignment = BoxContainer.ALIGNMENT_CENTER
+		cvb.add_theme_constant_override("separation", 4)
+		card.add_child(cvb)
+
+		var rk_hb := HBoxContainer.new()
+		rk_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+		rk_hb.add_theme_constant_override("separation", 6)
+		cvb.add_child(rk_hb)
+		var cr := ClubCrest.new()
+		cr.custom_minimum_size = Vector2(28, 28)
+		cr.set_club(cid)
+		rk_hb.add_child(cr)
+		var rl := Label.new()
+		rl.text = "TROFI #%d" % (i + 1) if is_win else "#%d FINALIS" % (i + 1)
+		rl.add_theme_font_override("font", UITheme.get_display_font())
+		rl.add_theme_font_size_override("font_size", 11)
+		rl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_win else Color("#E2E8F0"))
+		rk_hb.add_child(rl)
+
+		var av := PixelAvatar.new()
+		av.custom_minimum_size = Vector2(82, 118) if is_win else Vector2(68, 98)
+		av.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		if is_u and CareerState.has_active_career:
+			av.configure_from_career()
+		else:
+			av.configure_from_seed(int(cd.get("seed", 20 + i)), club_d, 10)
+		av.casual_style = 2  # Formal Gala Suit!
+		av.show_mvp_trophy = is_win
+		av.anim_mode = "MVP" if is_win else "CHEER"
+		cvb.add_child(av)
+
+		var nm := Label.new()
+		nm.text = str(cd.get("name", "BINTANG"))
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm.add_theme_font_override("font", UITheme.get_display_font())
+		nm.add_theme_font_size_override("font_size", 12)
+		nm.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_u else Color.WHITE)
+		cvb.add_child(nm)
+
+		var stl := Label.new()
+		stl.text = "RTG %.1f • %d GOL • %d AST" % [float(cd.get("avg_rating", 7.8)), int(cd.get("goals", 0)), int(cd.get("assists", 0))]
+		stl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		stl.add_theme_font_size_override("font_size", 10)
+		stl.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+		cvb.add_child(stl)
+
+	var btn_hb := HBoxContainer.new()
+	btn_hb.add_theme_constant_override("separation", 10)
+	vb.add_child(btn_hb)
+
+	var b1 := Button.new()
+	b1.text = "PIDATO RENDAH HATI\n(+8 PELATIH • +8 RUANG GANTI • +80 XP)"
+	b1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b1.custom_minimum_size = Vector2(0, 52)
+	UITheme.style_btn(b1, Color("#173B66"), UITheme.ACCENT_CYAN, 11)
+	b1.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.apply_cutscene_effects({"pelatih": 8, "ruangGanti": 8, "xp": 80})
+		finished.emit()
+		queue_free()
+	)
+	btn_hb.add_child(b1)
+
+	var b2 := Button.new()
+	b2.text = "RAYAKAN BERSAMA DUNIA\n(+10 FANS • +1.500 PENGIKUT • +80 XP)"
+	b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b2.custom_minimum_size = Vector2(0, 52)
+	UITheme.style_btn(b2, Color("#5C3D0E"), UITheme.ACCENT_GOLD, 11)
+	b2.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.apply_cutscene_effects({"fans": 10, "followers": 1500, "xp": 80})
+		finished.emit()
+		queue_free()
+	)
+	btn_hb.add_child(b2)

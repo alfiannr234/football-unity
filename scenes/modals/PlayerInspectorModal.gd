@@ -97,9 +97,10 @@ func show_player(player_dict: Dictionary, club_dict: Dictionary) -> void:
 		var al := Label.new()
 		al.text = GameData.ATTRIBUTE_LABELS[ak]
 		al.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var av_v: int = int(attrs.get(ak, 60))
 		var av_l := Label.new()
-		av_l.text = str(int(attrs.get(ak, 60)))
-		av_l.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+		av_l.text = str(av_v)
+		av_l.add_theme_color_override("font_color", UITheme.get_stat_color(av_v))
 		ahb.add_child(al)
 		ahb.add_child(av_l)
 

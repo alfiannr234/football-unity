@@ -33,6 +33,15 @@ static func get_ui_font() -> Font:
 		_font_ui = load("res://assets/fonts/pixel_ui.fnt")
 	return _font_ui
 
+static func get_stat_color(val: int) -> Color:
+	var c_orange := Color("#F97316")
+	var c_yellow := Color("#FACC15")
+	var c_green := Color("#22E05A")
+	var t: float = clampf((float(val) - 45.0) / 48.0, 0.0, 1.0)
+	if t < 0.5:
+		return c_orange.lerp(c_yellow, t * 2.0)
+	return c_yellow.lerp(c_green, (t - 0.5) * 2.0)
+
 static func get_display_font() -> Font:
 	if _font_display == null:
 		_font_display = load("res://assets/fonts/pixel_display.fnt")

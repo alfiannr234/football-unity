@@ -8,26 +8,34 @@ func _ready() -> void:
 	var club := CareerState.get_current_club()
 
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.03, 0.06, 0.94)
+	dim.color = Color(0.03, 0.05, 0.09, 1.0)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 
 	# Scene backdrop (dinner_room / locker_room / press_wall / manager_office)
 	var scene_key := str(dilemma.get("scene", "dinner"))
 	var bg_path := "res://assets/sprites/backgrounds/dinner_room.png"
-	if scene_key == "locker":
+	if scene_key in ["locker", "pitch"]:
 		bg_path = "res://assets/sprites/backgrounds/locker_room.png"
 	elif scene_key == "press":
 		bg_path = "res://assets/sprites/backgrounds/press_wall.png"
 	elif scene_key == "office":
 		bg_path = "res://assets/sprites/backgrounds/manager_office.png"
 
+	var scene_fill := ColorRect.new()
+	scene_fill.color = Color("#130E0A") if scene_key in ["dinner", "home"] else Color("#0A1320")
+	scene_fill.anchor_left = 0.0
+	scene_fill.anchor_right = 1.0
+	scene_fill.anchor_top = 0.0
+	scene_fill.anchor_bottom = 0.64
+	add_child(scene_fill)
+
 	var tex_bg := TextureRect.new()
 	tex_bg.texture = load(bg_path)
 	tex_bg.anchor_left = 0.0
 	tex_bg.anchor_right = 1.0
 	tex_bg.anchor_top = 0.0
-	tex_bg.anchor_bottom = 0.65
+	tex_bg.anchor_bottom = 0.64
 	tex_bg.offset_top = 0
 	tex_bg.offset_bottom = 0
 	tex_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -68,8 +76,8 @@ func _ready() -> void:
 	chars.set_anchors_preset(Control.PRESET_CENTER)
 	chars.offset_left = -180
 	chars.offset_right = 180
-	chars.offset_top = -158
-	chars.offset_bottom = 24
+	chars.offset_top = -182
+	chars.offset_bottom = -8
 	chars.alignment = BoxContainer.ALIGNMENT_CENTER
 	chars.add_theme_constant_override("separation", 56)
 	add_child(chars)
@@ -93,27 +101,37 @@ func _ready() -> void:
 	av.anim_mode = "TALK"
 	chars.add_child(av)
 
-	# Bottom Narrative & Choices
-	var bot := VBoxContainer.new()
-	bot.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bot.offset_left = 100
-	bot.offset_right = -100
-	bot.offset_top = -195
-	bot.offset_bottom = -14
-	bot.add_theme_constant_override("separation", 8)
-	add_child(bot)
-	bot.modulate.a = 0.0
-	create_tween().tween_property(bot, "modulate:a", 1.0, 0.25)
+	# Bottom Narrative & Choices (framed opaque panel + wrapped buttons so zero overflow/clipping!)
+	var bot_panel := PanelContainer.new()
+	bot_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bot_panel.offset_left = 18
+	bot_panel.offset_right = -18
+	bot_panel.offset_top = -186
+	bot_panel.offset_bottom = -10
+	bot_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color("#08101C", 0.98), UITheme.BORDER_CYAN, 2, 8))
+	add_child(bot_panel)
 
+	var bot := VBoxContainer.new()
+	bot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bot.add_theme_constant_override("separation", 8)
+	bot_panel.add_child(bot)
+	bot_panel.modulate.a = 0.0
+	create_tween().tween_property(bot_panel, "modulate:a", 1.0, 0.25)
+
+	var raw_msg: String = str(dilemma.get("text", "")).replace("±", "+/-")
 	var msg := Label.new()
-	msg.text = str(dilemma.get("text", ""))
+	msg.text = raw_msg
 	msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	msg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	msg.custom_minimum_size = Vector2(0, 0)
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	msg.add_theme_font_size_override("font_size", 14)
+	msg.add_theme_font_size_override("font_size", 13)
+	msg.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
 	bot.add_child(msg)
 
 	var choices: Array = dilemma.get("choices", [])
 	var row_hb := HBoxContainer.new()
+	row_hb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row_hb.add_theme_constant_override("separation", 10)
 	bot.add_child(row_hb)
 
@@ -121,18 +139,54 @@ func _ready() -> void:
 	for i in range(mini(3, choices.size())):
 		var ch: Dictionary = choices[i]
 		var btn := Button.new()
-		btn.text = "%s\n%s" % [ch["label"], ch["sub"]]
+		btn.text = ""
+		btn.clip_contents = true
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.custom_minimum_size = Vector2(0, 74)
+		btn.custom_minimum_size = Vector2(0, 78)
 		var base_c: Color = Color(str(ch.get("color", ""))) if not str(ch.get("color", "")).is_empty() else default_pal[i % default_pal.size()]
 		UITheme.style_btn(btn, base_c, base_c.lightened(0.32), 12)
+
+		var btn_mc := MarginContainer.new()
+		btn_mc.set_anchors_preset(Control.PRESET_FULL_RECT)
+		btn_mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn_mc.add_theme_constant_override("margin_left", 8)
+		btn_mc.add_theme_constant_override("margin_right", 8)
+		btn_mc.add_theme_constant_override("margin_top", 5)
+		btn_mc.add_theme_constant_override("margin_bottom", 5)
+		btn.add_child(btn_mc)
+
+		var btn_vb := VBoxContainer.new()
+		btn_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+		btn_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn_vb.add_theme_constant_override("separation", 3)
+		btn_mc.add_child(btn_vb)
+
+		var b_title := Label.new()
+		b_title.text = str(ch.get("label", "")).replace("±", "+/-")
+		b_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b_title.add_theme_font_override("font", UITheme.get_display_font())
+		b_title.add_theme_font_size_override("font_size", 13)
+		b_title.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+		btn_vb.add_child(b_title)
+
+		var b_sub := Label.new()
+		b_sub.text = str(ch.get("sub", "")).replace("±", "+/-")
+		b_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b_sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b_sub.add_theme_font_size_override("font_size", 11)
+		b_sub.add_theme_color_override("font_color", Color("#E2ECF8"))
+		btn_vb.add_child(b_sub)
+
 		btn.pressed.connect(func():
 			AudioSynth.play_click()
 			var res: Dictionary = CareerState.apply_dilemma_choice_with_result(ch)
 			var out_msg: String = str(res.get("outcome_text", ""))
 			var deltas: Dictionary = res.get("deltas", {})
 			if not out_msg.is_empty() or not deltas.is_empty():
-				_show_relasi_feedback(bot, str(dilemma.get("text", "")), out_msg, deltas)
+				_show_relasi_feedback(bot, raw_msg, out_msg, deltas)
 			else:
 				closed.emit()
 				queue_free()
@@ -140,6 +194,9 @@ func _ready() -> void:
 		row_hb.add_child(btn)
 
 func _show_relasi_feedback(bot: VBoxContainer, base_txt: String, out_txt: String, deltas: Dictionary) -> void:
+	var panel_host := bot.get_parent() as Control
+	if panel_host != null:
+		panel_host.offset_top = -248
 	for c in bot.get_children():
 		c.queue_free()
 	var card := PanelContainer.new()

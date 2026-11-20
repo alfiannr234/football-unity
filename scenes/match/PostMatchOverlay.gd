@@ -533,6 +533,26 @@ func _render_interview() -> void:
 	l3.add_theme_font_size_override("font_size", 11)
 	iv.add_child(l3)
 
+	var sc_id_cur: int = int(CareerState.career.get("careerMeta", {}).get("scoutedByClubId", -1)) if CareerState.has_active_career else -1
+	if sc_id_cur >= 0 and sc_id_cur < GameData.clubs.size():
+		var sc_cl: Dictionary = GameData.clubs[sc_id_cur]
+		var sc_box := PanelContainer.new()
+		sc_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A1A0E"), UITheme.ACCENT_GOLD, 1, 6))
+		iv.add_child(sc_box)
+		var sc_hb := HBoxContainer.new()
+		sc_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+		sc_hb.add_theme_constant_override("separation", 8)
+		sc_box.add_child(sc_hb)
+		var sc_cr := ClubCrest.new()
+		sc_cr.custom_minimum_size = Vector2(28, 28)
+		sc_cr.set_club(sc_id_cur)
+		sc_hb.add_child(sc_cr)
+		var sc_lbl := Label.new()
+		sc_lbl.text = "SCOUT MENGINCARMU: %s (DIV %d • OVR %d)" % [str(sc_cl.get("name", "KLUB")).to_upper(), int(sc_cl.get("division", 2)), int(sc_cl.get("ovr", 68))]
+		sc_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		sc_lbl.add_theme_font_size_override("font_size", 11)
+		sc_hb.add_child(sc_lbl)
+
 	var ch_hb := HBoxContainer.new()
 	ch_hb.add_theme_constant_override("separation", 8)
 	iv.add_child(ch_hb)
@@ -552,6 +572,7 @@ func _render_interview() -> void:
 			AudioSynth.play_click()
 			CareerState.apply_cutscene_effects(tvc["eff"])
 			if str(tvc["title"]) == "BICARA FORMAMU" and CareerState.has_active_career:
+				CareerState.ensure_scout_target_club()
 				CareerState.career["careerMeta"]["scoutInterest"] = clampi(int(CareerState.career["careerMeta"].get("scoutInterest", 0)) + 5, 0, 100)
 				CareerState.save_active_career()
 			_stage = 3

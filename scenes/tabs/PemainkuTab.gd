@@ -202,9 +202,9 @@ func _render_skill_body() -> void:
 		var val: int = CareerState.get_effective_attribute(ak) + p_add
 		var vl := Label.new()
 		vl.text = ("%d (+%d)" % [val, p_add]) if p_add > 0 else str(val)
-		vl.custom_minimum_size = Vector2(68, 0)
+		vl.custom_minimum_size = Vector2(74, 0)
 		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		vl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if p_add > 0 else UITheme.ACCENT_AMBER)
+		vl.add_theme_color_override("font_color", UITheme.get_stat_color(val))
 		hb.add_child(vl)
 
 		var plus := Button.new()
@@ -291,6 +291,26 @@ func _render_contract_body() -> void:
 		l2.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
 		vb.add_child(l1)
 		vb.add_child(l2)
+
+	var scout_cid: int = int(CareerState.career["careerMeta"].get("scoutedByClubId", -1))
+	if scout_cid >= 0 and scout_cid < GameData.clubs.size():
+		var sc_c: Dictionary = GameData.clubs[scout_cid]
+		_body.add_child(UITheme.make_section_header("DIINCAR SCOUT KLUB"))
+		var sc_card := PanelContainer.new()
+		sc_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A1A0E"), UITheme.ACCENT_GOLD, 2, 6))
+		_body.add_child(sc_card)
+		var sc_hb := HBoxContainer.new()
+		sc_hb.add_theme_constant_override("separation", 10)
+		sc_card.add_child(sc_hb)
+		var sc_cr := ClubCrest.new()
+		sc_cr.custom_minimum_size = Vector2(40, 40)
+		sc_cr.set_club(scout_cid)
+		sc_hb.add_child(sc_cr)
+		var sc_l := Label.new()
+		sc_l.text = "%s (OVR %d • DIV %d)\nMinat Pemantauan: %d%%" % [str(sc_c.get("name", "KLUB")).to_upper(), int(sc_c.get("ovr", 68)), int(sc_c.get("division", 2)), int(CareerState.career["careerMeta"].get("scoutInterest", 25))]
+		sc_l.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		sc_l.add_theme_font_size_override("font_size", 11)
+		sc_hb.add_child(sc_l)
 
 	_body.add_child(UITheme.make_section_header("HARTA"))
 	var cash := int(p["cash"])
