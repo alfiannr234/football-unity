@@ -100,10 +100,10 @@ func _render_summary() -> void:
 	var club := CareerState.get_current_club()
 	var fix: Dictionary = report.get("fixture", {})
 	var hdr := Label.new()
-	hdr.text = "PELUIT AKHIR • %s" % str(fix.get("comp_label", "LIGA"))
+	hdr.text = "LAGA USAI  •  %s" % str(fix.get("comp_label", "LIGA")).to_upper()
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hdr.add_theme_font_override("font", UITheme.get_display_font())
-	hdr.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	hdr.add_theme_color_override("font_color", Color("#FB7185"))
 	hdr.add_theme_font_size_override("font_size", 18)
 	vb.add_child(hdr)
 
@@ -152,6 +152,52 @@ func _render_summary() -> void:
 	c2.custom_minimum_size = Vector2(56, 56)
 	c2.set_club(int(fix.get("opp_club_id", 0)))
 	sc_hb.add_child(c2)
+
+	# Chronological GOL Timeline with [CEK] Moviola replay button (New 3 Screenshot 7)
+	var g_tl: Array = report.get("goal_timeline", [])
+	if not g_tl.is_empty():
+		var tl_card := PanelContainer.new()
+		tl_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#12101A"), Color("#E11D48"), 1, 6))
+		left_vb.add_child(tl_card)
+		var tl_vb := VBoxContainer.new()
+		tl_vb.add_theme_constant_override("separation", 3)
+		tl_card.add_child(tl_vb)
+		var tl_hdr := Label.new()
+		tl_hdr.text = "GOL"
+		tl_hdr.add_theme_font_override("font", UITheme.get_display_font())
+		tl_hdr.add_theme_color_override("font_color", Color("#FB7185"))
+		tl_hdr.add_theme_font_size_override("font_size", 11)
+		tl_vb.add_child(tl_hdr)
+		for gi in range(mini(5, g_tl.size())):
+			var ge: Dictionary = g_tl[gi]
+			var ghb := HBoxContainer.new()
+			ghb.add_theme_constant_override("separation", 8)
+			tl_vb.add_child(ghb)
+			var ml := Label.new()
+			ml.text = "%d'" % int(ge.get("minute", 45))
+			ml.custom_minimum_size = Vector2(30, 0)
+			ml.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if bool(ge.get("is_us", true)) else UITheme.TEXT_MUTED)
+			ml.add_theme_font_size_override("font_size", 11)
+			ghb.add_child(ml)
+			var ast_s: String = str(ge.get("assist", ""))
+			var sl := Label.new()
+			sl.text = "%s%s" % [str(ge.get("scorer", "GOL")), ("  (AST %s)" % ast_s if not ast_s.is_empty() else "")]
+			sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sl.add_theme_color_override("font_color", Color.WHITE if bool(ge.get("is_us", true)) else Color("#94A3B8"))
+			sl.add_theme_font_size_override("font_size", 11)
+			ghb.add_child(sl)
+			var clip_d: Dictionary = ge.get("clip", {})
+			if bool(ge.get("is_user_involved", false)) and (not clip_d.is_empty() or not CareerState.last_moviola_clip.is_empty()):
+				var cek_b := Button.new()
+				cek_b.text = "CEK"
+				cek_b.custom_minimum_size = Vector2(46, 22)
+				UITheme.style_btn(cek_b, Color("#9F1239"), Color("#FB7185"), 10)
+				var use_clip: Dictionary = clip_d if not clip_d.is_empty() else CareerState.last_moviola_clip
+				cek_b.pressed.connect(func():
+					AudioSynth.play_click()
+					replay_requested.emit(use_clip)
+				)
+				ghb.add_child(cek_b)
 
 	# Animated MVP / Post-Match Player Spotlight
 	var is_motm: bool = bool(report.get("motm", false))
@@ -454,69 +500,97 @@ func _render_interview() -> void:
 	_press_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_container.add_child(_press_flash)
 
-	# Interview card at bottom
+	# Interactive MIKROFON PADAMU Live TV Interview Card (New 3 Screenshot 17)
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081426"), UITheme.BORDER_CYAN, 2, 2))
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0C121D", 0.96), Color("#FB7185") if is_motm else UITheme.BORDER_CYAN, 2, 8))
 	vb.add_child(card)
 	var iv := VBoxContainer.new()
 	iv.add_theme_constant_override("separation", 6)
 	card.add_child(iv)
 
-	var pname := str(CareerState.career["playerProfile"]["name"])
+	var pname := str(CareerState.career["playerProfile"]["name"]).to_upper()
 	var g := int(report.get("my_goals", 0))
 	var a := int(report.get("my_assists", 0))
+	var r_v := float(report.get("rating", 6.8))
 	var l1 := Label.new()
-	l1.text = pname
+	l1.text = "%.1f  •  %d GOL  •  %d AST" % [r_v, g, a]
 	l1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l1.add_theme_font_override("font", UITheme.get_display_font())
-	l1.add_theme_font_size_override("font_size", 20)
+	l1.add_theme_color_override("font_color", Color("#FB7185"))
+	l1.add_theme_font_size_override("font_size", 12)
 	iv.add_child(l1)
 
 	var l2 := Label.new()
-	l2.text = "%d GOL  •  %s" % [g, "PEMAIN TERBAIK LAGA" if bool(report.get("motm", false)) else "WAWANCARA PASCA-LAGA"]
+	l2.text = "MIKROFON PADAMU" if is_motm else "WAWANCARA PASCA-LAGA • %s" % pname
 	l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l2.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	l2.add_theme_font_override("font", UITheme.get_display_font())
+	l2.add_theme_font_size_override("font_size", 18)
 	iv.add_child(l2)
 
 	var l3 := Label.new()
-	l3.text = "%d GOL   |   %d ASSIST\nHari ini mikrofon miliknya. Pekan depan dibagi lagi." % [g, a]
+	l3.text = "Pemain terbaik laga. Stasiun TV menahanmu sebelum ruang ganti; 30 detik siaran langsung diputar ulang sepekan penuh." if is_motm else "Mikrofon pers menyapa setelah peluit panjang. Pilih pernyataanmu di depan kamera."
 	l3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l3.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l3.add_theme_font_size_override("font_size", 11)
 	iv.add_child(l3)
 
-	var btn := Button.new()
-	btn.text = "LIHAT HASIL PEKAN >"
-	btn.custom_minimum_size = Vector2(0, 44)
-	UITheme.style_btn(btn, Color("#0C192C"), UITheme.BORDER_CYAN, 16)
-	btn.pressed.connect(func():
-		AudioSynth.play_click()
-		_stage = 3
-		_render_stage()
-	)
-	iv.add_child(btn)
+	var ch_hb := HBoxContainer.new()
+	ch_hb.add_theme_constant_override("separation", 8)
+	iv.add_child(ch_hb)
+	var tv_choices := [
+		{"title": "JASA TIM", "sub": "+3 Pelatih • +8 Suporter", "col": Color("#1E5668"), "eff": {"pelatih": 3, "fans": 8}},
+		{"title": "BICARA FORMAMU", "sub": "+11 Pers • +5 Scout • -7 Tim\nmereka akan mengincarmu", "col": Color("#5E3578"), "eff": {"pers": 11, "ruangGanti": -7, "followers": 420}},
+		{"title": "UNTUK SUPORTER", "sub": "+11 Suporter • +3 Pers • -3 Pelatih", "col": Color("#733A5A"), "eff": {"fans": 11, "pers": 3, "pelatih": -3}},
+	]
+	for tvc in tv_choices:
+		var cb := Button.new()
+		cb.text = "%s\n%s" % [str(tvc["title"]), str(tvc["sub"])]
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.custom_minimum_size = Vector2(0, 62)
+		var bc: Color = tvc["col"]
+		UITheme.style_btn(cb, bc, bc.lightened(0.32), 11)
+		cb.pressed.connect(func():
+			AudioSynth.play_click()
+			CareerState.apply_cutscene_effects(tvc["eff"])
+			if str(tvc["title"]) == "BICARA FORMAMU" and CareerState.has_active_career:
+				CareerState.career["careerMeta"]["scoutInterest"] = clampi(int(CareerState.career["careerMeta"].get("scoutInterest", 0)) + 5, 0, 100)
+				CareerState.save_active_career()
+			_stage = 3
+			_render_stage()
+		)
+		ch_hb.add_child(cb)
 
 func _render_hasil() -> void:
-	# Matching 08_v2_hasil_pekan.png: Full League Round Matchday Results + Leaders!
+	# New 3 Screenshot 5: Full League Matchday Results + GOL / ASSIST / RATING Leaderboards!
 	var vb := VBoxContainer.new()
 	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vb.offset_left = 120
-	vb.offset_right = -120
-	vb.offset_top = 16
-	vb.offset_bottom = -14
+	vb.offset_left = 20
+	vb.offset_right = -20
+	vb.offset_top = 14
+	vb.offset_bottom = -12
 	vb.add_theme_constant_override("separation", 8)
 	_container.add_child(vb)
 
 	var fix: Dictionary = report.get("fixture", {})
+	var wk: int = int(CareerState.career.get("careerMeta", {}).get("week", 1))
+	var max_wk: int = int(CareerState.career.get("careerMeta", {}).get("maxWeeks", 45))
 	var hdr := Label.new()
-	hdr.text = "● HASIL  •  %s" % str(fix.get("comp_label", "LIGA")).to_upper()
+	hdr.text = "● HASIL  •  %s  ·  P%d/%d" % [str(fix.get("comp_label", "LIGA")).to_upper(), wk, max_wk]
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hdr.add_theme_font_override("font", UITheme.get_display_font())
 	hdr.add_theme_font_size_override("font_size", 18)
-	hdr.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	hdr.add_theme_color_override("font_color", Color("#FB7185"))
 	vb.add_child(hdr)
 
+	var cols := HBoxContainer.new()
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_theme_constant_override("separation", 12)
+	vb.add_child(cols)
+
+	# Left Column: Division Matchday Scores
 	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vb.add_child(scroll)
+	cols.add_child(scroll)
 	var list_vb := VBoxContainer.new()
 	list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list_vb.add_theme_constant_override("separation", 4)
@@ -526,33 +600,108 @@ func _render_hasil() -> void:
 	for r in res_list:
 		var is_u: bool = bool(r.get("is_user", false))
 		var row := PanelContainer.new()
-		row.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A2D46") if is_u else Color("#0B1422"), UITheme.ACCENT_CYAN if is_u else UITheme.BORDER_STEEL, 1, 2))
+		row.add_theme_stylebox_override("panel", UITheme.make_box(Color("#4A1220") if is_u else Color("#0B1422"), Color("#FB7185") if is_u else UITheme.BORDER_STEEL, 1, 2))
 		list_vb.add_child(row)
 		var hb := HBoxContainer.new()
 		hb.add_theme_constant_override("separation", 6)
 		row.add_child(hb)
 		var hl := Label.new()
-		hl.text = str(r.get("home_name", "KLUB")).left(15).to_upper()
+		hl.text = str(r.get("home_name", "KLUB")).left(18).to_upper()
 		hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		hl.add_theme_font_size_override("font_size", 11)
 		hb.add_child(hl)
 		var sl := Label.new()
 		sl.text = "%d - %d" % [int(r.get("home_g", 0)), int(r.get("away_g", 0))]
-		sl.custom_minimum_size = Vector2(54, 0)
+		sl.custom_minimum_size = Vector2(46, 0)
 		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		sl.add_theme_font_override("font", UITheme.get_display_font())
 		sl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_u else Color.WHITE)
 		hb.add_child(sl)
 		var al := Label.new()
-		al.text = str(r.get("away_name", "LAWAN")).left(15).to_upper()
+		al.text = str(r.get("away_name", "LAWAN")).left(18).to_upper()
 		al.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		al.add_theme_font_size_override("font_size", 11)
 		hb.add_child(al)
 
+	# Right Column: GOL / ASSIST / RATING League Leaders (New 3 Screenshot 5)
+	var lead_scroll := ScrollContainer.new()
+	lead_scroll.custom_minimum_size = Vector2(360, 0)
+	lead_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_child(lead_scroll)
+	var lead_vb := VBoxContainer.new()
+	lead_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lead_vb.add_theme_constant_override("separation", 6)
+	lead_scroll.add_child(lead_vb)
+
+	var leaders: Dictionary = CareerState.get_division_leaders()
+	for cat_d in [
+		{"title": "GOL", "key": "goals", "is_float": false},
+		{"title": "ASSIST", "key": "assists", "is_float": false},
+		{"title": "RATING", "key": "rating", "is_float": true},
+	]:
+		var cat_p := PanelContainer.new()
+		cat_p.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0B1422"), UITheme.BORDER_STEEL, 1, 5))
+		lead_vb.add_child(cat_p)
+		var cvb := VBoxContainer.new()
+		cvb.add_theme_constant_override("separation", 2)
+		cat_p.add_child(cvb)
+		var ch := Label.new()
+		ch.text = str(cat_d["title"])
+		ch.add_theme_font_override("font", UITheme.get_display_font())
+		ch.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		ch.add_theme_font_size_override("font_size", 11)
+		cvb.add_child(ch)
+		var rows_arr: Array = leaders.get(str(cat_d["key"]), [])
+		var user_shown := false
+		for idx in range(mini(4, rows_arr.size())):
+			var entry: Dictionary = rows_arr[idx]
+			if bool(entry.get("is_user", false)):
+				user_shown = true
+			_add_leader_row(cvb, idx + 1, entry, bool(cat_d["is_float"]))
+		if not user_shown:
+			for idx in range(rows_arr.size()):
+				if bool(rows_arr[idx].get("is_user", false)):
+					_add_leader_row(cvb, idx + 1, rows_arr[idx], bool(cat_d["is_float"]))
+					break
+
 	var ok_b := Button.new()
 	ok_b.text = "LANJUTKAN"
-	ok_b.custom_minimum_size = Vector2(0, 48)
-	UITheme.style_btn(ok_b, Color("#0E1D30"), UITheme.BORDER_CYAN, 18)
+	ok_b.custom_minimum_size = Vector2(0, 44)
+	UITheme.style_btn(ok_b, Color("#0E1D30"), Color("#FB7185"), 16)
 	ok_b.pressed.connect(func(): AudioSynth.play_click(); finished.emit())
 	vb.add_child(ok_b)
+
+func _add_leader_row(parent: VBoxContainer, rank_n: int, entry: Dictionary, is_float: bool) -> void:
+	var is_u: bool = bool(entry.get("is_user", false))
+	var d_n: int = int(entry.get("delta", 0))
+	var arrow: String = ("▲%d" % d_n) if d_n > 0 else (("▼%d" % abs(d_n)) if d_n < 0 else "-")
+	var val_s: String = ("%.1f" % float(entry.get("val", 0.0))) if is_float else str(int(entry.get("val", 0)))
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	var bg := PanelContainer.new()
+	bg.add_theme_stylebox_override("panel", UITheme.make_box(Color("#4A1220") if is_u else Color(0, 0, 0, 0), Color("#FB7185") if is_u else Color(0, 0, 0, 0), 1 if is_u else 0, 2))
+	bg.add_child(hb)
+	parent.add_child(bg)
+	var rl := Label.new()
+	rl.text = "%d" % rank_n
+	rl.custom_minimum_size = Vector2(22, 0)
+	rl.add_theme_font_size_override("font_size", 10)
+	hb.add_child(rl)
+	var al := Label.new()
+	al.text = arrow
+	al.custom_minimum_size = Vector2(28, 0)
+	al.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if d_n > 0 else (UITheme.ACCENT_RED if d_n < 0 else UITheme.TEXT_MUTED))
+	al.add_theme_font_size_override("font_size", 10)
+	hb.add_child(al)
+	var nl := Label.new()
+	nl.text = str(entry.get("name", "PEMAIN")).left(18)
+	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_u else Color.WHITE)
+	nl.add_theme_font_size_override("font_size", 10)
+	hb.add_child(nl)
+	var vl := Label.new()
+	vl.text = val_s
+	vl.add_theme_font_override("font", UITheme.get_display_font())
+	vl.add_theme_font_size_override("font_size", 11)
+	hb.add_child(vl)

@@ -3,7 +3,9 @@ extends Control
 signal closed
 
 var _filter: String = "SEMUA"
+var _tab: String = "PRESTASI"  # PRESTASI | ALBUM
 var _list_vb: VBoxContainer
+var _filter_bar: HBoxContainer
 
 func _ready() -> void:
 	theme = UITheme.build_theme()
@@ -28,23 +30,48 @@ func _ready() -> void:
 			counts[a["rarity"]][0] += 1
 
 	var total_u := unlocked.size()
+	var owned_cards: Array = CareerState.career.get("careerMeta", {}).get("albumCards", []) if CareerState.has_active_career else []
 	var hdr := HBoxContainer.new()
+	hdr.add_theme_constant_override("separation", 10)
 	vb.add_child(hdr)
 	var t := Label.new()
-	t.text = "KOLEKSI • PRESTASI"
+	t.text = "KOLEKSI  •  PRESTASI & ALBUM"
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	t.add_theme_font_override("font", UITheme.get_display_font())
-	t.add_theme_font_size_override("font_size", 20)
+	t.add_theme_font_size_override("font_size", 18)
 	hdr.add_child(t)
-	var cnt_l := Label.new()
-	cnt_l.text = "%d / 386 • %d%%" % [total_u, int(round(float(total_u) / 386.0 * 100.0))]
-	cnt_l.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	hdr.add_child(cnt_l)
+
+	var tab_p := Button.new()
+	tab_p.text = "PRESTASI (%d/386)" % total_u
+	UITheme.style_btn(tab_p, Color("#173B66"), UITheme.ACCENT_GOLD, 11)
+	var tab_a := Button.new()
+	tab_a.text = "ALBUM (%d/%d)" % [owned_cards.size(), GameData.album_cards_catalog.size()]
+	UITheme.style_btn(tab_a, Color("#0B1626"), UITheme.BORDER_STEEL, 11)
+	tab_p.pressed.connect(func():
+		AudioSynth.play_click()
+		_tab = "PRESTASI"
+		UITheme.style_btn(tab_p, Color("#173B66"), UITheme.ACCENT_GOLD, 11)
+		UITheme.style_btn(tab_a, Color("#0B1626"), UITheme.BORDER_STEEL, 11)
+		if _filter_bar != null:
+			_filter_bar.visible = true
+		_render_list()
+	)
+	tab_a.pressed.connect(func():
+		AudioSynth.play_click()
+		_tab = "ALBUM"
+		UITheme.style_btn(tab_a, Color("#4E320E"), UITheme.ACCENT_GOLD, 11)
+		UITheme.style_btn(tab_p, Color("#0B1626"), UITheme.BORDER_STEEL, 11)
+		if _filter_bar != null:
+			_filter_bar.visible = false
+		_render_list()
+	)
+	hdr.add_child(tab_p)
+	hdr.add_child(tab_a)
 
 	# Rarity Filter Pills
-	var f_hb := HBoxContainer.new()
-	f_hb.add_theme_constant_override("separation", 4)
-	vb.add_child(f_hb)
+	_filter_bar = HBoxContainer.new()
+	_filter_bar.add_theme_constant_override("separation", 4)
+	vb.add_child(_filter_bar)
 	for rf in ["UMUM", "LANGKA", "EPIK", "LEGENDARIS", "SEMUA"]:
 		var fb := Button.new()
 		if rf == "SEMUA":
@@ -58,7 +85,7 @@ func _ready() -> void:
 			_filter = rf
 			_render_list()
 		)
-		f_hb.add_child(fb)
+		_filter_bar.add_child(fb)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -81,6 +108,44 @@ func _ready() -> void:
 func _render_list() -> void:
 	for c in _list_vb.get_children():
 		c.queue_free()
+	if _tab == "ALBUM":
+		var owned_cards: Array = CareerState.career.get("careerMeta", {}).get("albumCards", []) if CareerState.has_active_career else []
+		var tier_cols := {"PERUNGGU": Color("#D97706"), "PERAK": Color("#CBD5E1"), "EMAS": UITheme.ACCENT_GOLD, "LEGENDARIS": Color("#C084FC")}
+		var grid := GridContainer.new()
+		grid.columns = 4
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_theme_constant_override("h_separation", 8)
+		grid.add_theme_constant_override("v_separation", 8)
+		_list_vb.add_child(grid)
+		for cd in GameData.album_cards_catalog:
+			var has_it: bool = owned_cards.has(str(cd["id"]))
+			var t_col: Color = tier_cols.get(str(cd["tier"]), UITheme.BORDER_STEEL)
+			var cp := PanelContainer.new()
+			cp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			cp.custom_minimum_size = Vector2(0, 96)
+			cp.add_theme_stylebox_override("panel", UITheme.make_box(Color("#13233A") if has_it else Color("#0A101A"), t_col if has_it else UITheme.BORDER_STEEL, 2 if has_it else 1, 6))
+			grid.add_child(cp)
+			var cv := VBoxContainer.new()
+			cv.add_theme_constant_override("separation", 3)
+			cp.add_child(cv)
+			var l_num := Label.new()
+			l_num.text = "#%d  •  %s" % [int(cd["num"]), str(cd["tier"])]
+			l_num.add_theme_color_override("font_color", t_col if has_it else UITheme.TEXT_MUTED)
+			l_num.add_theme_font_size_override("font_size", 10)
+			cv.add_child(l_num)
+			var l_tit := Label.new()
+			l_tit.text = str(cd["title"]) if has_it else "???"
+			l_tit.add_theme_font_override("font", UITheme.get_display_font())
+			l_tit.add_theme_color_override("font_color", Color.WHITE if has_it else Color("#475569"))
+			l_tit.add_theme_font_size_override("font_size", 13)
+			cv.add_child(l_tit)
+			var l_q := Label.new()
+			l_q.text = str(cd["quote"]) if has_it else "Mainkan event karier untuk membuka kartu ini."
+			l_q.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			l_q.add_theme_color_override("font_color", Color("#CBD5E1") if has_it else Color("#475569"))
+			l_q.add_theme_font_size_override("font_size", 10)
+			cv.add_child(l_q)
+		return
 	var unlocked: Dictionary = CareerState.global_profile.get("unlocked_achievements", {})
 	var rarity_cols := {
 		"UMUM": UITheme.TEXT_MUTED,

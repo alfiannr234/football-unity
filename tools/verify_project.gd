@@ -158,12 +158,22 @@ func _run_suite() -> void:
 	_assert(cmap["CASUAL_STYLES"].size() == 5 and cmap["GALA_STYLES"].size() == 5, "CharacterStyleCatalog has 5 casual and 5 gala outfits")
 
 	var CutsceneScr: GDScript = load("res://scenes/modals/EventCutsceneModal.gd")
-	for c_mode in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
+	for c_mode in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]:
 		var cm: Control = CutsceneScr.new()
 		cm.configure(c_mode)
 		root.add_child(cm)
 		cm.queue_free()
-	_assert(true, "EventCutsceneModal initializes cleanly for modes 0..8")
+	_assert(true, "EventCutsceneModal initializes cleanly for all modes 0..13 (incl. New 3)")
+
+	# New 3 Album Cards, Autographs, Division Leaders & Probabilistic Dilemmas
+	_assert(GameData.album_cards_catalog.size() == 19, "GameData exposes 19 collectible album cards")
+	var card_res: Dictionary = CareerState.unlock_album_card("guntur_tribun")
+	_assert(bool(card_res["newly_unlocked"]) and int(card_res["owned_count"]) >= 2, "unlock_album_card unlocks and persists collectible album cards (SCOUT + GUNTUR)")
+	var ttd_cnt: int = CareerState.increment_autographs()
+	_assert(ttd_cnt == 1, "increment_autographs tracks career jersey signatures")
+	var div_lead: Dictionary = CareerState.get_division_leaders()
+	_assert(div_lead["goals"].size() >= 5 and div_lead["assists"].size() >= 5 and div_lead["rating"].size() >= 5, "get_division_leaders populates GOL, ASSIST, and RATING leaderboards")
+	_assert(GameData.dilemmas_catalog.size() >= 9, "dilemmas_catalog includes New 3 press, keeper penalty duel, off-day, and transfer rumor events")
 
 	var SetScr: GDScript = load("res://scenes/modals/SettingsModal.gd")
 	var sm_inst: Control = SetScr.new()
@@ -197,12 +207,35 @@ func _run_suite() -> void:
 	SettingsManager.set_setting("difficulty", "NORMAL")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
 	ms_inst.set("_skill_burst_timer", 0.0)
+	ms_inst.set("_dragging", false)
 	var sc_idle: Dictionary = ms_inst.call("_get_moment_time_scales")
+	ms_inst.set("_dragging", true)
+	var sc_drag: Dictionary = ms_inst.call("_get_moment_time_scales")
+	ms_inst.set("_dragging", false)
 	ms_inst.set("_dribble_input", Vector2(0.0, -1.0))
 	var sc_move: Dictionary = ms_inst.call("_get_moment_time_scales")
-	_assert(float(sc_idle["teammate"]) < float(sc_move["teammate"]) and float(sc_idle["defender_speed"]) < float(sc_move["defender_speed"]), "Teammates and defenders slow down when stopped and move normally when user dribbles")
+	_assert(float(sc_idle["teammate"]) < float(sc_move["teammate"]) and float(sc_idle["defender_speed"]) < float(sc_move["defender_speed"]), "Teammates and defenders move slowly before user moves and normally when user dribbles")
+	_assert(float(sc_drag["teammate"]) < float(sc_idle["teammate"]) and float(sc_drag["defender_speed"]) < float(sc_idle["defender_speed"]), "Teammates and defenders slow down further when user pulls slingshot to shoot")
 	ms_inst.set("_dribble_input", Vector2.ZERO)
 	_assert(not bool(ms_inst.call("_is_user_dribbling_active")), "User can immediately aim & shoot/pass whenever stopped moving")
+
+	# User speed strictly scaled by Kecepatan stat (realistic pace, not overly fast)
+	var spd_low: float = float(ms_inst.call("get_player_max_run_speed", 45))
+	var spd_mid: float = float(ms_inst.call("get_player_max_run_speed", 65))
+	var spd_max: float = float(ms_inst.call("get_player_max_run_speed", 99))
+	_assert(spd_low < spd_mid and spd_mid < spd_max and spd_max <= 8.5, "User run speed scales realistically with Kecepatan stat (%.2f < %.2f < %.2f)" % [spd_low, spd_mid, spd_max])
+
+	# Free Kick: teammates stand stationary in optimal onside attacking spots
+	ms_inst.call("_trigger_key_moment", ms_inst.MomentType.FREE_KICK)
+	var fk_tm_before: Array = ms_inst.get("_teammate_positions").duplicate()
+	ms_inst.call("_animate_teammates", 0.5)
+	var fk_tm_after: Array = ms_inst.get("_teammate_positions")
+	var fk_all_still_and_onside: bool = fk_tm_before.size() == 3
+	for fki in range(fk_tm_before.size()):
+		if fk_tm_before[fki].distance_to(fk_tm_after[fki]) > 0.001 or bool(ms_inst.call("_is_teammate_offside", fki)):
+			fk_all_still_and_onside = false
+	_assert(fk_all_still_and_onside, "During FREE_KICK, all 3 teammates stay stationary in optimal onside positions")
+	ms_inst.call("_trigger_key_moment", 1)  # Restore open play PASS for movement/stamina checks
 
 	# Movement + Stamina (no regen while stopped, resets to 100% on new event) + Unrestricted pitch roam
 	var pre_stam: float = float(ms_inst.get("_match_stamina"))
@@ -248,9 +281,28 @@ func _run_suite() -> void:
 	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT, "Defender reaching ball carrier while aiming tackles and steals ball")
 	SettingsManager.set_setting("difficulty", "NORMAL")
 
-	# Passing from SHOT into a forward-running teammate initiates animated TEAMMATE_CARRY with NO pass-back -> 3D shot / assist!
+	# Offside System (FIFA Law 11): passing to an offside teammate blows whistle & cancels play!
+	ms_inst.call("_trigger_key_moment", 0)  # SHOT
+	var off_defs: Array = ms_inst.get("_defender_positions")
+	for di in range(off_defs.size()):
+		off_defs[di] = Vector3(float(di - 1) * 5.0, 0.0, -37.0)
+	var off_tms: Array = ms_inst.get("_teammate_positions")
+	off_tms[0] = Vector3(3.0, 0.0, -45.5)  # Clearly ahead of deepest defender (-37.0) & ball
+	_assert(bool(ms_inst.call("_is_teammate_offside", 0)), "Teammate ahead of last defender and ball is flagged OFFSIDE")
+	ms_inst.set("_drag_start", Vector2(480.0, 290.0))
+	ms_inst.set("_drag_current", Vector2(480.0, 420.0))
+	ms_inst.call("_release_slingshot")  # Snapshots offside flags at kick moment
+	ms_inst.set("_flight_timer", 0.2)
+	ms_inst.set("_ball_pos", off_tms[0] + Vector3(0.1, 0.5, 0.1))
+	ms_inst.set("_ball_vel", Vector3(0.0, 0.0, -8.0))
+	ms_inst.call("_process_ball_flight", 0.02)
+	_assert(int(ms_inst.get("_phase")) == ms_inst.MatchPhase.MOMENT_RESULT and str(ms_inst.get("_result_toast").text).contains("OFFSIDE"), "Passing to offside teammate triggers OFFSIDE call and stops play")
+
+	# Passing from SHOT into an ONSIDE forward-running teammate initiates animated TEAMMATE_CARRY with NO pass-back -> 3D shot / assist!
 	ms_inst.call("_trigger_key_moment", 0)  # SHOT
 	var tm0_p: Vector3 = ms_inst.get("_teammate_positions")[0]
+	_assert(not bool(ms_inst.call("_is_teammate_offside", 0)), "Freshly spawned open-play teammates start ONSIDE")
+	ms_inst.set("_kick_offside_flags", [false, false, false])
 	ms_inst.set("_phase", ms_inst.MatchPhase.BALL_IN_FLIGHT)
 	ms_inst.set("_flight_timer", 0.2)
 	ms_inst.set("_ball_pos", tm0_p + Vector3(0.1, 0.5, 0.1))

@@ -254,6 +254,9 @@ func start_new_career(
 			"unlockedCoachTraits": ["KORNER_PENALTI"],
 			"lastMatchdayResults": [],
 			"boughtSneakers": [],
+			"albumCards": [],
+			"scoutedByClubId": -1,
+			"scoutInterest": 0,
 		},
 		"playerProfile": {
 			"name": clean_name,
@@ -309,7 +312,7 @@ func start_new_career(
 			"dribblesWon": 0, "passesWon": 0, "trophies": 0, "promotions": 0,
 			"transfers": 0, "styleEdits": 0, "sponsorsSigned": 1, "seasonsDiv3": 0,
 			"finalsLost": 0, "intlCaps": 0, "intlGoals": 0, "followers": 2600,
-			"longestGoalMeters": 0.0,
+			"longestGoalMeters": 0.0, "autographs": 0,
 		},
 		"trophiesList": [],
 		"seasonHistory": [
@@ -812,12 +815,18 @@ func get_relation_tier(val: int) -> String:
 		return "IDOLA"
 
 func apply_dilemma_choice(choice_dict: Dictionary) -> void:
+	apply_dilemma_choice_with_result(choice_dict)
+
+func apply_dilemma_choice_with_result(choice_dict: Dictionary) -> Dictionary:
 	if not has_active_career:
-		return
+		return {"success": true, "deltas": {}, "outcome_text": ""}
 	var week := int(career["careerMeta"]["week"])
 	if int(career["careerMeta"].get("dilemmaDoneWeek", 0)) == week:
-		return
-	var eff: Dictionary = choice_dict.get("effects", {})
+		return {"success": true, "deltas": {}, "outcome_text": ""}
+	var success := true
+	if choice_dict.has("chance"):
+		success = randf() <= float(choice_dict["chance"])
+	var eff: Dictionary = choice_dict.get("effects", {}) if success else choice_dict.get("fail_effects", choice_dict.get("effects", {}))
 	var rel: Dictionary = career["playerProfile"]["relations"]
 	for rk in GameData.RELATION_KEYS:
 		if eff.has(rk):
@@ -828,9 +837,93 @@ func apply_dilemma_choice(choice_dict: Dictionary) -> void:
 		career["playerProfile"]["cash"] = maxi(0, int(career["playerProfile"]["cash"]) + int(eff["cash"]))
 	if eff.has("xp"):
 		_award_xp(int(eff["xp"]))
+	if eff.has("scoutInterest"):
+		career["careerMeta"]["scoutInterest"] = clampi(int(career["careerMeta"].get("scoutInterest", 0)) + int(eff["scoutInterest"]), 0, 100)
 	career["careerMeta"]["dilemmaDoneWeek"] = week
 	save_active_career()
 	career_updated.emit()
+	var out_txt := str(choice_dict.get("win_text", "")) if success else str(choice_dict.get("fail_text", ""))
+	return {"success": success, "deltas": eff.duplicate(true), "outcome_text": out_txt}
+
+func unlock_album_card(card_id: String) -> Dictionary:
+	var card_def: Dictionary = {}
+	for c in GameData.album_cards_catalog:
+		if str(c["id"]) == card_id:
+			card_def = c
+			break
+	if card_def.is_empty():
+		return {"newly_unlocked": false, "card": {}, "owned_count": 0, "total": GameData.album_cards_catalog.size()}
+	var newly := false
+	var owned: Array = []
+	if has_active_career:
+		if not career["careerMeta"].has("albumCards"):
+			career["careerMeta"]["albumCards"] = []
+		owned = career["careerMeta"]["albumCards"]
+		if not owned.has(card_id):
+			owned.append(card_id)
+			newly = true
+			save_active_career()
+			career_updated.emit()
+	return {"newly_unlocked": newly, "card": card_def, "owned_count": owned.size(), "total": GameData.album_cards_catalog.size()}
+
+func increment_autographs() -> int:
+	if not has_active_career:
+		return 1
+	var cur := int(career["stats"].get("autographs", 0)) + 1
+	career["stats"]["autographs"] = cur
+	save_active_career()
+	career_updated.emit()
+	return cur
+
+func get_division_leaders() -> Dictionary:
+	if not has_active_career:
+		return {"goals": [], "assists": [], "rating": [], "user_goal_rank": 1, "top_goals": 1}
+	var prof: Dictionary = career["playerProfile"]
+	var st: Dictionary = career["stats"]
+	var u_name: String = str(prof.get("name", "PEMAIN"))
+	var u_goals: int = int(st.get("goals", 0))
+	var u_assists: int = int(st.get("assists", 0))
+	var matches_n: int = maxi(1, int(st.get("matches", 0)))
+	var u_avg_r: float = snappedf(float(st.get("totalRating", 6.5)) / float(matches_n), 0.1) if int(st.get("matches", 0)) > 0 else 6.5
+	var wk: int = maxi(1, int(career["careerMeta"].get("week", 1)))
+	var seed_base: int = int(prof.get("clubId", 1)) * 31 + int(career["careerMeta"].get("year", 1)) * 97
+
+	var rival_names := [
+		"Satrio Setiawan", "Agus Junaidi", "Aji Maulana", "Krisna Purnomo", "Ridwan Hermansyah",
+		"Wawan Maulana", "Irfan Silalahi", "Satrio Susanto", "Ferdi Wijaya", "Rizal Prasetyo",
+		"Fadil Hutapea", "Dani Ginting", "Aldi Sitompul", "Budi Santoso", "Rangga Rahman",
+	]
+	var g_list: Array[Dictionary] = [{"name": u_name, "val": u_goals, "is_user": true, "delta": 1}]
+	var a_list: Array[Dictionary] = [{"name": u_name, "val": u_assists, "is_user": true, "delta": 2}]
+	var r_list: Array[Dictionary] = [{"name": u_name, "val": u_avg_r, "is_user": true, "delta": 3}]
+
+	for i in range(rival_names.size()):
+		var h: int = abs((seed_base + i * 73 + wk * 13) % 100)
+		var rg: int = maxi(0, int(round(float(wk) * (0.14 + float(h % 25) * 0.018))))
+		var ra: int = maxi(0, int(round(float(wk) * (0.10 + float((h + 11) % 22) * 0.015))))
+		var rr: float = snappedf(clampf(6.3 + float((h + 17) % 14) * 0.1, 6.1, 8.4), 0.1)
+		var d_arr: int = (h % 5) - 2
+		g_list.append({"name": rival_names[i], "val": rg, "is_user": false, "delta": d_arr})
+		a_list.append({"name": rival_names[(i + 3) % rival_names.size()], "val": ra, "is_user": false, "delta": -d_arr})
+		r_list.append({"name": rival_names[(i + 7) % rival_names.size()], "val": rr, "is_user": false, "delta": d_arr})
+
+	g_list.sort_custom(func(a, b): return int(a["val"]) > int(b["val"]) if int(a["val"]) != int(b["val"]) else bool(a["is_user"]))
+	a_list.sort_custom(func(a, b): return int(a["val"]) > int(b["val"]) if int(a["val"]) != int(b["val"]) else bool(a["is_user"]))
+	r_list.sort_custom(func(a, b): return float(a["val"]) > float(b["val"]) if not is_equal_approx(float(a["val"]), float(b["val"])) else bool(a["is_user"]))
+
+	var u_goal_rank: int = 1
+	for idx in range(g_list.size()):
+		if bool(g_list[idx]["is_user"]):
+			u_goal_rank = idx + 1
+			break
+	var top_goals: int = int(g_list[0]["val"]) if not g_list.is_empty() else maxi(1, u_goals)
+	return {
+		"goals": g_list,
+		"assists": a_list,
+		"rating": r_list,
+		"user_goal_rank": u_goal_rank,
+		"top_goals": maxi(1, top_goals),
+	}
 
 func _award_xp(amount: int) -> void:
 	var mult := 2.0 if _has_perk("xp_ganda") or _has_perk("paket_legenda") else 1.0
@@ -1038,6 +1131,13 @@ func finish_match(result: Dictionary) -> Dictionary:
 		career["careerMeta"]["week"] = week + 1
 		career["careerMeta"]["currentDilemma"] = GameData.dilemmas_catalog[week % GameData.dilemmas_catalog.size()]
 
+	if int(st["matches"]) == 1:
+		unlock_album_card("debut_pro")
+	if int(st["goals"]) >= 1:
+		unlock_album_card("gol_perdana")
+	if is_motm:
+		unlock_album_card("bintang_laga")
+
 	evaluate_achievements()
 	save_active_career()
 
@@ -1057,6 +1157,7 @@ func finish_match(result: Dictionary) -> Dictionary:
 		"follower_gain": follower_gain,
 		"season_ended": season_ended,
 		"season_summary": season_summary,
+		"goal_timeline": result.get("goal_timeline", []),
 	}
 	career_updated.emit()
 	return last_match_report

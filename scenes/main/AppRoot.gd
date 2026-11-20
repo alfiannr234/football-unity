@@ -205,11 +205,15 @@ func _launch_career_match(skip_pre_event: bool = false) -> void:
 		var en: int = int(prof.get("energy", 80))
 		var coach_rel: int = int(prof.get("relations", {}).get("pelatih", 60))
 		var wk: int = int(meta.get("week", 1))
-		var pre_mode: int = 7  # PREMATCH_TUNNEL default
+		var pre_mode: int = 10  # PREMATCH_PREDIKSI (Split-Screen Prediction + Top Skor Spotlight)
 		if en < 45 or coach_rel < 35:
 			pre_mode = 6  # COACH_REJECT ("PELATIH BILANG TIDAK")
-		elif wk == 1 or (wk % 2 == 1):
+		elif wk == 1 or (wk % 3 == 1):
 			pre_mode = 1  # TIM_INTI whiteboard
+		elif wk % 3 == 2:
+			pre_mode = 10  # PREMATCH_PREDIKSI
+		else:
+			pre_mode = 7  # PREMATCH_TUNNEL
 		_open_cutscene(pre_mode, func(): _launch_career_match(true))
 		return
 
@@ -277,17 +281,27 @@ func _pick_post_match_event(report: Dictionary) -> int:
 		return -1
 	var meta: Dictionary = CareerState.career.get("careerMeta", {})
 	var sp: Dictionary = CareerState.career.get("sponsor", {})
+	var wk: int = int(meta.get("week", 1))
+	var won: bool = int(report.get("score_us", 0)) > int(report.get("score_them", 0))
 	if not bool(meta.get("initiationDone", false)):
 		return 3  # MAKAN_NYANYI
 	if bool(report.get("motm", false)) or int(report.get("my_goals", 0)) >= 2:
-		return 8  # MVP_SHOWCASE animated award
-	if not str(sp.get("activeId", "")).is_empty() and (int(meta.get("clapperDoneSeason", 0)) != int(meta.get("year", 1)) or int(meta.get("week", 1)) % 3 == 0):
+		return 13 if (wk % 2 == 0 and int(meta.get("scoutedByClubId", -1)) < 0) else 8  # SCOUT_DOSSIER or MVP_SHOWCASE
+	if won and wk % 4 == 1:
+		return 11  # LEMPAKAN_JERSEY (shirt throw into stands)
+	if won and wk % 4 == 2:
+		return 12  # GUNTUR_DRUM (fan chant rhythm)
+	if wk % 4 == 3:
+		return 9  # TEKEN_JERSEY (airport terminal autograph)
+	if float(report.get("rating", 6.2)) >= 7.5 and wk % 3 == 0:
+		return 13  # SCOUT_DOSSIER + KARTU BARU!
+	if not str(sp.get("activeId", "")).is_empty() and (int(meta.get("clapperDoneSeason", 0)) != int(meta.get("year", 1)) or wk % 5 == 0):
 		return 4  # SPONSOR_SHOOT Take 7
-	if float(report.get("rating", 6.2)) >= 7.5:
+	if float(report.get("rating", 6.2)) >= 7.2:
 		return 5  # COACH_TRAIT
 	if int(meta.get("transferWindowWeeks", 0)) > 0:
 		return 0  # BURSA_CARDS
-	return 4 if int(meta.get("week", 1)) % 4 == 0 else -1
+	return 9 if wk % 2 == 0 else 12
 
 func _open_new_career_modal(slot_id: int) -> void:
 	var m: Control = (load("res://scenes/modals/NewCareerModal.gd") as GDScript).new()

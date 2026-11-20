@@ -141,6 +141,32 @@ func _capture() -> void:
 	app._modal_layer.get_child(0).queue_free()
 	await _wait_frames(2)
 
+	# New 3 Cutscenes & Minigames
+	app.call("_open_cutscene", 9)  # TEKEN_JERSEY
+	await _snap("32_cutscene_teken_jersey.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	app.call("_open_cutscene", 10)  # PREMATCH_PREDIKSI + Top Skor Spotlight
+	await _snap("33_cutscene_prediksi.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	app.call("_open_cutscene", 11)  # LEMPAKAN_JERSEY
+	await _snap("34_cutscene_lempakan_jersey.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	app.call("_open_cutscene", 12)  # GUNTUR_DRUM
+	await _snap("35_cutscene_guntur_drum.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
+	app.call("_open_cutscene", 13)  # SCOUT_DOSSIER
+	await _snap("36_cutscene_scout_dossier.png")
+	app._modal_layer.get_child(0).queue_free()
+	await _wait_frames(2)
+
 	app.call("_launch_volley_minigame", true)
 	await _wait_frames(8)
 	var vmg: Node = app._stage_layer.get_child(0)
@@ -203,7 +229,7 @@ func _capture() -> void:
 	if is_instance_valid(ms._pause_panel):
 		ms._pause_panel.queue_free()
 
-	ms.call("_trigger_key_moment", 3)  # FREE_KICK with wall!
+	ms.call("_trigger_key_moment", 3)  # FREE_KICK with wall + 3 stationary optimal teammates!
 	ms._dragging = true
 	ms._drag_start = Vector2(480, 300)
 	ms._drag_current = Vector2(505, 430)
@@ -211,6 +237,16 @@ func _capture() -> void:
 	ms.call("_draw_aim_and_ring")
 	await _wait_frames(12)
 	await _snap("07_match_25d_slingshot.png")
+
+	# Offside live visual warning (red teammate ring + dashed red offside line across pitch)
+	ms.call("_trigger_key_moment", 0)
+	for di in range(ms._defender_positions.size()):
+		ms._defender_positions[di] = Vector3(float(di - 1) * 5.0, 0.0, -37.0)
+	ms._teammate_positions[0] = Vector3(4.5, 0.0, -44.5)
+	ms.call("_sync_3d_sprites")
+	ms.call("_draw_aim_and_ring")
+	await _wait_frames(6)
+	await _snap("37_match_offside_warning.png")
 
 	# Clean up test save slot 1? Wait: leave or clean? Let's clean Slot 1 so user starts fresh OR keep? Better clean Slot 1 so Home Screen starts clean!
 	CareerState.delete_slot(1)

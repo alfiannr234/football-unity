@@ -140,6 +140,10 @@ var _incoming_pass_tm_idx: int = -1
 var _incoming_pass_timer: float = 0.0
 var _incoming_pass_kicked: bool = false
 var _anim_clock: float = 0.0
+var _gk_sway_clock: float = 0.0
+var _kick_offside_flags: Array[bool] = []
+var _kick_offside_line_z: float = -35.0
+var _goal_timeline: Array[Dictionary] = []
 var _best_pass_openness: float = 0.0
 var _last_pass_state: String = ""
 
@@ -782,6 +786,7 @@ func _start_selected_mode() -> void:
 	_passes_won = 0
 	_rating = 6.2
 	_shots_telemetry.clear()
+	_goal_timeline.clear()
 	_best_clip = {}
 	_match_stamina_max = 100.0
 	_match_stamina = _match_stamina_max
@@ -920,12 +925,17 @@ func _process_simulation(delta: float) -> void:
 		var diff := float(int(club["ovr"]) - int(fix["opp_ovr"])) * 0.015
 		if randf() < 0.45 + diff:
 			_score_us += 1
-			var msg_u: String = "%d' GOL REKAN SETIM! %s memimpin!" % [int(_minute), club["code"]]
+			var tm_scorer: String = _pick_squad_member_name(true)
+			var tm_ast: String = _pick_squad_member_name(false)
+			_goal_timeline.append({"minute": int(_minute), "scorer": tm_scorer, "assist": tm_ast, "is_us": true, "is_user_involved": false})
+			var msg_u: String = "%d' GOL %s! %s memimpin!" % [int(_minute), tm_scorer, club["code"]]
 			_ticker_lbl.text = msg_u
 			_add_board_event(int(_minute), "GOAL", msg_u, true)
 		else:
 			_score_them += 1
-			var msg_t: String = "%d' %s membalas lewat serangan balik." % [int(_minute), fix["opp_code"]]
+			var opp_scorer: String = _pick_opp_scorer_name()
+			_goal_timeline.append({"minute": int(_minute), "scorer": opp_scorer, "assist": "", "is_us": false, "is_user_involved": false})
+			var msg_t: String = "%d' %s (%s) mencetak gol balasan!" % [int(_minute), opp_scorer, fix["opp_code"]]
 			_ticker_lbl.text = msg_t
 			_add_board_event(int(_minute), "OPP_GOAL", msg_t, false)
 		_update_score_label()
@@ -995,6 +1005,9 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_incoming_pass_tm_idx = -1
 	_incoming_pass_timer = 0.0
 	_incoming_pass_kicked = false
+	_gk_sway_clock = 0.0
+	_kick_offside_flags.clear()
+	_kick_offside_line_z = -35.0
 
 	# Setup positions on the attacking top half (goal at z = -52.5)
 	for tm in _teammates:
@@ -1045,12 +1058,6 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 			var z_off := randf_range(-33.0, -25.0)
 			_player_pos = Vector3(x_off, 0.0, z_off + 1.4)
 			_ball_pos = Vector3(x_off, 0.115, z_off)
-			for i in range(2):
-				_teammates[i].visible = true
-				_teammate_positions.append(Vector3((-5.5 if i == 0 else 5.5), 0.0, -36.5))
-				_teammate_vels.append(Vector3((0.8 if i == 0 else -0.8), 0.0, -1.8))
-				_teammate_targets.append(Vector3((-3.0 if i == 0 else 3.0), 0.0, -44.0))
-				_teammate_open_scores.append(2.5)
 			var wall_dir := (Vector3(0, 0, -52.5) - _ball_pos).normalized()
 			var wall_center := _ball_pos + wall_dir * 9.15
 			var perp := Vector3(-wall_dir.z, 0, wall_dir.x)
@@ -1062,9 +1069,23 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 				_defenders[i].visible = true
 				_defender_positions.append(Vector3((-4.5 if i == 3 else 4.5), 0.0, -39.5))
 				_defender_dirs.append(1.0 if i == 3 else -1.0)
+			# Position 3 teammates stationary in optimal onside attacking slots clear of the wall
+			var kick_side: float = 1.0 if x_off >= 0.0 else -1.0
+			var fk_tm_spots := [
+				Vector3(-kick_side * 6.5, 0.0, -38.6),  # Back-post target (onside ahead of -39.5 line)
+				Vector3(kick_side * 4.8, 0.0, -37.2),   # Near-post pocket clear of wall
+				Vector3(clampf(x_off - kick_side * 5.8, -16.0, 16.0), 0.0, minf(-26.0, z_off - 2.2)),  # Short layoff
+			]
+			for i in range(fk_tm_spots.size()):
+				if i < _teammates.size():
+					_teammates[i].visible = true
+					_teammate_positions.append(fk_tm_spots[i])
+					_teammate_vels.append(Vector3.ZERO)
+					_teammate_targets.append(fk_tm_spots[i])
+					_teammate_open_scores.append(3.6)
 			_moment_title_lbl.text = "TENDANGAN BEBAS!"
-			_moment_sub_lbl.text = "Lengkungkan bola melewati pagar betis (putar bola kanan bawah)!"
-			_ticker_lbl.text = "Bola mati berbahaya! Pakai efek lengkung Magnus."
+			_moment_sub_lbl.text = "Lengkungkan melewati pagar betis atau umpan rekan di posisi terbaik!"
+			_ticker_lbl.text = "Bola mati berbahaya! Rekan siap diam di posisi terbaik."
 		MomentType.PASS:
 			_player_pos = Vector3(randf_range(-10.0, 10.0), 0.0, randf_range(-24.0, -18.0))
 			_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.8)
@@ -1240,6 +1261,12 @@ func _release_slingshot() -> void:
 	_ball_vel = launch["velocity"]
 	_ball_omega = launch["omega"]
 	_flight_timer = 0.0
+	# Snapshot FIFA Law 11 Offside positions at the exact instant the ball is kicked
+	_kick_offside_line_z = _get_offside_line_z()
+	_kick_offside_flags.clear()
+	for ti in range(_teammate_positions.size()):
+		var is_off: bool = (_moment_type != MomentType.PENALTY) and _is_teammate_offside(ti)
+		_kick_offside_flags.append(is_off)
 	_phase = MatchPhase.BALL_IN_FLIGHT
 	_player_sprite.frame = 7  # back-view kick frame
 	_camera_shake = 0.35 * float(launch["power_ratio"])
@@ -1253,6 +1280,10 @@ func _release_slingshot() -> void:
 		"goalCoord": {"x": 0.5, "y": 0.5},
 		"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
 	})
+
+func get_player_max_run_speed(spd_attr: int) -> float:
+	# Realistic speed strictly driven by player's Kecepatan attribute (40..99 -> ~3.8..8.2 m/s)
+	return lerpf(3.4, 8.2, clampf((float(spd_attr) - 35.0) / 64.0, 0.0, 1.0))
 
 func _process_dribble_control(delta: float) -> void:
 	if _skill_burst_timer > 0.0:
@@ -1271,17 +1302,16 @@ func _process_dribble_control(delta: float) -> void:
 	if is_moving:
 		var analog_mag := clampf(joy.length(), 0.0, 1.0)
 		_dribble_facing = joy.normalized()
-		var spd_attr := CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 68
-		var drib_attr := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 68
-		# Analog cursor deflection already includes running up to full sprint
-		var max_run_spd: float = lerpf(8.8, 12.6, float(spd_attr + drib_attr) / 200.0)
+		var spd_attr := CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 60
+		# Movement speed scales strictly with Kecepatan stat & analog deflection
+		var max_run_spd: float = get_player_max_run_speed(spd_attr)
 		var move_spd: float = max_run_spd * analog_mag
 		if _skill_burst_timer > 0.0:
-			move_spd *= 1.22
+			move_spd *= 1.18
 		if _match_stamina <= 0.1:
-			move_spd *= 0.48
+			move_spd *= 0.52
 		elif _match_stamina < 18.0:
-			move_spd *= 0.68
+			move_spd *= 0.72
 		# 40% shorter stamina duration (~28/s base * analog deflection * fisik mult); no in-event regen
 		_match_stamina = maxf(0.0, _match_stamina - (28.0 * clampf(analog_mag, 0.30, 1.0)) * drain_mult * delta)
 		# Unrestricted full-pitch movement while keeping ball cleanly in front of goal line (z >= -52.25)
@@ -1368,15 +1398,22 @@ func _process_ball_flight(delta: float) -> void:
 				_show_moment_result("DIBLOK BEK!", UITheme.ACCENT_RED, 1.3)
 				return
 
-		# Check Live Teammate reception (both explicit PASS and SHOT passed to a forward-running teammate!)
-		if not _shot_by_teammate and not _incoming_pass_kicked and (_moment_type == MomentType.PASS or _moment_type == MomentType.SHOT) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
-			var catch_rad: float = 2.25 if _moment_type == MomentType.PASS else 1.85
+		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, and FREE_KICK passes — with FIFA Law 11 Offside check!)
+		if not _shot_by_teammate and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
+			var catch_rad: float = 2.25 if (_moment_type == MomentType.PASS or _moment_type == MomentType.FREE_KICK) else 1.85
 			for ti in range(_teammate_positions.size()):
 				var tm_pos := _teammate_positions[ti]
 				if Vector2(_ball_pos.x - tm_pos.x, _ball_pos.z - tm_pos.z).length() < catch_rad and _ball_pos.y < 1.95:
+					if ti < _kick_offside_flags.size() and _kick_offside_flags[ti]:
+						AudioSynth.play_whistle(true)
+						_update_last_shot("OFFSIDE")
+						_ticker_lbl.text = "Bendera hakim garis terangkat! Rekan berada di posisi OFFSIDE saat umpan dilepas."
+						_draw_offside_line_freeze(_kick_offside_line_z)
+						_show_moment_result("OFFSIDE! BENDERA TERANGKAT", UITheme.ACCENT_RED, 1.5)
+						return
 					if ti < _teammates.size():
 						_teammates[ti].frame = 7
-					if _moment_type == MomentType.SHOT:
+					if _moment_type == MomentType.SHOT or _moment_type == MomentType.DRIBBLE:
 						_moment_type = MomentType.PASS
 					_passes_won += 1
 					_start_teammate_carry(ti, true)
@@ -1457,21 +1494,65 @@ func _is_user_dribbling_active() -> bool:
 	)
 	return kb.length() > 0.12
 
+func _get_offside_line_z() -> float:
+	# FIFA Law 11 (attacking toward -Z, GK at -51.6 is last opponent):
+	# Second-last opponent is deepest active outfield defender, capped by ball Z and halfway line (0.0).
+	var deepest_def_z: float = 0.0
+	var found_def := false
+	for i in range(_defender_positions.size()):
+		if i < _defenders.size() and not _defenders[i].visible:
+			continue
+		if absf(_defender_positions[i].x) > 33.5:
+			continue
+		if not found_def or _defender_positions[i].z < deepest_def_z:
+			deepest_def_z = _defender_positions[i].z
+			found_def = true
+	if not found_def:
+		return minf(0.0, _ball_pos.z)
+	return minf(0.0, minf(_ball_pos.z, deepest_def_z))
+
+func _is_teammate_offside(tm_idx: int) -> bool:
+	if tm_idx < 0 or tm_idx >= _teammate_positions.size():
+		return false
+	if tm_idx < _teammates.size() and not _teammates[tm_idx].visible:
+		return false
+	if _moment_type == MomentType.PENALTY:
+		return false
+	var line_z: float = _get_offside_line_z()
+	return _teammate_positions[tm_idx].z < (line_z - 0.35)
+
+func _draw_offside_line_freeze(line_z: float) -> void:
+	_ring_imm.clear_surfaces()
+	_ring_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var c := Color(0.98, 0.20, 0.25, 0.92)
+	var x := -33.0
+	while x < 33.0:
+		var x1 := minf(33.0, x + 1.8)
+		for vtx in [Vector3(x, 0.06, line_z - 0.14), Vector3(x1, 0.06, line_z - 0.14), Vector3(x1, 0.06, line_z + 0.14), Vector3(x, 0.06, line_z - 0.14), Vector3(x1, 0.06, line_z + 0.14), Vector3(x, 0.06, line_z + 0.14)]:
+			_ring_imm.surface_set_color(c)
+			_ring_imm.surface_add_vertex(vtx)
+		x += 2.8
+	_ring_imm.surface_end()
+
 func _get_moment_time_scales() -> Dictionary:
 	var diff_p: Dictionary = SettingsManager.get_difficulty_params()
 	var base_def_spd: float = float(diff_p.get("defender_speed", 1.6))
 	var drib_def_spd: float = float(diff_p.get("dribble_defender_speed", 2.2))
-	var aim_tm_scale: float = float(diff_p.get("aim_teammate_scale", 0.28))
-	var aim_def_scale: float = float(diff_p.get("aim_defender_scale", 0.44))
+	var aim_tm_scale: float = float(diff_p.get("aim_teammate_scale", 0.22))
+	var aim_def_scale: float = float(diff_p.get("aim_defender_scale", 0.34))
 
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return {"teammate": 1.0, "defender_speed": base_def_spd, "active_dribble": false}
+	if _moment_type == MomentType.FREE_KICK:
+		# Teammates stand stationary in optimal positions during free kick aiming
+		return {"teammate": 0.0, "defender_speed": 0.0, "active_dribble": false}
 	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 		if _is_user_dribbling_active():
 			# User actively moving player: teammates & defenders move at normal mode speed
 			return {"teammate": 1.0, "defender_speed": drib_def_spd, "active_dribble": true}
-		# User stopped / aiming shot or pass: slowed down per difficulty mode (0.0 total stop on MUDAH)
-		return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
+		# User hasn't moved yet OR is pulling back to shoot/pass: teammates & opponents move slowly (0.0 on MUDAH)
+		var drag_slow: float = 0.72 if _dragging else 1.0
+		return {"teammate": aim_tm_scale * drag_slow, "defender_speed": base_def_spd * aim_def_scale * drag_slow, "active_dribble": false}
 	return {"teammate": aim_tm_scale, "defender_speed": base_def_spd * aim_def_scale, "active_dribble": false}
 
 func _animate_gk_idle(delta: float) -> void:
@@ -1479,30 +1560,34 @@ func _animate_gk_idle(delta: float) -> void:
 	var scales := _get_moment_time_scales()
 	var eff_def_speed: float = float(scales["defender_speed"])
 	var tm_scale: float = float(scales["teammate"])
-	if eff_def_speed > 0.01 or tm_scale > 0.01:
-		_gk_pos.x = sin(Time.get_ticks_msec() * 0.003) * 0.85
+	var drib_def_spd: float = maxf(1.0, float(diff_p.get("dribble_defender_speed", 2.2)))
+	var gk_time_scale: float = maxf(tm_scale, eff_def_speed / drib_def_spd)
+	if _moment_type == MomentType.FREE_KICK or _moment_type == MomentType.PENALTY:
+		gk_time_scale = 0.45 if str(SettingsManager.data.get("difficulty", "NORMAL")) != "MUDAH" else 0.0
+	if gk_time_scale > 0.01:
+		_gk_sway_clock += delta * gk_time_scale
+		_gk_pos.x = sin(_gk_sway_clock * 3.0) * 0.85
 	var can_steal: bool = bool(diff_p.get("can_steal", false))
 	var steal_dist: float = float(diff_p.get("steal_dist", 1.05))
-	var stride_front: int = 1 if fmod(_anim_clock * maxf(0.3, tm_scale), 0.34) < 0.17 else 2
+	var stride_front: int = 1 if fmod(_anim_clock * maxf(0.22, tm_scale), 0.34) < 0.17 else 2
 
 	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
-		# Identify nearest active defender on pitch to press ball carrier in SHOT or DRIBBLE
+		# Identify nearest active defender on pitch to press ball carrier across all open play
 		var chaser_idx: int = -1
-		if _moment_type in [MomentType.SHOT, MomentType.DRIBBLE]:
-			var best_dist: float = 999.0
-			for j in range(_defender_positions.size()):
-				if j < _defenders.size() and not _defenders[j].visible:
-					continue
-				if absf(_defender_positions[j].x) > 30.0:
-					continue
-				var dj: float = Vector2(_ball_pos.x - _defender_positions[j].x, _ball_pos.z - _defender_positions[j].z).length()
-				if dj < best_dist:
-					best_dist = dj
-					chaser_idx = j
+		var best_dist: float = 999.0
+		for j in range(_defender_positions.size()):
+			if j < _defenders.size() and not _defenders[j].visible:
+				continue
+			if absf(_defender_positions[j].x) > 30.0:
+				continue
+			var dj: float = Vector2(_ball_pos.x - _defender_positions[j].x, _ball_pos.z - _defender_positions[j].z).length()
+			if dj < best_dist:
+				best_dist = dj
+				chaser_idx = j
 
 		for i in range(_defender_positions.size()):
-			if i == chaser_idx and _moment_type in [MomentType.SHOT, MomentType.DRIBBLE]:
-				# Pressing defender moves toward ball carrier to tackle/steal (speed scaled by mode)
+			if i == chaser_idx:
+				# Pressing defender moves toward ball carrier to tackle/steal (speed scaled by mode & slow-mo)
 				var to_ball: Vector3 = Vector3(_ball_pos.x - _defender_positions[i].x, 0.0, _ball_pos.z - _defender_positions[i].z)
 				var dist: float = to_ball.length()
 				if eff_def_speed > 0.01 and dist > 0.01:
@@ -1526,7 +1611,7 @@ func _animate_gk_idle(delta: float) -> void:
 						"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
 					})
 					AudioSynth.play_save()
-					_show_moment_result("DIREBUT BEK!" if _moment_type == MomentType.SHOT else "DIREBUT LAWAN!", UITheme.ACCENT_RED, 1.2)
+					_show_moment_result("DIREBUT BEK!", UITheme.ACCENT_RED, 1.2)
 					return
 			else:
 				# Secondary defenders shadow attacking teammates & support pressure at mode-scaled speed
@@ -1545,9 +1630,16 @@ func _animate_gk_idle(delta: float) -> void:
 	_sync_3d_sprites()
 
 func _animate_teammates(delta: float) -> void:
+	# During Free Kick aiming, teammates stay completely stationary in their optimal set-piece positions
+	if _phase == MatchPhase.KEY_MOMENT_AIM and _moment_type == MomentType.FREE_KICK:
+		for i in range(_teammates.size()):
+			if _teammates[i].visible:
+				_teammates[i].frame = 4
+		_sync_3d_sprites()
+		return
 	var scales := _get_moment_time_scales()
 	var tm_scale: float = float(scales["teammate"])
-	var stride_back: int = 5 if fmod(_anim_clock * maxf(0.3, tm_scale), 0.32) < 0.16 else 6
+	var stride_back: int = 5 if fmod(_anim_clock * maxf(0.22, tm_scale), 0.32) < 0.16 else 6
 	for i in range(_teammate_positions.size()):
 		if i < _teammate_targets.size() and _phase == MatchPhase.KEY_MOMENT_AIM and _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 			# Enforce strictly forward (-Z) target progression; never retreat (+Z)
@@ -2077,11 +2169,33 @@ func _process_teammate_penalty_wait(delta: float) -> void:
 		if _teammate_vels.size() > 1:
 			_teammate_vels[1] = Vector3(-0.6, 0.0, -3.5)
 
+func _pick_squad_member_name(prefer_attacker: bool) -> String:
+	if CareerState.has_active_career:
+		var sq: Array = CareerState.career.get("clubSquad", {}).get("starters", [])
+		var pool: Array[String] = []
+		for p in sq:
+			if bool(p.get("is_user", false)):
+				continue
+			if prefer_attacker and str(p.get("pos", "")) in ["ST", "LW", "RW", "CAM"]:
+				pool.append(str(p.get("name", "REKAN")))
+			elif not prefer_attacker:
+				pool.append(str(p.get("name", "REKAN")))
+		if not pool.is_empty():
+			return pool[randi() % pool.size()].to_upper()
+	var fallback := ["PURNOMO", "SILALAHI", "PRATAMA", "RAHMAN", "SETIAWAN"]
+	return fallback[randi() % fallback.size()]
+
+func _pick_opp_scorer_name() -> String:
+	var pool := ["HUTAPEA", "GINTING", "WIJAYA", "BASRI", "PANJAITAN", "MAULANA", "SANTOSO"]
+	return pool[randi() % pool.size()]
+
 func _handle_goal_scored() -> void:
 	AudioSynth.play_goal()
 	_camera_shake = 1.0
 	_score_us += 1
+	var u_name: String = str(CareerState.career["playerProfile"].get("name", "PEMAIN")).to_upper() if CareerState.has_active_career else "PEMAIN"
 	if _shot_by_teammate:
+		var tm_name: String = _pick_squad_member_name(true)
 		if _carry_assist_pending:
 			_my_assists += 1
 			_rating = minf(10.0, _rating + 1.1)
@@ -2089,6 +2203,7 @@ func _handle_goal_scored() -> void:
 			_update_last_shot("GOAL")
 			_add_board_event(int(_minute), "GOAL", "%d' ASSIST! Rekan tuntaskan umpanmu menjadi GOL!" % int(_minute), true)
 			_save_moviola_clip("ASSIST CANTIK!")
+			_goal_timeline.append({"minute": int(_minute), "scorer": tm_name, "assist": u_name, "is_us": true, "is_user_involved": true, "clip": _best_clip.duplicate(true)})
 			if is_instance_valid(_goal_flash_rect):
 				_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
 				create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
@@ -2098,6 +2213,7 @@ func _handle_goal_scored() -> void:
 		_update_score_label()
 		_add_board_event(int(_minute), "GOAL", "%d' GOL REKAN SETIM!" % int(_minute), true)
 		_save_moviola_clip("GOL REKAN SETIM!")
+		_goal_timeline.append({"minute": int(_minute), "scorer": tm_name, "assist": "", "is_us": true, "is_user_involved": false})
 		if is_instance_valid(_goal_flash_rect):
 			_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
 			create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
@@ -2113,6 +2229,7 @@ func _handle_goal_scored() -> void:
 	_update_score_label()
 	_update_last_shot("GOAL")
 	_save_moviola_clip("GOL SPEKTAKULER!")
+	_goal_timeline.append({"minute": int(_minute), "scorer": u_name, "assist": "", "is_us": true, "is_user_involved": true, "clip": _best_clip.duplicate(true)})
 	if is_instance_valid(_goal_flash_rect):
 		_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.65)
 		create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.40)
@@ -2207,6 +2324,7 @@ func _finish_career_match() -> void:
 		"passes_won": _passes_won,
 		"shots": shots_copy,
 		"moviola_clip": _best_clip,
+		"goal_timeline": _goal_timeline.duplicate(true),
 	})
 	match_completed.emit(report)
 
@@ -2320,13 +2438,17 @@ func _draw_aim_and_ring() -> void:
 		for vtx in [tip, b_r, b_l]:
 			_ring_imm.surface_set_color(arr_col)
 			_ring_imm.surface_add_vertex(vtx)
-	# Draw live teammate movement rings & forward lead-run indicators
-	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
+	# Draw live teammate movement rings, free-kick target rings, & Offside line warning!
+	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK]:
+		var any_offside := false
 		for ti in range(_teammate_positions.size()):
 			var tp: Vector3 = _teammate_positions[ti]
+			var is_off: bool = _is_teammate_offside(ti)
+			if is_off:
+				any_offside = true
 			var od: float = _teammate_open_scores[ti] if ti < _teammate_open_scores.size() else 2.0
-			var alpha_tm: float = 0.92 if _moment_type == MomentType.PASS else 0.55
-			var tm_col := Color(0.28, 0.88, 0.50, alpha_tm) if od >= 3.2 else (Color(0.16, 0.82, 0.92, alpha_tm) if od >= 1.95 else Color(0.96, 0.45, 0.16, alpha_tm))
+			var alpha_tm: float = 0.92 if (_moment_type == MomentType.PASS or is_off) else 0.62
+			var tm_col := Color(0.98, 0.22, 0.25, 0.94) if is_off else (Color(0.28, 0.88, 0.50, alpha_tm) if od >= 3.2 else (Color(0.16, 0.82, 0.92, alpha_tm) if od >= 1.95 else Color(0.96, 0.45, 0.16, alpha_tm)))
 			var tr_in := 1.15
 			var tr_out := 1.38
 			for i in range(18):
@@ -2339,7 +2461,7 @@ func _draw_aim_and_ring() -> void:
 				for vtx in [p0_in, p0_out, p1_out, p0_in, p1_out, p1_in]:
 					_ring_imm.surface_set_color(tm_col)
 					_ring_imm.surface_add_vertex(vtx)
-			if ti < _teammate_vels.size() and _teammate_vels[ti].length() > 0.35:
+			if _moment_type != MomentType.FREE_KICK and ti < _teammate_vels.size() and _teammate_vels[ti].length() > 0.35:
 				var vdir := _teammate_vels[ti].normalized()
 				var side_v := Vector3(-vdir.z, 0.0, vdir.x) * 0.22
 				var r_start := tp + Vector3(0.0, 0.05, 0.0) + vdir * 1.4
@@ -2347,6 +2469,16 @@ func _draw_aim_and_ring() -> void:
 				for vtx in [r_start - side_v, r_start + side_v, r_end + side_v, r_start - side_v, r_end + side_v, r_end - side_v]:
 					_ring_imm.surface_set_color(tm_col)
 					_ring_imm.surface_add_vertex(vtx)
+		if any_offside:
+			var off_z: float = _get_offside_line_z()
+			var off_col := Color(0.98, 0.24, 0.28, 0.78)
+			var lx := -32.0
+			while lx < 32.0:
+				var lx1 := minf(32.0, lx + 1.6)
+				for vtx in [Vector3(lx, 0.05, off_z - 0.11), Vector3(lx1, 0.05, off_z - 0.11), Vector3(lx1, 0.05, off_z + 0.11), Vector3(lx, 0.05, off_z - 0.11), Vector3(lx1, 0.05, off_z + 0.11), Vector3(lx, 0.05, off_z + 0.11)]:
+					_ring_imm.surface_set_color(off_col)
+					_ring_imm.surface_add_vertex(vtx)
+				lx += 2.6
 	_ring_imm.surface_end()
 
 	if not _dragging:
@@ -2371,21 +2503,27 @@ func _draw_aim_and_ring() -> void:
 	)
 	var pct := int(round(float(launch["power_ratio"]) * 100.0))
 	_power_lbl.text = "%d%%" % pct
+	_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
 
 	var steps_preview := int(lerpf(12.0, 28.0, float(ak + (bm if _moment_type == MomentType.FREE_KICK else 0)) / 180.0))
 	var pts := SlingshotPhysics.predict_trajectory(_ball_pos, launch["velocity"], launch["omega"], ef, steps_preview, 0.04)
 	if pts.size() >= 2:
-		if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
-			var aims_teammate := false
+		if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.FREE_KICK]:
+			var aims_tm_idx: int = -1
 			for pt in pts:
-				for tp in _teammate_positions:
+				for ti in range(_teammate_positions.size()):
+					var tp: Vector3 = _teammate_positions[ti]
 					if Vector2(pt.x - tp.x, pt.z - tp.z).length() < 2.2:
-						aims_teammate = true
+						aims_tm_idx = ti
 						break
-				if aims_teammate:
+				if aims_tm_idx >= 0:
 					break
-			if aims_teammate:
-				_power_lbl.text = "%d%% • UMPAN" % pct
+			if aims_tm_idx >= 0:
+				if _is_teammate_offside(aims_tm_idx):
+					_power_lbl.text = "%d%% • OFFSIDE!" % pct
+					_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_RED)
+				else:
+					_power_lbl.text = "%d%% • UMPAN" % pct
 		_aim_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in range(pts.size() - 1):
 			var p0 := pts[i]

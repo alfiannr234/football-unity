@@ -42,6 +42,7 @@ var lifestyle_catalog: Array[Dictionary] = []
 var cosmetics_catalog: Dictionary = {}
 var sponsors_catalog: Array[Dictionary] = []
 var dilemmas_catalog: Array[Dictionary] = []
+var album_cards_catalog: Array[Dictionary] = []
 var preset_friends: Array[Dictionary] = []
 
 const SWEDEN_DIV3_NAMES := [
@@ -156,6 +157,7 @@ func _ready() -> void:
 	_init_legends_and_records()
 	_init_shop_and_cosmetics()
 	_init_sponsors_and_dilemmas()
+	_init_album_cards()
 	_init_preset_friends()
 
 func _init_nations() -> void:
@@ -646,10 +648,82 @@ func _init_sponsors_and_dilemmas() -> void:
 			"scene": "locker",
 			"text": "Kapten tim menegur pemain muda lain karena terlalu egois di kotak penalti.",
 			"choices": [
-				{"label": "BELAIN KAPTEN", "sub": "+4 Pelatih • +3 Ruang Ganti", "effects": {"pelatih": 4, "ruangGanti": 3}},
-				{"label": "TENANGKAN SEMUA", "sub": "+5 Ruang Ganti", "effects": {"ruangGanti": 5, "fans": 1}},
+				{"label": "BELAIN KAPTEN", "sub": "+4 Pelatih • +3 Ruang Ganti", "color": "#1E5668", "effects": {"pelatih": 4, "ruangGanti": 3}},
+				{"label": "TENANGKAN SEMUA", "sub": "+5 Ruang Ganti", "color": "#6E4B1F", "effects": {"ruangGanti": 5, "fans": 1}},
 			]
 		},
+		{
+			"id": "soal_pers_terbuka",
+			"scene": "press",
+			"title": "SETELAH LAGA",
+			"text": "Mikrofon di depan wajah dan satu pertanyaan terbuka. Apa pun jawabanmu, itu menggambarkanmu.",
+			"choices": [
+				{"label": "SOAL TIM", "sub": "+8 Ruang Ganti • ±0 Pers • -3 Suporter", "color": "#7B4F1D", "effects": {"ruangGanti": 8, "fans": -3}},
+				{"label": "SOAL TARGET", "sub": "+9 Pers • -2 Ruang Ganti • -3 Pelatih", "color": "#5E3578", "effects": {"pers": 9, "ruangGanti": -2, "pelatih": -3}},
+				{"label": "SOAL SUPORTER", "sub": "+8 Suporter • ±0 Pers • -1 Ruang Ganti", "color": "#733A5A", "effects": {"fans": 8, "ruangGanti": -1}},
+			]
+		},
+		{
+			"id": "adu_penalti_kiper",
+			"scene": "pitch",
+			"title": "SETELAH LAGA",
+			"text": "Kiper menantangmu adu penalti seusai latihan dan separuh ruang ganti tinggal untuk menonton dan memanas-manasi.",
+			"choices": [
+				{
+					"label": "TERIMA", "sub": "68% : +7 Ruang Ganti +4 Pelatih | Gagal -4 Ruang Ganti", "color": "#5E3578",
+					"chance": 0.68,
+					"effects": {"ruangGanti": 7, "pelatih": 4},
+					"fail_effects": {"ruangGanti": -4},
+					"win_text": "Kamu memenangi adu penalti. Ruang ganti bersorak.",
+					"fail_text": "Kiper menepis tendangan penentuanmu. Ruang ganti meledek sepanjang malam.",
+				},
+				{"label": "MANDI", "sub": "-3 Ruang Ganti", "color": "#7B4F1D", "effects": {"ruangGanti": -3}, "win_text": "Kamu langsung kembali ke ruang ganti tanpa meladeni tantangan."},
+			]
+		},
+		{
+			"id": "hari_libur_aktivitas",
+			"scene": "home",
+			"title": "HARI LIBUR",
+			"text": "Hari tanpa kewajiban. Kamu bisa bersantai di rumah, keluar bersama grup, atau menambah jam gym sendiri.",
+			"choices": [
+				{"label": "ISTIRAHAT SAJA", "sub": "+12 Energi • -3 Ruang Ganti • -4 Pelatih", "color": "#1E5668", "effects": {"energy": 12, "ruangGanti": -3, "pelatih": -4}},
+				{"label": "KELUAR BARENG TIM", "sub": "+9 Ruang Ganti • -4 Pelatih • -6 Energi", "color": "#7B4F1D", "effects": {"ruangGanti": 9, "pelatih": -4, "energy": -6}},
+				{"label": "GYM SENDIRIAN", "sub": "+7 Pelatih • -3 Ruang Ganti • -6 Energi", "color": "#5E3578", "effects": {"pelatih": 7, "ruangGanti": -3, "energy": -6}},
+			]
+		},
+		{
+			"id": "rumor_transfer_pers",
+			"scene": "press",
+			"title": "RUMOR TRANSFER",
+			"text": "Beredar kabar klub luar mengincarmu dan pers menyodorkan mikrofon ke wajahmu. Apa pun katamu didengar semua orang: tribunmu dan ruang direksi mereka.",
+			"choices": [
+				{"label": "AKU TERBUKA SEMUA", "sub": "+7 Pers • -6 Suporter", "color": "#5E3578", "effects": {"pers": 7, "fans": -6}},
+				{"label": "AKU FOKUS DI SINI", "sub": "+7 Suporter • +2 Pelatih • kamu berjanji", "color": "#733A5A", "effects": {"fans": 7, "pelatih": 2}},
+			]
+		},
+	]
+
+func _init_album_cards() -> void:
+	album_cards_catalog = [
+		{"num": 1, "id": "debut_pro", "title": "DEBUT PRO", "tier": "PERUNGGU", "quote": "«LANGKAH PERTAMA DI RUMPUT HIJAU.»", "icon": "PLAYER"},
+		{"num": 2, "id": "gol_perdana", "title": "GOL PERDANA", "tier": "PERUNGGU", "quote": "«JARING BERGETAR, NAMA TERUKIR.»", "icon": "BALL"},
+		{"num": 3, "id": "asisten_tim", "title": "SANG KREATOR", "tier": "PERUNGGU", "quote": "«UMPAN TEROBOSAN YANG MEMBELAH BEK.»", "icon": "PASS"},
+		{"num": 4, "id": "top_skor_pekan", "title": "TOP SKOR", "tier": "PERAK", "quote": "«PUNCAK DAFTAR PENCETAK GOL.»", "icon": "BOOT"},
+		{"num": 5, "id": "bintang_laga", "title": "PEMAIN TERBAIK", "tier": "PERAK", "quote": "«MIKROFON TV MILIKMU MALAM INI.»", "icon": "TROPHY"},
+		{"num": 6, "id": "algojo_tenang", "title": "ALGOJO PENALTI", "tier": "PERUNGGU", "quote": "«TIDAK ADA DETAK JANTUNG BERLEBIH.»", "icon": "TARGET"},
+		{"num": 7, "id": "guntur_tribun", "title": "GUNTUR TRIBUN", "tier": "PERAK", "quote": "«SATU IRAMA BERSAMA SUPORTER!»", "icon": "DRUM"},
+		{"num": 8, "id": "raja_bola_mati", "title": "LENGKUNG MAGNUS", "tier": "EMAS", "quote": "«PAGAR BETIS HANYA BISA MENONTON.»", "icon": "CURVE"},
+		{"num": 9, "id": "pidato_ruang", "title": "SUARA SKUAD", "tier": "PERUNGGU", "quote": "«RUANG GANTI BERDIRI DI BELAKANGMU.»", "icon": "MIC"},
+		{"num": 10, "id": "kapten_muda", "title": "MENTAL PEMIMPIN", "tier": "EMAS", "quote": "«BAN KAPTEN MENUNGGU WAKTUNYA.»", "icon": "SHIELD"},
+		{"num": 11, "id": "ttd_terminal", "title": "TTD DI TERMINAL", "tier": "PERAK", "quote": "«TIM MENUNGGU SEMENIT DI GERBANG.»", "icon": "JERSEY"},
+		{"num": 12, "id": "iklan_take7", "title": "BINTANG IKLAN", "tier": "PERAK", "quote": "«TAKE 7! KAMERA SUKA SENYUMMU.»", "icon": "CLAPPER"},
+		{"num": 13, "id": "makan_inisiasi", "title": "INISIASI SKUAD", "tier": "PERUNGGU", "quote": "«BERNYANYI DI DEPAN SEMUA SENIOR.»", "icon": "MUSIC"},
+		{"num": 14, "id": "lemparan_jersey", "title": "HADIAH TRIBUN", "tier": "PERAK", "quote": "«JERSEY TERBANG KE TANGAN SUPORTER.»", "icon": "SHIRT"},
+		{"num": 15, "id": "scout_pantau", "title": "SCOUT", "tier": "PERAK", "quote": "«AKU SUDAH MENGIKUTIMU.»", "icon": "SCOUT"},
+		{"num": 16, "id": "duel_kiper", "title": "DUEL KIPER", "tier": "PERAK", "quote": "«RUANG GANTI BERSORAK DI SENJA HARI.»", "icon": "GLOVE"},
+		{"num": 17, "id": "promosi_liga", "title": "TIKET PROMOSI", "tier": "EMAS", "quote": "«DIVISI BARU, PANGGUNG LEBIH BESAR.»", "icon": "STAR"},
+		{"num": 18, "id": "panggilan_timnas", "title": "GARUDA & BANGSA", "tier": "EMAS", "quote": "«LAMBANG NEGARA DI DADA.»", "icon": "FLAG"},
+		{"num": 19, "id": "warisan_legenda", "title": "LEGENDA ABADI", "tier": "LEGENDARIS", "quote": "«NAMA YANG TAK PERNAH DILUPAKAN.»", "icon": "CROWN"},
 	]
 
 func _init_preset_friends() -> void:
