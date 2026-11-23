@@ -197,13 +197,40 @@ func _show_career_shell() -> void:
 	_career_shell.open_city_requested.connect(func(lm: String, in_apt: bool): _launch_city(lm, in_apt))
 	_career_shell.open_cutscene_requested.connect(func(m_idx: int): _open_cutscene(m_idx))
 	_career_shell.open_volley_requested.connect(func(): _launch_volley_minigame(true))
+	_career_shell.transfer_flow_requested.connect(func(offer: Dictionary): _transfer_step(1, offer))
+	_career_shell.end_season_requested.connect(_on_end_season_requested)
 	_stage_layer.add_child(_career_shell)
+
+func _on_end_season_requested() -> void:
+	if not CareerState.has_active_career:
+		return
+	CareerState.finalize_season_rollover()
+	_open_cutscene(32, func():
+		_show_career_shell()
+		if CareerState.has_active_career and bool(CareerState.career.get("contract", {}).get("isFreeAgent", false)):
+			if _career_shell != null and _career_shell.has_method("switch_tab"):
+				_career_shell.call("switch_tab", "DUNIA")
+	)
 
 func _launch_career_match(skip_pre_event: bool = false) -> void:
 	if not skip_pre_event and CareerState.has_active_career:
 		var prof: Dictionary = CareerState.career.get("playerProfile", {})
 		var meta: Dictionary = CareerState.career.get("careerMeta", {})
 		var wk: int = int(meta.get("week", 1))
+		var fix: Dictionary = CareerState.get_current_fixture()
+		var called_wks: Array = meta.get("timnasCalledWeeks", [])
+		if str(fix.get("comp", "")) == "TIMNAS" and not called_wks.has(wk):
+			_open_cutscene(25, func():
+				if CareerState.has_active_career and int(CareerState.career["careerMeta"].get("week", 1)) == wk:
+					_launch_career_match(true)
+				else:
+					_show_career_shell()
+			)
+			return
+		if str(fix.get("stage", "")) == "FINAL" and int(meta.get("finalParadeDoneWeek", 0)) != wk:
+			meta["finalParadeDoneWeek"] = wk
+			_open_cutscene(26, func(): _launch_career_match(true))
+			return
 		var en: int = int(prof.get("energy", 80))
 		var coach_rel: int = int(prof.get("relations", {}).get("pelatih", 60))
 		if int(meta.get("preMatchDoneWeek", 0)) != wk:
@@ -219,7 +246,7 @@ func _launch_career_match(skip_pre_event: bool = false) -> void:
 					CareerState.pick_contextual_dilemma("PRE")
 					_open_dilemma_modal(func(): _launch_career_match(true))
 					return
-				var pre_modes: Array[int] = [10, 7, 1]  # PREMATCH_PREDIKSI, PREMATCH_TUNNEL, TIM_INTI
+				var pre_modes: Array[int] = [31, 19, 20, 10, 7, 1] if wk <= 4 else [19, 20, 10, 7, 1]
 				_open_cutscene(pre_modes[wk % pre_modes.size()], func(): _launch_career_match(true))
 				return
 
@@ -290,8 +317,21 @@ func _handle_quick_sim() -> void:
 func _trigger_post_match_chain(report: Dictionary) -> void:
 	if not CareerState.has_active_career:
 		return
+	var timnas_trophy: Dictionary = report.get("timnas_trophy_won", {})
+	if not timnas_trophy.is_empty():
+		var TimOverlays: GDScript = load("res://scripts/ui/TimnasOverlays.gd") as GDScript
+		if TimOverlays != null:
+			TimOverlays.call("open_championship_celebration", self, timnas_trophy)
+			return
+	var ballon_gala: Dictionary = report.get("ballon_gala", {})
 	var potm: Dictionary = report.get("potm_award", {})
 	var poty: Dictionary = report.get("poty_award", {})
+	if not ballon_gala.is_empty():
+		if not potm.is_empty():
+			_open_ballon_gala_modal(ballon_gala, func(): _open_cutscene(14))
+		else:
+			_open_ballon_gala_modal(ballon_gala)
+		return
 	if not potm.is_empty():
 		if not poty.is_empty():
 			_open_cutscene(14, func(): _open_cutscene(15))
@@ -301,12 +341,16 @@ func _trigger_post_match_chain(report: Dictionary) -> void:
 	if not poty.is_empty():
 		_open_cutscene(15)
 		return
+	var rec_ev: Dictionary = report.get("record_event", {})
+	if not rec_ev.is_empty() or bool(report.get("broke_club_record", false)):
+		_open_cutscene(28)
+		return
 
 	if not CareerState.consume_event_cooldown():
 		return
 	var meta: Dictionary = CareerState.career.get("careerMeta", {})
 	var wk: int = int(meta.get("week", 1))
-	if int(meta.get("dilemmaDoneWeek", 0)) != wk and (wk % 2 == 0):
+	if int(meta.get("dilemmaDoneWeek", 0)) != wk and (wk % 2 == 0 or bool(report.get("won_derby", false))):
 		CareerState.pick_contextual_dilemma("POST", report)
 		_open_dilemma_modal()
 		return
@@ -328,12 +372,27 @@ func _pick_post_match_event(report: Dictionary, check_cd: bool = true) -> int:
 	var rtg: float = float(report.get("rating", 6.2))
 	if not bool(meta.get("initiationDone", false)):
 		return 3  # MAKAN_NYANYI (team initiation dinner)
+	if bool(report.get("broke_club_record", false)):
+		return 28  # CLUB_RECORD_GOALS
+	if int(report.get("my_goals", 0)) >= 3:
+		return 16  # HAT_TRICK_MIC (3+ goals TV interview)
+	var fix: Dictionary = report.get("fixture", {})
+	if won and not bool(fix.get("is_home", true)) and rtg >= 7.5 and wk % 2 == 1:
+		return 17  # AWAY_OVATION (away fans applaud strong away win)
+	if wk % 6 == 4:
+		return 30  # PUNDIT_DEBATE (TV pundits debate performance)
+	if (won or draw) and wk % 6 == 2:
+		return 29  # TRIBUN_RAPI (fans clean stands spotlight)
+	if wk % 5 == 3:
+		return 27  # SUIT_MINIGAME (bench rock-paper-scissors)
 	if bool(report.get("motm", false)) or int(report.get("my_goals", 0)) >= 2:
 		return 13 if (wk % 2 == 0 and int(meta.get("scoutedByClubId", -1)) < 0) else 8  # SCOUT_DOSSIER or MVP_SHOWCASE
 	if (won or draw) and wk % 4 == 1:
 		return 11  # LEMPAKAN_JERSEY (celebrate with fans only after positive result)
 	if won and wk % 4 == 2:
 		return 12  # GUNTUR_DRUM (fan chant celebration after win)
+	if (won or draw) and wk % 4 == 3:
+		return 18  # JERSEY_SWAP (post-match shirt exchange)
 	if rtg >= 7.3 and wk % 3 == 0:
 		return 13  # SCOUT_DOSSIER (only when form impresses scouts!)
 	if not str(sp.get("activeId", "")).is_empty() and (int(meta.get("clapperDoneSeason", 0)) != int(meta.get("year", 1)) or wk % 5 == 0):
@@ -381,8 +440,44 @@ func _launch_city(target_lm: String, start_inside_apt: bool) -> void:
 	city.connect("start_match_from_city", func(): _launch_career_match())
 	_stage_layer.add_child(city)
 
+func _transfer_step(step: int, offer: Dictionary) -> void:
+	# 1 TEKEN KONTRAK -> 2 BANDARA -> 3 NOMOR PUNGGUNG (resmi pindah) -> 4 REKRUTAN BARU -> daftar skuad -> pidato
+	if step > 4:
+		_open_cutscene(1, func(): _open_cutscene(2))
+		return
+	var scr: GDScript = load("res://scenes/modals/EventCutsceneModal.gd") as GDScript
+	if scr == null or not scr.can_instantiate():
+		push_error("Failed to load EventCutsceneModal.gd during transfer step")
+		return
+	var cm: Control = scr.new()
+	cm.call("configure", 20 + step)
+	cm.set("transfer_offer", offer)
+	cm.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cm.connect("finished", func(): _transfer_step(step + 1, offer))
+	_modal_layer.add_child(cm)
+
+func _open_ballon_gala_modal(gala_data: Dictionary, on_done: Callable = Callable()) -> void:
+	var scr: GDScript = load("res://scenes/modals/BallonGalaModal.gd") as GDScript
+	if scr == null or not scr.can_instantiate():
+		push_error("Failed to load BallonGalaModal.gd")
+		if on_done.is_valid():
+			on_done.call()
+		return
+	var gm: Control = scr.new()
+	gm.call("configure", gala_data)
+	gm.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if on_done.is_valid():
+		gm.connect("finished", on_done)
+	_modal_layer.add_child(gm)
+
 func _open_cutscene(mode_idx: int, on_done: Callable = Callable()) -> void:
-	var cm: Control = (load("res://scenes/modals/EventCutsceneModal.gd") as GDScript).new()
+	var scr: GDScript = load("res://scenes/modals/EventCutsceneModal.gd") as GDScript
+	if scr == null or not scr.can_instantiate():
+		push_error("Failed to load EventCutsceneModal.gd for mode %d" % mode_idx)
+		if on_done.is_valid():
+			on_done.call()
+		return
+	var cm: Control = scr.new()
 	cm.call("configure", mode_idx)
 	cm.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cm.connect("launch_volley_training", func(): _launch_volley_minigame(true))

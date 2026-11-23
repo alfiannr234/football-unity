@@ -655,6 +655,30 @@ func _run_suite() -> void:
 	_assert(not ("adu_penalti_kiper" in pre_ids), "GK penalty challenge never appears before a match")
 	var post_d: Dictionary = CareerState.pick_contextual_dilemma("POST", {"goals": 1, "score_us": 2, "score_them": 1})
 	_assert(str(post_d.get("timing", "")) == "POST", "Post-match picker exclusively returns POST-conditioned dilemmas")
+	var derby_d: Dictionary = CareerState.pick_contextual_dilemma("POST", {"goals": 1, "score_us": 2, "score_them": 1, "is_derby": true, "won_derby": true})
+	_assert(str(derby_d.get("id", "")) == "menang_derby", "Derby win triggers POST dilemma menang_derby")
+	_assert(CareerState.get_attribute_upgrade_cost(79) == 1 and CareerState.get_attribute_upgrade_cost(80) == 2 and CareerState.get_attribute_upgrade_cost(95) == 2, "Attribute >= 80 costs 2 skill points while < 80 costs 1")
+	_assert(CareerState.get_live_division_table(0, 1).size() >= 10 and CareerState.get_live_division_table(GameData.nations.size() - 1, 2).size() >= 8, "World live league standings compute for all nations & divisions")
+	var NewCutsceneScr: GDScript = load("res://scenes/modals/EventCutsceneModal.gd")
+	_assert(int(NewCutsceneScr.CutsceneMode.HAT_TRICK_MIC) == 16 and int(NewCutsceneScr.CutsceneMode.COACH_TACTIC_BOARD) == 20, "New 4 cutscenes (modes 16..20) are registered on EventCutsceneModal")
+	_assert(int(NewCutsceneScr.CutsceneMode.CONTRACT_SIGN) == 21 and int(NewCutsceneScr.CutsceneMode.AIRPORT_ARRIVAL) == 22 and int(NewCutsceneScr.CutsceneMode.SHIRT_NUMBER_PICK) == 23 and int(NewCutsceneScr.CutsceneMode.NEW_SIGNING_PITCH) == 24, "Transfer flow cutscenes (modes 21..24) are registered")
+	_assert(int(NewCutsceneScr.CutsceneMode.TIMNAS_CALLUP) == 25 and int(NewCutsceneScr.CutsceneMode.SEASON_END_RECAP) == 32, "New 6 cutscenes (modes 25..32) are registered")
+	_assert(int(MatchSceneScr.MatchPhase.COIN_FLIP) >= 0 and int(MatchSceneScr.MatchPhase.PENALTY_SHOOTOUT) > int(MatchSceneScr.MatchPhase.COIN_FLIP), "Coin flip & penalty shootout match phases exist")
+	var ko_found := false
+	for fx_chk in CareerState.career["schedule"]:
+		if str(fx_chk.get("stage", "")) == "8 BESAR" and bool(fx_chk.get("is_knockout", false)):
+			ko_found = true
+			break
+	_assert(ko_found, "Schedule marks 8 BESAR knockout fixture for Extra Time / Coin Flip / Penalty Shootout")
+	_assert(ms_inst.has_method("_resolve_carrier_tackle_outcome"), "MatchScene implements defender tackle clean-steal vs foul helper")
+	_assert(GameData.get_competition_theme("PIALA_ELITE").get("pattern", "") == "stars", "Unique competition backdrop theme resolves per tournament")
+	var timnas_eval: Dictionary = CareerState.evaluate_timnas_callup(16)
+	_assert(timnas_eval.has("called_up") and timnas_eval.has("threshold"), "Timnas call-up evaluation computes threshold & score")
+	CareerState.set_contract_clause("TOLAK_RIVAL")
+	_assert(str(CareerState.career["contract"]["clause"]) == "TOLAK_RIVAL", "Personal contract clause updates cleanly")
+	CareerState.set_contract_clause("NONE")
+	var taken_nums: Array[int] = CareerState.get_club_taken_numbers(0)
+	_assert(taken_nums.size() >= 10 and not taken_nums.has(0), "New club squad exposes taken shirt numbers for the number picker")
 	var sc_low: Color = UITheme.get_stat_color(48)
 	var sc_high: Color = UITheme.get_stat_color(94)
 	_assert(sc_low.r > sc_high.r and sc_high.g > sc_low.g, "Stat attribute color progresses cleanly from orange toward green")
@@ -676,20 +700,32 @@ func _run_suite() -> void:
 	# Check Sweden Div 3 size separately before simulating season (Sweden is nation 0)
 	_assert(GameData.get_clubs_in_division(0, 3).size() == 32, "Sweden Div 3 has 32 teams")
 
-	# Simulate full 45-week season and verify Monthly (POTM) + Annual (POTY) award events trigger!
+	# Simulate full 45-week season and verify Monthly (POTM) + seasonPendingEnd hold -> Annual (POTY) rollover!
 	var potm_seen := false
-	var poty_seen := false
 	for _w in range(45):
 		var rep: Dictionary = CareerState.sim_current_match()
 		if not rep.get("potm_award", {}).is_empty():
 			potm_seen = true
-		if not rep.get("poty_award", {}).is_empty():
-			poty_seen = true
 	_assert(potm_seen and CareerState.career["careerMeta"].get("potmHistory", []).size() >= 6, "Player of the Month (POTM) award evaluates & triggers across season months")
-	_assert(poty_seen and CareerState.career["careerMeta"].get("potyHistory", []).size() >= 1, "Player of the Year (POTY) gala award evaluates at end of season")
+	_assert(bool(CareerState.career["careerMeta"].get("seasonPendingEnd", false)), "After Week 45 match, season waits for TAHAN UNTUK AKHIRI MUSIM button")
+	var rollover_rep: Dictionary = CareerState.finalize_season_rollover()
+	_assert(not rollover_rep.get("poty_award", {}).is_empty() and CareerState.career["careerMeta"].get("potyHistory", []).size() >= 1, "Player of the Year (POTY) gala award evaluates on season finalize")
 	_assert(CareerState.career["careerMeta"]["lastMatchdayResults"].size() >= 8, "Matchday simulation populates HASIL division scores")
-	_assert(int(CareerState.career["careerMeta"]["year"]) == 2, "45 matches rolls over cleanly into Year 2 (got Year %d)" % int(CareerState.career["careerMeta"]["year"]))
+	_assert(int(CareerState.career["careerMeta"]["year"]) == 2 and not bool(CareerState.career["careerMeta"].get("seasonPendingEnd", true)), "Finalize rollover advances cleanly into Year 2 (got Year %d)" % int(CareerState.career["careerMeta"]["year"]))
 	_assert(int(CareerState.career["playerProfile"]["age"]) == 17, "Player ages to 17 on Season 2")
+
+	CareerState.open_transfer_window()
+	var win_offers: Array = CareerState.career["transferOffers"]
+	_assert(int(CareerState.career["careerMeta"]["transferWindowWeeksLeft"]) == 4 and win_offers.size() >= 3, "Opening the transfer window generates multiple club offers")
+	var offer_nations: Dictionary = {}
+	for wo in win_offers:
+		offer_nations[int(wo["nation_id"])] = true
+	_assert(offer_nations.size() >= 2, "Transfer offers come from various clubs/nations")
+	var rel_t: Dictionary = CareerState.career["playerProfile"]["relations"]
+	for rk_t in rel_t.keys():
+		rel_t[rk_t] = 77
+	CareerState.reset_relations_for_new_club()
+	_assert(int(rel_t["pelatih"]) == 20 and int(rel_t["ruangGanti"]) == 20 and int(rel_t["fans"]) == 20 and int(rel_t["pers"]) == 20 and int(rel_t["agen"]) == 77 and int(rel_t.get("kekasih", 77)) == 77, "Joining a new club resets relations to 20 except agent and kekasih")
 
 	var save_path := "user://saves/slot_3.dat"
 	var f := FileAccess.open(save_path, FileAccess.READ)

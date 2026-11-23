@@ -1,9 +1,9 @@
 class_name PixelAvatar
 extends Control
 
-# High-craft 32x48 pixel-art character renderer supporting sculpted head/ears,
-# 16 hairstyles, 8 beard styles, face/arm/leg tattoos, casual & gala outfits,
-# portrait vs full-body framing, and built-in procedural animation states.
+# Sculpted 32x48 pixel-art footballer renderer supporting 16 layered hairstyles,
+# 8 beard styles, 8 club jersey patterns, GK padded gloves, shorts numbers,
+# tattoos, casual/gala outfits, portrait/full-body framing, and procedural anims.
 
 var full_body: bool = true
 var primary_color: Color = Color("#1A66D2")
@@ -30,6 +30,7 @@ var eyewear: int = 0
 var casual_style: int = 0  # 0=Jersey, 1=Kasual, 2=Gala
 var outfit_variant: int = 0
 var show_number_badge: bool = false
+var show_shorts_number: bool = false
 var show_mvp_trophy: bool = false
 
 # Procedural animation state: "NONE", "IDLE", "TALK", "CHEER", "MVP", "SING", "SIGN", "RUN"
@@ -37,8 +38,8 @@ var anim_mode: String = "NONE"
 var anim_phase: float = 0.0
 var _anim_t: float = 0.0
 
-const SKINS := [Color("#F6D4B8"), Color("#E6BA94"), Color("#C98F62"), Color("#A86E44"), Color("#8A5434"), Color("#5C3723")]
-const HAIRS := [Color("#1A1718"), Color("#5C3824"), Color("#8A542E"), Color("#D4A842"), Color("#9A3826"), Color("#A0A4AE"), Color("#E8EAEF"), Color("#2E7AE6"), Color("#D43038"), Color("#D84A90")]
+const SKINS := [Color("#F8D8BC"), Color("#E8BC96"), Color("#CE9466"), Color("#AC7248"), Color("#895333"), Color("#5C3723")]
+const HAIRS := [Color("#18161C"), Color("#5C3824"), Color("#8E572E"), Color("#D9AC44"), Color("#A23A26"), Color("#9CA3AF"), Color("#E8ECF2"), Color("#2E7AE6"), Color("#D43038"), Color("#D84A90")]
 
 func _ready() -> void:
 	_anim_t = anim_phase
@@ -47,6 +48,15 @@ func _process(delta: float) -> void:
 	if anim_mode == "NONE" or not visible:
 		return
 	_anim_t += delta
+	queue_redraw()
+
+func apply_kit(kit: Dictionary) -> void:
+	if kit.is_empty():
+		return
+	primary_color = kit.get("primary", primary_color)
+	secondary_color = kit.get("secondary", secondary_color)
+	shorts_color = kit.get("shorts", secondary_color if primary_color.get_luminance() < 0.68 else Color("#18202E"))
+	kit_pattern = str(kit.get("pattern", kit_pattern))
 	queue_redraw()
 
 func configure_from_career() -> void:
@@ -62,7 +72,7 @@ func configure_from_career() -> void:
 	var app: Dictionary = p.get("appearance", {})
 	primary_color = club.get("primary", Color("#1A66D2"))
 	secondary_color = club.get("secondary", Color("#F4F8FF"))
-	shorts_color = secondary_color if primary_color.get_luminance() < 0.7 else Color("#1A2232")
+	shorts_color = secondary_color if primary_color.get_luminance() < 0.68 else Color("#18202E")
 	kit_pattern = str(club.get("pattern", "stripes"))
 	skin_idx = int(app.get("skin", 1))
 	hair_style = int(app.get("hair_style", 2))
@@ -101,7 +111,7 @@ func configure_from_career() -> void:
 func configure_from_seed(seed_val: int, club: Dictionary, num: int = 10) -> void:
 	primary_color = club.get("primary", Color("#1A66D2"))
 	secondary_color = club.get("secondary", Color("#F4F8FF"))
-	shorts_color = secondary_color if primary_color.get_luminance() < 0.7 else Color("#1A2232")
+	shorts_color = club.get("shorts", secondary_color if primary_color.get_luminance() < 0.68 else Color("#18202E"))
 	kit_pattern = str(club.get("pattern", "stripes"))
 	skin_idx = abs(seed_val) % SKINS.size()
 	hair_style = abs(seed_val / 3) % CharacterStyleCatalog.HAIR_STYLES.size()
@@ -110,11 +120,12 @@ func configure_from_seed(seed_val: int, club: Dictionary, num: int = 10) -> void
 	beard_style = abs(seed_val / 5) % 4 if (abs(seed_val) % 4) == 0 else 0
 	beard = (beard_style > 0)
 	long_sleeve = (abs(seed_val) % 4) == 0
-	boot_color = Color("#20242C")
+	var ai_boots := [Color("#1D2430"), Color("#E2E8F0"), Color("#DC2626"), Color("#22C55E"), Color("#EAB308"), Color("#2563EB")]
+	boot_color = ai_boots[abs(seed_val / 2) % ai_boots.size()]
 	glove_color = Color.TRANSPARENT
 	wrist_side = "TAK ADA"
 	tattoo_face = 0
-	tattoo_arm = 1 if (abs(seed_val) % 7) == 0 else 0
+	tattoo_arm = 1 if (abs(seed_val) % 6) == 0 else 0
 	tattoo_leg = 0
 	headwear = 0
 	eyewear = 0
@@ -128,11 +139,10 @@ func _draw() -> void:
 	var grid_h := 48.0 if full_body else 28.0
 	var ps := floorf(minf(size.x / grid_w, size.y / grid_h))
 	if ps < 1.0:
-		ps = 1.0
+		ps = maxf(0.5, minf(size.x / grid_w, size.y / grid_h))
 	var ox := floorf((size.x - grid_w * ps) * 0.5)
 	var oy := floorf((size.y - grid_h * ps) * 0.5)
 
-	# Compute animation offsets
 	var t := _anim_t
 	var bob_y: int = 0
 	var head_y_off: int = 0
@@ -140,7 +150,7 @@ func _draw() -> void:
 	var r_arm_lift: int = 0
 	var arm_spread: int = 0
 	var leg_step: int = 0
-	var mouth_open: int = 0  # 0=closed, 1=talk, 2=wide cheer/sing
+	var mouth_open: int = 0
 	var blink := false
 
 	match anim_mode:
@@ -161,8 +171,8 @@ func _draw() -> void:
 			mouth_open = 2
 		"SING":
 			bob_y = 1 if sin(t * 4.2) > 0.3 else 0
-			l_arm_lift = -4 + int(round(sin(t * 4.2) * 1.0))
-			r_arm_lift = -4 - int(round(sin(t * 4.2) * 1.0))
+			l_arm_lift = -4 + int(round(sin(t * 4.2)))
+			r_arm_lift = -4 - int(round(sin(t * 4.2)))
 			arm_spread = 2
 			mouth_open = 2 if sin(t * 9.0) > -0.25 else 1
 		"SIGN":
@@ -176,13 +186,15 @@ func _draw() -> void:
 			l_arm_lift = -2 if ph > 0.2 else 1
 			r_arm_lift = -2 if ph < -0.2 else 1
 
-	var blk := Color("#0F1218")
+	var blk := Color("#0D1017")
 	var skin: Color = SKINS[clampi(skin_idx, 0, SKINS.size() - 1)]
-	var skin_sh: Color = skin.darkened(0.15)
-	var skin_hi: Color = skin.lightened(0.12)
+	var skin_sh: Color = skin.darkened(0.18)
+	var skin_dk: Color = skin.darkened(0.30)
+	var skin_hi: Color = skin.lightened(0.14)
+	var cheek: Color = skin.lerp(Color("#DF6A62"), 0.18)
 	var hair: Color = HAIRS[clampi(hair_idx, 0, HAIRS.size() - 1)]
-	var hair_hi: Color = hair.lightened(0.24)
-	var hair_dk: Color = hair.darkened(0.24)
+	var hair_hi: Color = hair.lightened(0.26)
+	var hair_dk: Color = hair.darkened(0.28)
 	var tip_info: Dictionary = CharacterStyleCatalog.TIP_COLORS[clampi(tip_color_idx, 0, CharacterStyleCatalog.TIP_COLORS.size() - 1)]
 	var tip_col: Color = tip_info["col"]
 
@@ -190,245 +202,260 @@ func _draw() -> void:
 		draw_rect(Rect2(ox + float(x) * ps, oy + float(y) * ps, float(w) * ps, float(h) * ps), col)
 
 	if full_body:
-		# Elliptical Ground Shadow
-		draw_circle(Vector2(ox + 16.0 * ps, oy + 46.5 * ps), 7.6 * ps, Color(0, 0, 0, 0.30))
+		# Flat grounded pixel shadow ellipse
+		px.call(8, 45, 16, 2, Color(0, 0, 0, 0.28))
+		px.call(10, 44, 12, 4, Color(0, 0, 0, 0.20))
 
 	var hy := head_y_off + (1 if bob_y > 0 else bob_y)
 	var by := bob_y
 
 	# -------------------------------------------------------------------------
-	# 1. CONTOURED HEAD, EARS, NECK & JAWLINE (y = 2..20)
+	# 1. SCULPTED HEAD, EARS, NECK & JAWLINE (beveled retro outline)
 	# -------------------------------------------------------------------------
-	# Neck + chin shadow
+	# Neck + collar shadow
 	px.call(13, 17 + hy, 6, 4, blk)
 	px.call(14, 17 + hy, 4, 3, skin_sh)
+	px.call(14, 17 + hy, 4, 1, skin_dk)
 
-	# Ears (sticking out symmetrically)
-	px.call(9, 10 + hy, 2, 4, blk)
-	px.call(10, 11 + hy, 1, 2, skin_sh)
-	px.call(21, 10 + hy, 2, 4, blk)
-	px.call(21, 11 + hy, 1, 2, skin_sh)
+	# Contoured Ears
+	px.call(8, 10 + hy, 2, 4, blk)
+	px.call(9, 11 + hy, 1, 2, skin)
+	px.call(9, 12 + hy, 1, 1, skin_sh)
+	px.call(22, 10 + hy, 2, 4, blk)
+	px.call(22, 11 + hy, 1, 2, skin_sh)
+	px.call(22, 12 + hy, 1, 1, skin_dk)
 
-	# Contoured Rounded Head Silhouette
-	px.call(10, 4 + hy, 12, 12, blk)
-	px.call(11, 16 + hy, 10, 1, blk)
-	px.call(12, 17 + hy, 8, 1, blk)
-	# Inner Skin Fill
-	px.call(11, 5 + hy, 10, 10, skin)
-	px.call(12, 15 + hy, 8, 2, skin)
-	# Forehead highlight & jawline/right cheek contour shading
-	px.call(12, 6 + hy, 6, 1, skin_hi)
-	px.call(19, 6 + hy, 2, 9, skin_sh)
-	px.call(12, 16 + hy, 8, 1, skin_sh)
+	# Beveled Head Silhouette (rounded cranium & tapered chin)
+	px.call(10, 4 + hy, 12, 1, blk)
+	px.call(9, 5 + hy, 14, 11, blk)
+	px.call(10, 16 + hy, 12, 1, blk)
+	px.call(11, 17 + hy, 10, 1, blk)
+	px.call(12, 18 + hy, 8, 1, blk)
+	# Skin Base Fill
+	px.call(10, 5 + hy, 12, 10, skin)
+	px.call(11, 15 + hy, 10, 2, skin)
+	px.call(12, 17 + hy, 8, 1, skin_sh)
+	# Forehead highlight, side contour & warm cheek shading
+	px.call(11, 6 + hy, 6, 1, skin_hi)
+	px.call(10, 6 + hy, 1, 9, skin_hi)
+	px.call(20, 6 + hy, 2, 9, skin_sh)
+	px.call(19, 15 + hy, 2, 1, skin_sh)
+	px.call(11, 13 + hy, 2, 1, cheek)
+	px.call(19, 13 + hy, 2, 1, cheek)
 
-	# Face Expressive Features
+	# Expressive Eyes & Contoured Eyebrows
 	if blink:
-		px.call(12, 11 + hy, 2, 1, blk)
-		px.call(18, 11 + hy, 2, 1, blk)
+		px.call(11, 11 + hy, 3, 1, blk)
+		px.call(18, 11 + hy, 3, 1, blk)
 	else:
-		# Sclera white + deep pupil/iris
-		px.call(12, 10 + hy, 1, 2, Color("#F4F7FC"))
-		px.call(13, 10 + hy, 1, 2, Color("#182B4A"))
-		px.call(19, 10 + hy, 1, 2, Color("#F4F7FC"))
-		px.call(18, 10 + hy, 1, 2, Color("#182B4A"))
-	# Eyebrows
-	px.call(12, 9 + hy, 3, 1, hair_dk)
-	px.call(17, 9 + hy, 3, 1, hair_dk)
-	# Sculpted Nose & Nostril shadow
+		# Left eye
+		px.call(11, 10 + hy, 3, 2, Color("#F6F8FC"))
+		px.call(12, 10 + hy, 2, 2, Color("#15233C"))
+		px.call(12, 10 + hy, 1, 1, Color("#FFFFFF"))
+		px.call(11, 12 + hy, 3, 1, skin_sh)
+		# Right eye
+		px.call(18, 10 + hy, 3, 2, Color("#F6F8FC"))
+		px.call(18, 10 + hy, 2, 2, Color("#15233C"))
+		px.call(18, 10 + hy, 1, 1, Color("#FFFFFF"))
+		px.call(18, 12 + hy, 3, 1, skin_sh)
+	# Brows
+	px.call(11, 8 + hy, 3, 1, hair_dk)
+	px.call(14, 9 + hy, 1, 1, hair_dk)
+	px.call(18, 8 + hy, 3, 1, hair_dk)
+	px.call(17, 9 + hy, 1, 1, hair_dk)
+	# Sculpted Nose
 	px.call(15, 11 + hy, 2, 2, skin_sh)
-	px.call(15, 13 + hy, 2, 1, skin.darkened(0.26))
-	# Animated Mouth
+	px.call(15, 13 + hy, 2, 1, skin_dk)
+	# Expressive Mouth
 	if mouth_open >= 2:
-		px.call(14, 14 + hy, 4, 2, Color("#7A2024"))
-		px.call(15, 14 + hy, 2, 1, Color("#F4F4F4"))
+		px.call(13, 14 + hy, 6, 2, Color("#6F1D24"))
+		px.call(14, 14 + hy, 4, 1, Color("#F8FAFC"))
 	elif mouth_open == 1:
-		px.call(14, 15 + hy, 4, 1, Color("#883034"))
+		px.call(14, 15 + hy, 4, 1, Color("#7D2A30"))
 	else:
-		px.call(15, 15 + hy, 2, 1, Color("#9E5448"))
+		px.call(14, 15 + hy, 4, 1, Color("#8A453B"))
+		px.call(15, 16 + hy, 2, 1, skin_sh)
 
 	# -------------------------------------------------------------------------
-	# 2. FACE TATTOOS & BEARD STYLES (8 designs)
+	# 2. FACE TATTOOS & BEARD STYLES
 	# -------------------------------------------------------------------------
 	match clampi(tattoo_face, 0, 5):
-		1:
-			px.call(12, 13 + hy, 1, 1, Color("#202D3A"))
+		1: px.call(11, 13 + hy, 1, 1, Color("#202D3A"))
 		2:
-			px.call(12, 13 + hy, 1, 1, Color("#202D3A"))
-			px.call(19, 13 + hy, 1, 1, Color("#202D3A"))
-		3:
-			px.call(12, 12 + hy, 1, 2, Color("#1F354D"))
-		4:
-			px.call(19, 9 + hy, 1, 4, Color("#6A2C2C"))
-		5:
-			px.call(14, 18 + hy, 4, 2, Color("#1A2634"))
+			px.call(11, 13 + hy, 1, 1, Color("#202D3A"))
+			px.call(20, 13 + hy, 1, 1, Color("#202D3A"))
+		3: px.call(11, 12 + hy, 1, 2, Color("#1F354D"))
+		4: px.call(20, 9 + hy, 1, 4, Color("#6A2C2C"))
+		5: px.call(14, 18 + hy, 4, 2, Color("#1A2634"))
 
 	var eff_beard := beard_style if beard_style > 0 else (1 if beard else 0)
 	match clampi(eff_beard, 0, 7):
-		1: # 3 Hari Tipis (stubble)
-			px.call(11, 14 + hy, 10, 2, Color(hair.r, hair.g, hair.b, 0.55))
-			px.call(13, 16 + hy, 6, 1, Color(hair.r, hair.g, hair.b, 0.6))
-		2: # Dipangkas (Trimmed full)
-			px.call(11, 13 + hy, 1, 3, hair)
-			px.call(20, 13 + hy, 1, 3, hair)
-			px.call(12, 15 + hy, 8, 2, hair)
+		1:
+			px.call(10, 14 + hy, 12, 2, Color(hair.r, hair.g, hair.b, 0.50))
+			px.call(12, 16 + hy, 8, 2, Color(hair.r, hair.g, hair.b, 0.58))
+		2:
+			px.call(10, 13 + hy, 1, 3, hair)
+			px.call(21, 13 + hy, 1, 3, hair)
+			px.call(11, 15 + hy, 10, 2, hair)
+			px.call(12, 17 + hy, 8, 1, hair_dk)
 			px.call(14, 14 + hy, 4, 1, hair)
-		3: # Penuh Tebal (Heavy lumberjack)
-			px.call(11, 12 + hy, 2, 4, hair)
-			px.call(19, 12 + hy, 2, 4, hair)
-			px.call(12, 14 + hy, 8, 4, hair)
-			px.call(13, 17 + hy, 6, 1, hair_dk)
-		4: # Soul Patch
-			px.call(15, 16 + hy, 2, 1, hair)
-		5: # Kambing (Goatee)
+		3:
+			px.call(10, 12 + hy, 2, 4, hair)
+			px.call(20, 12 + hy, 2, 4, hair)
+			px.call(11, 14 + hy, 10, 4, hair)
+			px.call(12, 17 + hy, 8, 2, hair_dk)
+		4:
+			px.call(15, 16 + hy, 2, 2, hair)
+		5:
 			px.call(14, 14 + hy, 4, 1, hair)
-			px.call(14, 16 + hy, 4, 2, hair)
-		6: # Kumis Tebal (Handlebar)
+			px.call(13, 16 + hy, 6, 2, hair)
+		6:
 			px.call(13, 14 + hy, 6, 1, hair)
 			px.call(12, 15 + hy, 2, 1, hair_dk)
 			px.call(18, 15 + hy, 2, 1, hair_dk)
-		7: # Cambang Wolverine
-			px.call(11, 11 + hy, 2, 5, hair)
-			px.call(19, 11 + hy, 2, 5, hair)
+		7:
+			px.call(10, 11 + hy, 2, 5, hair)
+			px.call(20, 11 + hy, 2, 5, hair)
 
 	# -------------------------------------------------------------------------
-	# 3. 16 SCULPTED HAIRSTYLES WITH TEXTURE CLUSTERS & TIPS
+	# 3. 16 LAYERED HAIRSTYLES WITH CROWN HIGHLIGHTS & SHADOWS
 	# -------------------------------------------------------------------------
 	var hs := clampi(hair_style, 0, CharacterStyleCatalog.HAIR_STYLES.size() - 1)
 	var tip_eff: Color = tip_col if tip_col.a > 0.1 else hair_hi
 	match hs:
-		0: # BOTAK (smooth scalp glint)
-			px.call(13, 5 + hy, 3, 1, skin_hi)
+		0: # BOTAK
+			px.call(12, 5 + hy, 4, 1, skin_hi)
 		1: # KLASIK RAPI
-			px.call(10, 3 + hy, 12, 4, blk)
-			px.call(11, 4 + hy, 10, 3, hair)
-			px.call(11, 7 + hy, 1, 3, hair)
-			px.call(20, 7 + hy, 1, 3, hair)
-			px.call(12, 4 + hy, 5, 1, tip_eff)
-		2: # KERITING IKAL (Signature fluffy Alfian curls)
 			px.call(9, 2 + hy, 14, 5, blk)
 			px.call(10, 3 + hy, 12, 4, hair)
-			px.call(11, 2 + hy, 3, 2, hair_hi)
-			px.call(16, 2 + hy, 4, 2, tip_eff)
-			px.call(12, 5 + hy, 3, 1, hair_dk)
-			px.call(17, 5 + hy, 2, 1, hair_dk)
 			px.call(10, 7 + hy, 1, 3, hair)
 			px.call(21, 7 + hy, 1, 3, hair)
+			px.call(11, 3 + hy, 6, 1, tip_eff)
+			px.call(10, 6 + hy, 12, 1, hair_dk)
+		2: # KERITING IKAL (Signature fluffy curls like Gambar 3)
+			px.call(8, 1 + hy, 16, 6, blk)
+			px.call(9, 2 + hy, 14, 5, hair)
+			px.call(10, 1 + hy, 4, 2, hair_hi)
+			px.call(16, 1 + hy, 5, 2, tip_eff)
+			px.call(11, 5 + hy, 3, 1, hair_dk)
+			px.call(16, 5 + hy, 3, 1, hair_dk)
+			px.call(9, 7 + hy, 2, 3, hair)
+			px.call(21, 7 + hy, 2, 3, hair)
 		3: # AFRO BULAT
-			px.call(8, 1 + hy, 16, 7, blk)
-			px.call(9, 2 + hy, 14, 6, hair)
-			px.call(8, 6 + hy, 2, 4, hair)
-			px.call(22, 6 + hy, 2, 4, hair)
-			px.call(11, 3 + hy, 6, 2, tip_eff)
-			px.call(14, 5 + hy, 4, 1, hair_dk)
+			px.call(7, 0 + hy, 18, 8, blk)
+			px.call(8, 1 + hy, 16, 7, hair)
+			px.call(7, 6 + hy, 2, 4, hair)
+			px.call(23, 6 + hy, 2, 4, hair)
+			px.call(10, 2 + hy, 7, 2, tip_eff)
+			px.call(14, 5 + hy, 5, 1, hair_dk)
 		4: # MOHAWK PUNK
 			px.call(13, 0 + hy, 6, 6, blk)
 			px.call(14, 1 + hy, 4, 5, hair)
 			px.call(15, 0 + hy, 2, 2, tip_eff)
-			px.call(11, 5 + hy, 3, 1, skin_sh)
-			px.call(18, 5 + hy, 3, 1, skin_sh)
+			px.call(10, 5 + hy, 3, 1, skin_sh)
+			px.call(19, 5 + hy, 3, 1, skin_sh)
 		5: # HI-TOP FADE
-			px.call(10, 1 + hy, 12, 5, blk)
-			px.call(11, 2 + hy, 10, 4, hair)
-			px.call(12, 2 + hy, 8, 1, tip_eff)
-		6: # CURTAIN PENDEK (Center-part K-pop bangs)
-			px.call(10, 2 + hy, 12, 5, blk)
-			px.call(11, 3 + hy, 10, 3, hair)
-			px.call(10, 6 + hy, 4, 3, hair)
-			px.call(18, 6 + hy, 4, 3, hair)
-			px.call(15, 6 + hy, 2, 2, skin)
-			px.call(11, 4 + hy, 4, 1, tip_eff)
-			px.call(18, 4 + hy, 3, 1, tip_eff)
-		7: # SPIKY FADE
-			px.call(10, 2 + hy, 12, 4, blk)
-			px.call(11, 3 + hy, 10, 3, hair)
-			px.call(12, 1 + hy, 2, 2, tip_eff)
-			px.call(15, 1 + hy, 2, 2, hair)
-			px.call(18, 1 + hy, 2, 2, tip_eff)
-		8: # QUIFF RENDAH
-			px.call(10, 2 + hy, 12, 4, blk)
-			px.call(12, 1 + hy, 9, 4, hair)
-			px.call(14, 1 + hy, 6, 2, tip_eff)
-		9: # EDGAR CROP (Sharp straight fringe)
-			px.call(10, 2 + hy, 12, 6, blk)
-			px.call(11, 3 + hy, 10, 5, hair)
-			px.call(12, 4 + hy, 8, 1, tip_eff)
-		10: # GONDRONG (Shoulder-length locks)
+			px.call(9, 1 + hy, 14, 5, blk)
+			px.call(10, 2 + hy, 12, 4, hair)
+			px.call(11, 2 + hy, 10, 1, tip_eff)
+			px.call(10, 5 + hy, 12, 1, hair_dk)
+		6: # CURTAIN PENDEK
 			px.call(9, 2 + hy, 14, 5, blk)
-			px.call(8, 6 + hy, 3, 11, blk)
-			px.call(21, 6 + hy, 3, 11, blk)
 			px.call(10, 3 + hy, 12, 3, hair)
-			px.call(9, 6 + hy, 2, 10, hair)
-			px.call(21, 6 + hy, 2, 10, hair)
-			px.call(12, 3 + hy, 6, 1, tip_eff)
+			px.call(9, 6 + hy, 5, 3, hair)
+			px.call(18, 6 + hy, 5, 3, hair)
+			px.call(15, 6 + hy, 2, 2, skin)
+			px.call(11, 3 + hy, 4, 1, tip_eff)
+			px.call(18, 3 + hy, 3, 1, tip_eff)
+		7: # SPIKY FADE
+			px.call(9, 2 + hy, 14, 4, blk)
+			px.call(10, 3 + hy, 12, 3, hair)
+			px.call(11, 0 + hy, 2, 3, tip_eff)
+			px.call(15, 0 + hy, 2, 3, hair)
+			px.call(19, 0 + hy, 2, 3, tip_eff)
+		8: # QUIFF RENDAH
+			px.call(9, 2 + hy, 14, 4, blk)
+			px.call(11, 1 + hy, 10, 4, hair)
+			px.call(13, 1 + hy, 7, 2, tip_eff)
+		9: # EDGAR CROP
+			px.call(9, 2 + hy, 14, 6, blk)
+			px.call(10, 3 + hy, 12, 5, hair)
+			px.call(11, 4 + hy, 10, 1, tip_eff)
+		10: # GONDRONG
+			px.call(8, 2 + hy, 16, 5, blk)
+			px.call(7, 6 + hy, 3, 11, blk)
+			px.call(22, 6 + hy, 3, 11, blk)
+			px.call(9, 3 + hy, 14, 3, hair)
+			px.call(8, 6 + hy, 2, 10, hair)
+			px.call(22, 6 + hy, 2, 10, hair)
+			px.call(11, 3 + hy, 7, 1, tip_eff)
 		11: # DREADLOCK PENDEK
-			px.call(9, 2 + hy, 14, 5, blk)
-			for dx in [9, 12, 15, 18, 21]:
+			px.call(8, 2 + hy, 16, 5, blk)
+			for dx in [8, 11, 14, 17, 20]:
 				px.call(dx, 3 + hy, 2, 6, hair)
 				px.call(dx, 8 + hy, 2, 1, tip_eff)
 		12: # TWIST KERITING
-			px.call(10, 2 + hy, 12, 4, blk)
-			for tx in [11, 14, 17, 20]:
+			px.call(9, 2 + hy, 14, 4, blk)
+			for tx in [10, 13, 16, 19]:
 				px.call(tx, 1 + hy, 2, 4, hair)
 				px.call(tx, 1 + hy, 1, 1, tip_eff)
 		13: # CORNROW SISI
-			px.call(10, 3 + hy, 12, 3, hair_dk)
-			for rx in [11, 15, 19]:
+			px.call(9, 3 + hy, 14, 3, hair_dk)
+			for rx in [10, 14, 18]:
 				px.call(rx, 3 + hy, 2, 3, hair)
 				px.call(rx + 1, 3 + hy, 1, 3, tip_eff)
 		14: # MANGKUK UNDERCUT
-			px.call(9, 2 + hy, 14, 5, blk)
-			px.call(10, 3 + hy, 12, 4, hair)
-			px.call(10, 7 + hy, 12, 1, hair_dk)
-			px.call(12, 4 + hy, 7, 1, tip_eff)
+			px.call(8, 2 + hy, 16, 5, blk)
+			px.call(9, 3 + hy, 14, 4, hair)
+			px.call(9, 7 + hy, 14, 1, hair_dk)
+			px.call(11, 4 + hy, 8, 1, tip_eff)
 		15: # BUZZ CUT
-			px.call(11, 4 + hy, 10, 2, hair)
-			px.call(13, 4 + hy, 5, 1, tip_eff)
+			px.call(10, 4 + hy, 12, 2, hair)
+			px.call(12, 4 + hy, 6, 1, tip_eff)
 
 	# -------------------------------------------------------------------------
 	# 4. EYEWEAR & HEADWEAR
 	# -------------------------------------------------------------------------
 	match clampi(eyewear, 0, 3):
-		1: # Gold Aviator/VIP
-			px.call(11, 9 + hy, 10, 3, Color("#12161E"))
-			px.call(12, 10 + hy, 3, 2, Color("#EA9228"))
-			px.call(17, 10 + hy, 3, 2, Color("#EA9228"))
+		1:
+			px.call(10, 9 + hy, 12, 3, Color("#12161E"))
+			px.call(11, 10 + hy, 4, 2, Color("#EA9228"))
+			px.call(17, 10 + hy, 4, 2, Color("#EA9228"))
 			px.call(15, 10 + hy, 2, 1, Color("#D4A842"))
-		2: # Cool Dark Shades
-			px.call(11, 9 + hy, 10, 3, Color("#0A0D12"))
-			px.call(12, 10 + hy, 1, 1, Color("#94A3B8"))
-			px.call(17, 10 + hy, 1, 1, Color("#94A3B8"))
-		3: # Sport Neon Visor
-			px.call(11, 9 + hy, 10, 3, Color("#0E2942"))
-			px.call(12, 10 + hy, 8, 2, Color("#38BDF8"))
+		2:
+			px.call(10, 9 + hy, 12, 3, Color("#0A0D12"))
+			px.call(11, 10 + hy, 1, 1, Color("#94A3B8"))
+			px.call(18, 10 + hy, 1, 1, Color("#94A3B8"))
+		3:
+			px.call(10, 9 + hy, 12, 3, Color("#0E2942"))
+			px.call(11, 10 + hy, 10, 2, Color("#38BDF8"))
 
 	match clampi(headwear, 0, 4):
-		1: # Topi Bisbol
-			px.call(9, 2 + hy, 14, 4, Color("#1B2A40"))
-			px.call(11, 3 + hy, 10, 2, Color("#2E5280"))
-			px.call(8, 5 + hy, 16, 1, Color("#101824"))
-		2: # Kupluk Beanie
-			px.call(10, 1 + hy, 12, 5, Color("#88222A"))
-			px.call(10, 4 + hy, 12, 2, Color("#B8323E"))
-		3: # Ikat Kepala Sport
-			px.call(10, 6 + hy, 12, 2, Color("#F0F4F8"))
+		1:
+			px.call(8, 2 + hy, 16, 4, Color("#1B2A40"))
+			px.call(10, 3 + hy, 12, 2, Color("#2E5280"))
+			px.call(7, 5 + hy, 18, 1, Color("#101824"))
+		2:
+			px.call(9, 1 + hy, 14, 5, Color("#88222A"))
+			px.call(9, 4 + hy, 14, 2, Color("#B8323E"))
+		3:
+			px.call(9, 6 + hy, 14, 2, Color("#F0F4F8"))
 			px.call(15, 6 + hy, 2, 1, primary_color)
-		4: # Durag Sutra
-			px.call(10, 2 + hy, 12, 5, Color("#1E2430"))
-			px.call(21, 5 + hy, 2, 7, Color("#283448"))
+		4:
+			px.call(9, 2 + hy, 14, 5, Color("#1E2430"))
+			px.call(22, 5 + hy, 2, 7, Color("#283448"))
 
 	# -------------------------------------------------------------------------
-	# 5. ATHLETIC TORSO, OUTFITS & BADGES (y = 19..33)
+	# 5. ATHLETIC TORSO & 8 PRO CLUB JERSEY PATTERNS (y = 19..33)
 	# -------------------------------------------------------------------------
-	# Sloped shoulders + chest
 	px.call(8, 19 + by, 16, 14, blk)
 	if casual_style == 2:
-		# 5 Gala Suits!
 		var suit_pal := [
-			[Color("#191E28"), Color("#EBF1F6"), Color("#B42432")], # Tuxedo
-			[Color("#1A355B"), Color("#EBF1F6"), Color("#D4A842")], # Jas Biru
-			[Color("#681A28"), Color("#181C24"), Color("#D4A842")], # Beludru Merah
-			[Color("#D8D2C2"), Color("#FFFFFF"), Color("#B89436")], # Gading Emas
-			[Color("#242B36"), Color("#D8E2EE"), Color("#2E6CA8")], # Diplomat
+			[Color("#191E28"), Color("#EBF1F6"), Color("#B42432")],
+			[Color("#1A355B"), Color("#EBF1F6"), Color("#D4A842")],
+			[Color("#681A28"), Color("#181C24"), Color("#D4A842")],
+			[Color("#D8D2C2"), Color("#FFFFFF"), Color("#B89436")],
+			[Color("#242B36"), Color("#D8E2EE"), Color("#2E6CA8")],
 		]
 		var pal: Array = suit_pal[clampi(outfit_variant, 0, suit_pal.size() - 1)]
 		px.call(9, 20 + by, 14, 12, pal[0])
@@ -437,103 +464,140 @@ func _draw() -> void:
 		px.call(10, 20 + by, 2, 12, (pal[0] as Color).lightened(0.08))
 		px.call(20, 20 + by, 2, 12, (pal[0] as Color).darkened(0.18))
 	elif casual_style == 1:
-		# 5 Casual Streetwear Outfits!
 		match clampi(outfit_variant, 0, 4):
-			0: # Kaus Polos
+			0:
 				px.call(9, 20 + by, 14, 12, Color("#ECEEE8"))
 				px.call(14, 20 + by, 4, 2, Color("#D0D6DE"))
-			1: # Kaus Motif
+			1:
 				px.call(9, 20 + by, 14, 12, Color("#223042"))
 				px.call(9, 24 + by, 14, 3, Color("#EA7E22"))
 				px.call(14, 22 + by, 4, 2, Color("#F8FAFC"))
-			2: # Jaket Buka
+			2:
 				px.call(9, 20 + by, 14, 12, Color("#ECEEE8"))
 				px.call(9, 20 + by, 4, 12, Color("#8E2832"))
 				px.call(19, 20 + by, 4, 12, Color("#8E2832"))
-			3: # Jaket Tutup
+			3:
 				px.call(9, 20 + by, 14, 12, Color("#243A5E"))
 				px.call(15, 20 + by, 2, 12, Color("#94A3B8"))
-			4: # Hoodie Kota
+			4:
 				px.call(9, 20 + by, 14, 12, Color("#2E3848"))
 				px.call(12, 27 + by, 8, 4, Color("#1F2632"))
 				px.call(14, 21 + by, 1, 4, Color("#E2E8F0"))
 				px.call(17, 21 + by, 1, 4, Color("#E2E8F0"))
 	else:
-		# Football Club Kit with Pattern + Chest Crest + Collar V-neck + Shading!
+		# Pro Football Kit Body
 		px.call(9, 20 + by, 14, 12, primary_color)
-		if kit_pattern == "stripes":
-			px.call(11, 20 + by, 3, 12, secondary_color)
-			px.call(18, 20 + by, 3, 12, secondary_color)
-		elif kit_pattern == "hoops":
-			px.call(9, 23 + by, 14, 3, secondary_color)
-			px.call(9, 28 + by, 14, 3, secondary_color)
-		elif kit_pattern == "sash":
-			for k in range(11):
-				px.call(9 + k, 20 + k + by, 3, 2, secondary_color)
-		elif kit_pattern == "halved":
-			px.call(16, 20 + by, 7, 12, secondary_color)
-		# Crisp V-neck Collar + Side Shadows
+		match kit_pattern:
+			"stripes":
+				px.call(10, 20 + by, 2, 12, secondary_color)
+				px.call(15, 20 + by, 2, 12, secondary_color)
+				px.call(20, 20 + by, 2, 12, secondary_color)
+			"hoops":
+				px.call(9, 22 + by, 14, 3, secondary_color)
+				px.call(9, 27 + by, 14, 3, secondary_color)
+			"sash":
+				for k in range(11):
+					px.call(9 + k, 20 + k + by, 3, 2, secondary_color)
+			"halved":
+				px.call(16, 20 + by, 7, 12, secondary_color)
+			"chest_band":
+				px.call(9, 23 + by, 14, 4, secondary_color)
+				px.call(9, 22 + by, 14, 1, secondary_color.darkened(0.25))
+			"gradient":
+				px.call(9, 24 + by, 14, 3, primary_color.lerp(secondary_color, 0.35))
+				px.call(9, 27 + by, 14, 3, primary_color.lerp(secondary_color, 0.7))
+				px.call(9, 30 + by, 14, 2, secondary_color)
+			"checkered":
+				for cy in range(20, 32, 2):
+					for cx in range(9, 23, 2):
+						if ((cx + cy) / 2) % 2 == 0:
+							px.call(cx, cy + by, 2, 2, secondary_color)
+			_:
+				# Solid with sharp shoulder accent
+				px.call(9, 20 + by, 3, 1, secondary_color)
+				px.call(20, 20 + by, 3, 1, secondary_color)
+
+		# Sculpted V-Neck Collar + Fabric Shading Folds
 		px.call(13, 20 + by, 6, 2, secondary_color)
 		px.call(14, 20 + by, 4, 1, skin_sh)
-		px.call(9, 20 + by, 2, 12, Color(1, 1, 1, 0.08))
-		px.call(21, 20 + by, 2, 12, Color(0, 0, 0, 0.16))
-		# Mini Club Crest on right breast (screen right)
+		px.call(15, 21 + by, 2, 1, skin_dk)
+		px.call(9, 20 + by, 2, 12, Color(1, 1, 1, 0.10))
+		px.call(21, 20 + by, 2, 12, Color(0, 0, 0, 0.20))
+		px.call(9, 31 + by, 14, 1, Color(0, 0, 0, 0.16))
+		# Mini Club Shield on left chest + maker dot on right
+		px.call(18, 22 + by, 3, 3, blk)
 		px.call(19, 22 + by, 2, 2, Color.WHITE)
-		px.call(19, 22 + by, 1, 1, secondary_color)
+		px.call(19, 23 + by, 1, 1, secondary_color)
+		px.call(11, 23 + by, 1, 1, secondary_color.lightened(0.25))
 
 	if show_number_badge and casual_style == 0:
 		var num_col: Color = blk if primary_color.get_luminance() > 0.6 else Color.WHITE
-		px.call(13, 24 + by, 6, 5, Color(primary_color.r, primary_color.g, primary_color.b, 0.78))
-		draw_string(UITheme.get_display_font(), Vector2(ox + 12.6 * ps, oy + float(28 + by) * ps), str(shirt_num), HORIZONTAL_ALIGNMENT_CENTER, 7.0 * ps, maxf(8.0, ps * 3.8), num_col)
+		px.call(13, 25 + by, 6, 5, Color(primary_color.r, primary_color.g, primary_color.b, 0.78))
+		draw_string(UITheme.get_display_font(), Vector2(ox + 12.6 * ps, oy + float(29 + by) * ps), str(shirt_num), HORIZONTAL_ALIGNMENT_CENTER, 7.0 * ps, maxf(8.0, ps * 3.8), num_col)
 
 	# -------------------------------------------------------------------------
-	# 6. ARMS, SLEEVES, TATTOOS, WRISTBANDS, GLOVES & MVP TROPHY
+	# 6. CONNECTED ATHLETIC ARMS, CUFFS, TATTOOS, WRISTBANDS & PADDED GK GLOVES
 	# -------------------------------------------------------------------------
 	var sl_h := 10 if (long_sleeve or casual_style == 2 or (casual_style == 1 and outfit_variant >= 2)) else 5
 	var sleeve_col := primary_color
+	var sleeve_r_col := secondary_color if (casual_style == 0 and kit_pattern == "halved") else primary_color
 	if casual_style == 2:
 		sleeve_col = [Color("#191E28"), Color("#1A355B"), Color("#681A28"), Color("#D8D2C2"), Color("#242B36")][clampi(outfit_variant, 0, 4)]
+		sleeve_r_col = sleeve_col
 	elif casual_style == 1:
 		sleeve_col = [Color("#ECEEE8"), Color("#223042"), Color("#8E2832"), Color("#243A5E"), Color("#2E3848")][clampi(outfit_variant, 0, 4)]
+		sleeve_r_col = sleeve_col
 
-	# Left Arm (screen left)
-	var lax := 4 - arm_spread
-	var lay := 20 + by + l_arm_lift
-	px.call(lax, lay, 4, 12, blk)
-	px.call(lax + 1, lay + 1, 2, 10, skin)
+	# Left Arm (connected shoulder cap at x=5..8)
+	var lax := 5 - arm_spread
+	var lay := 19 + by + l_arm_lift
+	px.call(lax, lay + 1, 4, 12, blk)
+	px.call(lax + 1, lay, 3, 2, blk)
+	px.call(lax + 1, lay + 1, 2, 11, skin)
+	px.call(lax + 2, lay + 1, 1, 11, skin_sh)
 	px.call(lax + 1, lay + 1, 2, sl_h, sleeve_col)
-	# Right Arm (screen right)
-	var rax := 24 + arm_spread
-	var ray := 20 + by + r_arm_lift
-	px.call(rax, ray, 4, 12, blk)
-	px.call(rax + 1, ray + 1, 2, 10, skin)
-	px.call(rax + 1, ray + 1, 2, sl_h, sleeve_col)
+	if casual_style == 0:
+		px.call(lax + 1, lay + sl_h, 2, 1, secondary_color)
 
-	# Arm Tattoos (if sleeves don't cover them)
+	# Right Arm (connected shoulder cap at x=23..26)
+	var rax := 23 + arm_spread
+	var ray := 19 + by + r_arm_lift
+	px.call(rax, ray + 1, 4, 12, blk)
+	px.call(rax, ray, 3, 2, blk)
+	px.call(rax + 1, ray + 1, 2, 11, skin)
+	px.call(rax + 2, ray + 1, 1, 11, skin_sh)
+	px.call(rax + 1, ray + 1, 2, sl_h, sleeve_r_col)
+	if casual_style == 0:
+		px.call(rax + 1, ray + sl_h, 2, 1, secondary_color)
+
+	# Arm Tattoos
 	if tattoo_arm > 0 and sl_h <= 6:
 		var tat_c := Color("#1E2C3B")
-		for ty in range(6, 10):
-			if tattoo_arm >= 1: # Right arm checkerboard / tribal
+		for ty in range(6, 11):
+			if tattoo_arm >= 1:
 				px.call(rax + 1 + ((ty + tattoo_arm) % 2), ray + ty, 1, 1, tat_c)
-			if tattoo_arm >= 2: # Both arms
+			if tattoo_arm >= 2:
 				px.call(lax + 1 + (ty % 2), lay + ty, 1, 1, tat_c)
-			if tattoo_arm >= 3: # Heavy tribal band
+			if tattoo_arm >= 3:
 				px.call(rax + 1, ray + ty, 2, 1, Color("#15202B"))
-			if tattoo_arm >= 4: # Full dark sleeve
+			if tattoo_arm >= 4:
 				px.call(lax + 1, lay + ty, 2, 1, Color("#15202B"))
 
 	# Wristbands
 	if wrist_side == "LENGAN KIRI" or wrist_side == "KEDUANYA":
-		px.call(lax + 1, lay + 8, 2, 2, wrist_color)
+		px.call(lax + 1, lay + 9, 2, 2, wrist_color)
 	if wrist_side == "LENGAN KANAN" or wrist_side == "KEDUANYA":
-		px.call(rax + 1, ray + 8, 2, 2, wrist_color)
+		px.call(rax + 1, ray + 9, 2, 2, wrist_color)
 
-	# Gloves
+	# Padded GK / Field Gloves
 	if glove_color.a > 0.1:
-		px.call(lax + 1, lay + 9, 2, 2, glove_color)
-		px.call(rax + 1, ray + 9, 2, 2, glove_color)
+		px.call(lax - 1, lay + 9, 4, 4, blk)
+		px.call(lax, lay + 10, 3, 2, glove_color)
+		px.call(lax, lay + 10, 2, 1, glove_color.lightened(0.2))
+		px.call(rax + 1, ray + 9, 4, 4, blk)
+		px.call(rax + 1, ray + 10, 3, 2, glove_color)
+		px.call(rax + 2, ray + 10, 2, 1, glove_color.lightened(0.2))
 
-	# Golden MVP Trophy & Animated Confetti Stars when show_mvp_trophy or MVP anim
 	if show_mvp_trophy or anim_mode == "MVP":
 		var ty_t := ray - 6
 		px.call(rax - 1, ty_t, 5, 5, Color("#D49B24"))
@@ -550,7 +614,7 @@ func _draw() -> void:
 		return
 
 	# -------------------------------------------------------------------------
-	# 7. SHORTS / PANTS, LEGS, SOCK CUFFS & CLEATS (y = 32..46)
+	# 7. TAILORED SHORTS, CALVES, STRIPED TALL SOCKS & SHADED CLEATS (y=32..46)
 	# -------------------------------------------------------------------------
 	var sh_col := shorts_color
 	if casual_style == 2:
@@ -558,35 +622,44 @@ func _draw() -> void:
 	elif casual_style == 1:
 		sh_col = Color("#2C3D55")
 
-	px.call(9, 32 + by, 14, 5, blk)
-	px.call(10, 32 + by, 12, 4, sh_col)
-	px.call(10, 32 + by, 12, 1, sh_col.darkened(0.18))
-	px.call(15, 34 + by, 2, 3, blk)
+	px.call(9, 32 + by, 14, 6, blk)
+	px.call(10, 32 + by, 12, 5, sh_col)
+	px.call(10, 32 + by, 12, 1, sh_col.darkened(0.20))
+	px.call(15, 35 + by, 2, 3, blk)
 	if casual_style == 0:
-		px.call(18, 34 + by, 2, 1, secondary_color)
+		px.call(10, 33 + by, 1, 4, secondary_color)
+		px.call(21, 33 + by, 1, 4, secondary_color)
+		if show_shorts_number and ps >= 2.0:
+			var sn_col := blk if sh_col.get_luminance() > 0.55 else Color.WHITE
+			draw_string(UITheme.get_ui_font(), Vector2(ox + 17.5 * ps, oy + float(36.5 + by) * ps), str(shirt_num), HORIZONTAL_ALIGNMENT_CENTER, 5.0 * ps, maxf(7.0, ps * 2.5), sn_col)
 
 	var leg_col := skin if tattoo_leg == 0 else Color("#A48A78")
-	var sock_c := sh_col if casual_style > 0 else primary_color
+	var leg_sh := leg_col.darkened(0.18)
+	var sock_c := primary_color if casual_style == 0 else sh_col
 
-	var ll_y := 37 + by + (0 if leg_step <= 0 else -1)
-	var rl_y := 37 + by + (0 if leg_step >= 0 else -1)
+	var ll_y := 38 + by + (0 if leg_step <= 0 else -1)
+	var rl_y := 38 + by + (0 if leg_step >= 0 else -1)
 
-	# Left Leg
-	px.call(10, ll_y, 5, 7, blk)
-	px.call(11, ll_y, 3, 3, leg_col)
-	px.call(11, ll_y + 3, 3, 3, sock_c)
+	# Left Leg + Tall Double-Striped Sock + Cleat
+	px.call(10, ll_y, 5, 6, blk)
+	px.call(11, ll_y, 2, 2, leg_col)
+	px.call(13, ll_y, 1, 2, leg_sh)
+	px.call(11, ll_y + 2, 3, 4, sock_c)
 	if casual_style == 0:
-		px.call(11, ll_y + 3, 3, 1, secondary_color)
-	px.call(9, ll_y + 6, 6, 3, blk)
-	px.call(10, ll_y + 7, 4, 2, boot_color)
-	px.call(10, ll_y + 7, 2, 1, boot_color.lightened(0.3))
+		px.call(11, ll_y + 2, 3, 1, secondary_color)
+	px.call(9, ll_y + 5, 6, 3, blk)
+	px.call(10, ll_y + 6, 4, 2, boot_color)
+	px.call(10, ll_y + 6, 2, 1, boot_color.lightened(0.32))
+	px.call(10, ll_y + 7, 4, 1, boot_color.darkened(0.24))
 
-	# Right Leg
-	px.call(17, rl_y, 5, 7, blk)
-	px.call(18, rl_y, 3, 3, leg_col)
-	px.call(18, rl_y + 3, 3, 3, sock_c)
+	# Right Leg + Tall Double-Striped Sock + Cleat
+	px.call(17, rl_y, 5, 6, blk)
+	px.call(18, rl_y, 2, 2, leg_col)
+	px.call(20, rl_y, 1, 2, leg_sh)
+	px.call(18, rl_y + 2, 3, 4, sock_c)
 	if casual_style == 0:
-		px.call(18, rl_y + 3, 3, 1, secondary_color)
-	px.call(17, rl_y + 6, 6, 3, blk)
-	px.call(18, rl_y + 7, 4, 2, boot_color)
-	px.call(18, rl_y + 7, 2, 1, boot_color.lightened(0.3))
+		px.call(18, rl_y + 2, 3, 1, secondary_color)
+	px.call(17, rl_y + 5, 6, 3, blk)
+	px.call(18, rl_y + 6, 4, 2, boot_color)
+	px.call(18, rl_y + 6, 2, 1, boot_color.lightened(0.32))
+	px.call(18, rl_y + 7, 4, 1, boot_color.darkened(0.24))

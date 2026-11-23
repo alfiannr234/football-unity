@@ -28,7 +28,20 @@ const ATTRIBUTE_LABELS := {
 	"bolaMati": "Bola mati",
 }
 
-const RELATION_KEYS := ["pelatih", "ruangGanti", "fans", "pers", "agen"]
+const RELATION_KEYS := ["pelatih", "ruangGanti", "fans", "pers", "agen", "kekasih"]
+const RELATION_LABELS := {
+	"pelatih": "Pelatih",
+	"ruangGanti": "Ruang Ganti",
+	"fans": "Fans",
+	"pers": "Pers",
+	"agen": "Agen",
+	"kekasih": "Kekasih",
+}
+const CLAUSE_DEFS := [
+	{"id": "ANTI_DEGRADASI", "title": "ANTI-DEGRADASI", "desc": "Jika klub degradasi, kamu jadi PEMAIN BEBAS."},
+	{"id": "JANJI_INTI", "title": "JANJI JADI INTI", "desc": "Jika kamu jarang main musim ini, kamu jadi PEMAIN BEBAS."},
+	{"id": "TOLAK_RIVAL", "title": "TOLAK RIVAL", "desc": "Klubmu tak boleh menjualmu ke rival abadimu."},
+]
 
 var nations: Array[Dictionary] = []
 var clubs: Array[Dictionary] = []
@@ -223,6 +236,20 @@ func _init_nations() -> void:
 			"slots": {"d1": 1, "cup": 1, "d2": 1, "d3": 2},
 		})
 
+	# Ensure world_rank (1..N) strictly matches total_coeff descending while preserving array indices (nation id)
+	var rank_ids: Array[int] = []
+	for k in range(nations.size()):
+		rank_ids.append(k)
+	rank_ids.sort_custom(func(a: int, b: int) -> bool:
+		var ca: float = float(nations[a].get("total_coeff", 0.0))
+		var cb: float = float(nations[b].get("total_coeff", 0.0))
+		if not is_equal_approx(ca, cb):
+			return ca > cb
+		return int(nations[a].get("world_rank", 99)) < int(nations[b].get("world_rank", 99))
+	)
+	for pos_i in range(rank_ids.size()):
+		nations[rank_ids[pos_i]]["world_rank"] = pos_i + 1
+
 func _init_clubs_and_coaches() -> void:
 	# Target exact scale from PRD & screenshot #19/#20: 2,731 clubs/coaches across 55 nations!
 	# Sweden (0) = 16 + 16 + 32 = 64 clubs
@@ -369,6 +396,129 @@ func get_clubs_in_division(nat_id: int, div_num: int) -> Array[Dictionary]:
 			res.append(c)
 	return res
 
+func get_clubs_in_nation(nat_id: int) -> Array[Dictionary]:
+	var res: Array[Dictionary] = []
+	for c in clubs:
+		if int(c["nation_id"]) == nat_id:
+			res.append(c)
+	return res
+
+func get_club_stadium_name(club_id: int) -> String:
+	if club_id < 0 or club_id >= clubs.size():
+		return "STADION NASIONAL"
+	var c: Dictionary = clubs[club_id]
+	var cname: String = str(c.get("name", "KLUB"))
+	if cname == "Bilbao Leones":
+		return "NUEVO ESTADIO DE BILBAO"
+	elif cname == "Danderyd Edsviken":
+		return "EDSVIKEN ARENA"
+	elif cname == "Napoli Partenopei":
+		return "STADIO SAN PAOLO SUD"
+	elif cname == "Madrid Blanco":
+		return "COLISEO DE CHAMARTÍN"
+	elif cname == "Barcelona Azulgrana":
+		return "ESTADI DEL CAMP"
+	var parts := cname.split(" ")
+	var city := parts[0] if parts.size() > 0 else cname
+	var nat_id := int(c.get("nation_id", 0))
+	var prefixes := ["STADION", "ARENA", "ESTADIO", "STADIO", "STADE"]
+	if nat_id in [2, 16, 17, 19]:
+		return ("ESTADIO MUNICIPAL DE %s" % city).to_upper()
+	elif nat_id in [4]:
+		return ("STADIO OLIMPICO %s" % city).to_upper()
+	elif nat_id in [5]:
+		return ("PARC DE %s" % city).to_upper()
+	return ("%s %s" % [prefixes[club_id % prefixes.size()], city]).to_upper()
+
+func get_competition_theme(comp: String, nat_id: int = 0) -> Dictionary:
+	var table := {
+		"PIALA_ELITE": {
+			"name": "PIALA ELITE",
+			"bg_top": Color("#132D72"),
+			"bg_bot": Color("#0B1B4C"),
+			"accent": Color("#38BDF8"),
+			"badge_bg": Color("#1F4BB8"),
+			"badge_ring": Color("#E2E8F0"),
+			"pattern": "stars",
+			"emblem": "star",
+		},
+		"PIALA_EUROPA": {
+			"name": "PIALA EUROPA",
+			"bg_top": Color("#231D1A"),
+			"bg_bot": Color("#120F0E"),
+			"accent": Color("#F97316"),
+			"badge_bg": Color("#B45309"),
+			"badge_ring": Color("#FDBA74"),
+			"pattern": "waves",
+			"emblem": "flame",
+		},
+		"PIALA_CONF": {
+			"name": "PIALA CONF.",
+			"bg_top": Color("#0B2E22"),
+			"bg_bot": Color("#051712"),
+			"accent": Color("#22C55E"),
+			"badge_bg": Color("#15803D"),
+			"badge_ring": Color("#86EFAC"),
+			"pattern": "beams",
+			"emblem": "leaf",
+		},
+		"TURNAMEN_ASIA": {
+			"name": "TURNAMEN ASIA",
+			"bg_top": Color("#63183A"),
+			"bg_bot": Color("#340B1F"),
+			"accent": Color("#F43F5E"),
+			"badge_bg": Color("#9F1239"),
+			"badge_ring": Color("#FDE047"),
+			"pattern": "rays",
+			"emblem": "rings",
+		},
+		"PIALA_DUNIA_KLUB": {
+			"name": "KEJUARAAN DUNIA KLUB",
+			"bg_top": Color("#13303B"),
+			"bg_bot": Color("#09161D"),
+			"accent": Color("#F5C542"),
+			"badge_bg": Color("#115E59"),
+			"badge_ring": Color("#FDE047"),
+			"pattern": "rays",
+			"emblem": "globe",
+		},
+		"PIALA": {
+			"name": "PIALA NASIONAL",
+			"bg_top": Color("#27193C"),
+			"bg_bot": Color("#130C22"),
+			"accent": Color("#A855F7"),
+			"badge_bg": Color("#6B21A8"),
+			"badge_ring": Color("#E9D5FF"),
+			"pattern": "beams",
+			"emblem": "cup",
+		},
+		"TIMNAS": {
+			"name": "LAGA TIMNAS",
+			"bg_top": Color("#1A2D4A"),
+			"bg_bot": Color("#0B1424"),
+			"accent": Color("#F5C542"),
+			"badge_bg": Color("#1E40AF"),
+			"badge_ring": Color("#FDE047"),
+			"pattern": "flags",
+			"emblem": "flag",
+		},
+	}
+	if table.has(comp):
+		return table[comp]
+	var nat_col := Color("#12264A")
+	if nat_id >= 0 and nat_id < nations.size():
+		nat_col = nations[nat_id]["colors"][0]
+	return {
+		"name": "LIGA DOMESTIK",
+		"bg_top": nat_col.darkened(0.45),
+		"bg_bot": Color("#09111E"),
+		"accent": Color("#60A5FA"),
+		"badge_bg": nat_col.darkened(0.25),
+		"badge_ring": Color("#93C5FD"),
+		"pattern": "pitch",
+		"emblem": "shield",
+	}
+
 func _init_achievements() -> void:
 	# Exact 386 achievements: UMUM (32), LANGKA (106), EPIK (162), LEGENDARIS (86)
 	achievements.clear()
@@ -394,6 +544,7 @@ func _init_achievements() -> void:
 		{"id": "level_perak", "title": "LEVEL PERAK", "desc": "Jadi pemain perak: OVR 65 dalam satu karier.", "rarity": "LANGKA", "metric": "ovr", "target": 65},
 		{"id": "level_emas", "title": "LEVEL EMAS", "desc": "Jadi pemain emas: OVR 75 dalam satu karier.", "rarity": "EPIK", "metric": "ovr", "target": 75},
 		{"id": "level_berlian", "title": "LEVEL BERLIAN", "desc": "Jadi pemain berlian: OVR 85 dalam satu karier.", "rarity": "LEGENDARIS", "metric": "ovr", "target": 85},
+		{"id": "jalur_bosman", "title": "JALUR BOSMAN", "desc": "Gabung klub sebagai pemain bebas, tanpa biaya transfer.", "rarity": "LANGKA", "metric": "free_transfers", "target": 1},
 	]
 	for c in curated:
 		achievements.append(c)
@@ -451,30 +602,76 @@ func _init_achievements() -> void:
 
 func _init_legends_and_records() -> void:
 	world_legends = [
-		{"name": "Julián Gaitán", "nat": 19, "indiv": 16, "team": 25, "goals": 850, "assists": 380, "liga": 13, "piala": 7, "kont": 4, "wc": 1, "ballon": 8, "boot": 8, "retired": true, "league": "Liga Spanyol"},
-		{"name": "Carlos Esteves", "nat": 6, "indiv": 9, "team": 16, "goals": 950, "assists": 265, "liga": 7, "piala": 4, "kont": 5, "wc": 0, "ballon": 5, "boot": 4, "retired": false, "league": "Liga Spanyol"},
-		{"name": "Gijs Lindeboom", "nat": 7, "indiv": 8, "team": 12, "goals": 490, "assists": 210, "liga": 6, "piala": 3, "kont": 3, "wc": 0, "ballon": 3, "boot": 5, "retired": true, "league": "Liga Inggris"},
-		{"name": "Thomas Lindner", "nat": 3, "indiv": 8, "team": 13, "goals": 520, "assists": 190, "liga": 4, "piala": 4, "kont": 4, "wc": 1, "ballon": 1, "boot": 7, "retired": true, "league": "Liga Jerman"},
-		{"name": "Sebastian Wojciechowski", "nat": 10, "indiv": 8, "team": 3, "goals": 590, "assists": 120, "liga": 2, "piala": 1, "kont": 0, "wc": 0, "ballon": 0, "boot": 8, "retired": true, "league": "Liga Jerman"},
-		{"name": "Kevin Romero", "nat": 19, "indiv": 7, "team": 14, "goals": 689, "assists": 297, "liga": 8, "piala": 1, "kont": 5, "wc": 0, "ballon": 2, "boot": 5, "retired": true, "league": "Liga Spanyol"},
-		{"name": "Thiago Pacheco", "nat": 18, "indiv": 6, "team": 18, "goals": 1512, "assists": 236, "liga": 9, "piala": 5, "kont": 2, "wc": 2, "ballon": 4, "boot": 2, "retired": true, "league": "Liga Brasil"},
-		{"name": "Ákos Balogh", "nat": 46, "indiv": 5, "team": 10, "goals": 945, "assists": 135, "liga": 6, "piala": 2, "kont": 2, "wc": 0, "ballon": 2, "boot": 3, "retired": true, "league": "Liga Spanyol"},
-		{"name": "Johan Nyström", "nat": 0, "indiv": 5, "team": 11, "goals": 770, "assists": 270, "liga": 7, "piala": 3, "kont": 1, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Swedia"},
-		{"name": "Hugo Lemaître", "nat": 5, "indiv": 6, "team": 6, "goals": 410, "assists": 180, "liga": 3, "piala": 1, "kont": 2, "wc": 0, "ballon": 3, "boot": 3, "retired": true, "league": "Liga Prancis"},
-		{"name": "Pascal Xavier", "nat": 5, "indiv": 6, "team": 11, "goals": 460, "assists": 215, "liga": 6, "piala": 4, "kont": 0, "wc": 1, "ballon": 0, "boot": 6, "retired": false, "league": "Liga Prancis"},
-		{"name": "Clément Morel", "nat": 5, "indiv": 6, "team": 5, "goals": 430, "assists": 165, "liga": 4, "piala": 1, "kont": 0, "wc": 0, "ballon": 1, "boot": 5, "retired": true, "league": "Liga Prancis"},
-		{"name": "Sergio Landázuri", "nat": 1, "indiv": 6, "team": 6, "goals": 395, "assists": 205, "liga": 1, "piala": 5, "kont": 0, "wc": 0, "ballon": 0, "boot": 6, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Julian Gaitan", "nat": 19, "indiv": 16, "team": 25, "goals": 858, "assists": 386, "league_goals": 474, "liga": 13, "piala": 7, "kont": 4, "wc": 1, "ballon": 8, "boot": 8, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Carlos Esteves", "nat": 6, "indiv": 9, "team": 17, "goals": 964, "assists": 268, "league_goals": 311, "liga": 8, "piala": 4, "kont": 5, "wc": 0, "ballon": 5, "boot": 4, "retired": false, "league": "Liga Spanyol"},
+		{"name": "Thiago Pacheco", "nat": 18, "indiv": 4, "team": 13, "goals": 1512, "assists": 236, "league_goals": 643, "liga": 6, "piala": 2, "kont": 2, "wc": 3, "ballon": 2, "boot": 2, "retired": true, "league": "Liga Brasil"},
+		{"name": "Akos Balogh", "nat": 46, "indiv": 5, "team": 12, "goals": 945, "assists": 135, "league_goals": 358, "liga": 6, "piala": 3, "kont": 3, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Johan Nystrom", "nat": 0, "indiv": 5, "team": 14, "goals": 770, "assists": 270, "league_goals": 284, "liga": 8, "piala": 4, "kont": 2, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Italia"},
+		{"name": "Gijs Lindeboom", "nat": 7, "indiv": 8, "team": 12, "goals": 490, "assists": 210, "league_goals": 244, "liga": 6, "piala": 3, "kont": 3, "wc": 0, "ballon": 3, "boot": 5, "retired": true, "league": "Liga Inggris"},
+		{"name": "Thomas Lindner", "nat": 3, "indiv": 8, "team": 13, "goals": 520, "assists": 190, "league_goals": 365, "liga": 4, "piala": 4, "kont": 4, "wc": 1, "ballon": 1, "boot": 7, "retired": true, "league": "Liga Jerman"},
+		{"name": "Sebastian Wojciechowski", "nat": 10, "indiv": 8, "team": 3, "goals": 498, "assists": 142, "league_goals": 312, "liga": 2, "piala": 1, "kont": 0, "wc": 0, "ballon": 0, "boot": 8, "retired": true, "league": "Liga Jerman"},
+		{"name": "Kevin Romero", "nat": 19, "indiv": 7, "team": 14, "goals": 689, "assists": 297, "league_goals": 227, "liga": 8, "piala": 1, "kont": 5, "wc": 0, "ballon": 2, "boot": 5, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Hugo Lemaitre", "nat": 5, "indiv": 6, "team": 6, "goals": 465, "assists": 225, "league_goals": 216, "liga": 3, "piala": 1, "kont": 2, "wc": 0, "ballon": 3, "boot": 3, "retired": true, "league": "Liga Prancis"},
+		{"name": "Pascal Xavier", "nat": 5, "indiv": 6, "team": 12, "goals": 460, "assists": 215, "league_goals": 256, "liga": 7, "piala": 4, "kont": 0, "wc": 1, "ballon": 0, "boot": 6, "retired": false, "league": "Liga Prancis"},
+		{"name": "Clement Morel", "nat": 5, "indiv": 6, "team": 5, "goals": 440, "assists": 195, "league_goals": 212, "liga": 4, "piala": 1, "kont": 0, "wc": 0, "ballon": 1, "boot": 5, "retired": true, "league": "Liga Prancis"},
+		{"name": "Sergio Landazuri", "nat": 1, "indiv": 6, "team": 6, "goals": 432, "assists": 148, "league_goals": 251, "liga": 1, "piala": 5, "kont": 0, "wc": 0, "ballon": 0, "boot": 6, "retired": true, "league": "Liga Spanyol", "club_hint": "Bilbao Leones"},
+		{"name": "Samuele Toscano", "nat": 4, "indiv": 5, "team": 11, "goals": 540, "assists": 338, "league_goals": 274, "liga": 5, "piala": 3, "kont": 2, "wc": 1, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Italia"},
+		{"name": "Franco Quiroga", "nat": 19, "indiv": 4, "team": 12, "goals": 473, "assists": 351, "league_goals": 192, "liga": 5, "piala": 3, "kont": 3, "wc": 1, "ballon": 2, "boot": 2, "retired": true, "league": "Liga Italia"},
+		{"name": "Sebastien Brunet", "nat": 5, "indiv": 5, "team": 11, "goals": 554, "assists": 263, "league_goals": 238, "liga": 6, "piala": 3, "kont": 1, "wc": 1, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Prancis"},
+		{"name": "Sem Bakker", "nat": 7, "indiv": 6, "team": 13, "goals": 540, "assists": 270, "league_goals": 264, "liga": 7, "piala": 3, "kont": 3, "wc": 0, "ballon": 2, "boot": 4, "retired": true, "league": "Liga Belanda"},
+		{"name": "Carwyn Vaughn", "nat": 53, "indiv": 6, "team": 16, "goals": 320, "assists": 215, "league_goals": 168, "liga": 8, "piala": 4, "kont": 4, "wc": 0, "ballon": 1, "boot": 5, "retired": true, "league": "Liga Inggris"},
+		{"name": "Niklas Altmann", "nat": 3, "indiv": 6, "team": 15, "goals": 410, "assists": 240, "league_goals": 225, "liga": 9, "piala": 4, "kont": 2, "wc": 0, "ballon": 1, "boot": 5, "retired": true, "league": "Liga Jerman"},
+		{"name": "Borja Ordonez", "nat": 1, "indiv": 5, "team": 15, "goals": 365, "assists": 280, "league_goals": 182, "liga": 8, "piala": 3, "kont": 3, "wc": 1, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Ruben Cifuentes", "nat": 1, "indiv": 0, "team": 20, "goals": 380, "assists": 195, "league_goals": 129, "liga": 12, "piala": 2, "kont": 6, "wc": 0, "ballon": 0, "boot": 0, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Diogo Esteves", "nat": 6, "indiv": 5, "team": 15, "goals": 445, "assists": 210, "league_goals": 231, "liga": 7, "piala": 5, "kont": 3, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Portugal"},
+		{"name": "Scott Yardley", "nat": 2, "indiv": 6, "team": 13, "goals": 510, "assists": 175, "league_goals": 260, "liga": 8, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 5, "retired": true, "league": "Liga Inggris"},
+		{"name": "Riccardo Galli", "nat": 4, "indiv": 5, "team": 12, "goals": 420, "assists": 160, "league_goals": 218, "liga": 6, "piala": 3, "kont": 2, "wc": 1, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Italia"},
+		{"name": "Miguel Branco", "nat": 6, "indiv": 5, "team": 12, "goals": 390, "assists": 205, "league_goals": 198, "liga": 6, "piala": 4, "kont": 2, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Portugal"},
+		{"name": "Hugo Ibanez", "nat": 1, "indiv": 5, "team": 11, "goals": 370, "assists": 225, "league_goals": 186, "liga": 6, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Spanyol"},
+		{"name": "Dominik Clausen", "nat": 3, "indiv": 4, "team": 12, "goals": 350, "assists": 180, "league_goals": 178, "liga": 7, "piala": 3, "kont": 2, "wc": 0, "ballon": 0, "boot": 4, "retired": true, "league": "Liga Jerman"},
+		{"name": "Tobias Rothe", "nat": 3, "indiv": 5, "team": 11, "goals": 405, "assists": 170, "league_goals": 210, "liga": 6, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Jerman"},
+		{"name": "Marco Estrela", "nat": 6, "indiv": 4, "team": 12, "goals": 340, "assists": 210, "league_goals": 175, "liga": 6, "piala": 4, "kont": 2, "wc": 0, "ballon": 0, "boot": 4, "retired": true, "league": "Liga Portugal"},
+		{"name": "Benedikt Ostermann", "nat": 3, "indiv": 4, "team": 11, "goals": 330, "assists": 165, "league_goals": 172, "liga": 6, "piala": 3, "kont": 2, "wc": 0, "ballon": 0, "boot": 4, "retired": true, "league": "Liga Jerman"},
+		{"name": "Carlos Figueroa", "nat": 29, "indiv": 5, "team": 10, "goals": 450, "assists": 150, "league_goals": 240, "liga": 5, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Meksiko"},
+		{"name": "Arne Peeters", "nat": 17, "indiv": 4, "team": 11, "goals": 295, "assists": 260, "league_goals": 162, "liga": 6, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 3, "retired": false, "league": "Liga Inggris"},
+		{"name": "Fabio Rocha", "nat": 18, "indiv": 5, "team": 10, "goals": 510, "assists": 180, "league_goals": 265, "liga": 5, "piala": 2, "kont": 2, "wc": 1, "ballon": 1, "boot": 4, "retired": true, "league": "Liga Brasil"},
+		{"name": "Mathieu Fabre", "nat": 5, "indiv": 2, "team": 12, "goals": 385, "assists": 195, "league_goals": 238, "liga": 4, "piala": 3, "kont": 5, "wc": 0, "ballon": 1, "boot": 1, "retired": false, "league": "Liga Spanyol"},
+		{"name": "Craig Wallace", "nat": 8, "indiv": 4, "team": 10, "goals": 430, "assists": 140, "league_goals": 255, "liga": 6, "piala": 3, "kont": 1, "wc": 0, "ballon": 0, "boot": 4, "retired": true, "league": "Liga Skotlandia"},
+		{"name": "Connor Lockwood", "nat": 2, "indiv": 4, "team": 10, "goals": 415, "assists": 155, "league_goals": 212, "liga": 5, "piala": 3, "kont": 2, "wc": 0, "ballon": 0, "boot": 4, "retired": true, "league": "Liga Inggris"},
+		{"name": "Sem IJsselstein", "nat": 7, "indiv": 4, "team": 10, "goals": 360, "assists": 190, "league_goals": 196, "liga": 6, "piala": 3, "kont": 1, "wc": 0, "ballon": 1, "boot": 3, "retired": true, "league": "Liga Belanda"},
+		{"name": "Huw Williams", "nat": 53, "indiv": 3, "team": 11, "goals": 345, "assists": 160, "league_goals": 184, "liga": 6, "piala": 3, "kont": 2, "wc": 0, "ballon": 0, "boot": 3, "retired": true, "league": "Liga Inggris"},
+		{"name": "Abdulaziz Al-Dosari", "nat": 38, "indiv": 4, "team": 10, "goals": 395, "assists": 175, "league_goals": 218, "liga": 5, "piala": 3, "kont": 2, "wc": 0, "ballon": 0, "boot": 4, "retired": false, "league": "Liga Arab Saudi"},
+		{"name": "Lorenzo Ventura", "nat": 4, "indiv": 4, "team": 10, "goals": 380, "assists": 165, "league_goals": 198, "liga": 5, "piala": 3, "kont": 2, "wc": 0, "ballon": 1, "boot": 3, "retired": true, "league": "Liga Italia"},
+		{"name": "Bambang Prasetyo", "nat": 16, "indiv": 5, "team": 9, "goals": 342, "assists": 118, "league_goals": 248, "liga": 6, "piala": 3, "kont": 0, "wc": 0, "ballon": 2, "boot": 3, "retired": true, "league": "Liga Indonesia"},
+		{"name": "Rizky Darmawan", "nat": 16, "indiv": 3, "team": 8, "goals": 276, "assists": 144, "league_goals": 212, "liga": 5, "piala": 3, "kont": 0, "wc": 0, "ballon": 1, "boot": 2, "retired": false, "league": "Liga Indonesia"},
+		{"name": "Hendra Gunawan", "nat": 16, "indiv": 3, "team": 7, "goals": 238, "assists": 122, "league_goals": 194, "liga": 4, "piala": 3, "kont": 0, "wc": 0, "ballon": 1, "boot": 2, "retired": true, "league": "Liga Indonesia"},
 	]
 
 	decorated_clubs = [
-		{"name": "Glasgow Hoops", "nat": 8, "liga": 55, "piala": 42, "kont": 1},
-		{"name": "Cairo Red Castle", "nat": 33, "liga": 45, "piala": 39, "kont": 12},
-		{"name": "Glasgow Light Blues", "nat": 8, "liga": 55, "piala": 34, "kont": 0},
-		{"name": "Pireas Thrylos", "nat": 9, "liga": 48, "piala": 28, "kont": 0},
-		{"name": "Madrid Blanco", "nat": 1, "liga": 36, "piala": 20, "kont": 15},
-		{"name": "Lisboa Encarnados", "nat": 6, "liga": 38, "piala": 26, "kont": 2},
-		{"name": "Beograd Crveno-Beli", "nat": 22, "liga": 36, "piala": 28, "kont": 1},
-		{"name": "Barcelona Azulgrana", "nat": 1, "liga": 27, "piala": 31, "kont": 5},
+		{"name": "Glasgow Hoops", "nat": 8, "liga": 56, "piala": 42, "kont": 1, "dunia": 0, "pri": Color("#15803D"), "sec": Color("#FFFFFF"), "pat": "hoops"},
+		{"name": "Cairo Red Castle", "nat": 33, "liga": 46, "piala": 39, "kont": 13, "dunia": 0, "pri": Color("#DC2626"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Glasgow Light Blues", "nat": 8, "liga": 55, "piala": 34, "kont": 0, "dunia": 0, "pri": Color("#1D4ED8"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Pireas Thrylos", "nat": 9, "liga": 48, "piala": 28, "kont": 0, "dunia": 0, "pri": Color("#CC1F2D"), "sec": Color("#FFFFFF"), "pat": "stripes"},
+		{"name": "Madrid Blanco", "nat": 1, "liga": 37, "piala": 20, "kont": 15, "dunia": 0, "pri": Color("#F1F5F9"), "sec": Color("#D4AF37"), "pat": "solid"},
+		{"name": "Lisboa Encarnados", "nat": 6, "liga": 38, "piala": 26, "kont": 2, "dunia": 0, "pri": Color("#D9232E"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Beograd Crveno-Beli", "nat": 22, "liga": 36, "piala": 28, "kont": 1, "dunia": 0, "pri": Color("#DC2626"), "sec": Color("#F8FAFC"), "pat": "stripes"},
+		{"name": "Barcelona Azulgrana", "nat": 1, "liga": 27, "piala": 31, "kont": 5, "dunia": 0, "pri": Color("#1D428A"), "sec": Color("#A51C30"), "pat": "stripes"},
+		{"name": "Munchen Rote", "nat": 3, "liga": 35, "piala": 20, "kont": 7, "dunia": 0, "pri": Color("#DC2626"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Amsterdam Godenzonen", "nat": 7, "liga": 36, "piala": 20, "kont": 4, "dunia": 0, "pri": Color("#F8FAFC"), "sec": Color("#DC2626"), "pat": "stripes"},
+		{"name": "Montevideo Carbonero", "nat": 31, "liga": 52, "piala": 1, "kont": 5, "dunia": 0, "pri": Color("#FACC15"), "sec": Color("#111827"), "pat": "stripes"},
+		{"name": "Amman Blues", "nat": 38, "liga": 35, "piala": 21, "kont": 0, "dunia": 0, "pri": Color("#1E40AF"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Parque Central Tricolor", "nat": 31, "liga": 51, "piala": 0, "kont": 3, "dunia": 0, "pri": Color("#F8FAFC"), "sec": Color("#1D4ED8"), "pat": "sash"},
+		{"name": "Tunis Sang et Or", "nat": 34, "liga": 34, "piala": 16, "kont": 4, "dunia": 0, "pri": Color("#DC2626"), "sec": Color("#FACC15"), "pat": "stripes"},
+		{"name": "Torino Bianconeri", "nat": 4, "liga": 36, "piala": 15, "kont": 2, "dunia": 0, "pri": Color("#111827"), "sec": Color("#FFFFFF"), "pat": "stripes"},
+		{"name": "Porto Dragoes", "nat": 6, "liga": 31, "piala": 20, "kont": 2, "dunia": 0, "pri": Color("#1D4ED8"), "sec": Color("#FFFFFF"), "pat": "stripes"},
+		{"name": "Asuncion Franjeado", "nat": 31, "liga": 47, "piala": 2, "kont": 3, "dunia": 0, "pri": Color("#F8FAFC"), "sec": Color("#111827"), "pat": "hoops"},
+		{"name": "Nunez Millonario", "nat": 19, "liga": 38, "piala": 10, "kont": 4, "dunia": 0, "pri": Color("#FFFFFF"), "sec": Color("#DC2626"), "pat": "sash"},
+		{"name": "Tibas Morados", "nat": 29, "liga": 40, "piala": 6, "kont": 3, "dunia": 0, "pri": Color("#7C3AED"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Wien Veilchen", "nat": 15, "liga": 24, "piala": 27, "kont": 0, "dunia": 0, "pri": Color("#6D28D9"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Zagreb Modri", "nat": 21, "liga": 25, "piala": 24, "kont": 0, "dunia": 0, "pri": Color("#1E40AF"), "sec": Color("#FFFFFF"), "pat": "solid"},
+		{"name": "Giza Abyad", "nat": 33, "liga": 14, "piala": 29, "kont": 5, "dunia": 0, "pri": Color("#F8FAFC"), "sec": Color("#DC2626"), "pat": "hoops"},
+		{"name": "Milano Rossoneri", "nat": 4, "liga": 19, "piala": 5, "kont": 7, "dunia": 0, "pri": Color("#B91C1C"), "sec": Color("#111827"), "pat": "stripes"},
+		{"name": "Liverpool Reds", "nat": 2, "liga": 20, "piala": 18, "kont": 6, "dunia": 0, "pri": Color("#C8102E"), "sec": Color("#FFFFFF"), "pat": "solid"},
 	]
 
 func _init_shop_and_cosmetics() -> void:
@@ -713,6 +910,18 @@ func _init_sponsors_and_dilemmas() -> void:
 			"choices": [
 				{"label": "AKU TERBUKA SEMUA", "sub": "+7 Pers • -6 Suporter", "color": "#5E3578", "effects": {"pers": 7, "fans": -6}},
 				{"label": "AKU FOKUS DI SINI", "sub": "+7 Suporter • +2 Pelatih • kamu berjanji", "color": "#733A5A", "effects": {"fans": 7, "pelatih": 2}},
+			]
+		},
+		{
+			"id": "menang_derby",
+			"timing": "POST",
+			"scene": "locker",
+			"title": "MENANG DERBY!",
+			"text": "Kalian menang derby. Orang-orang menunggu bus di pintu, kali ini untuk mengangkat kalian di pundak, dan besok kota takkan membicarakan hal lain.",
+			"choices": [
+				{"label": "RAYAKAN DI PAGAR", "sub": "+13 Suporter • +5 Pers", "color": "#733A5A", "effects": {"fans": 13, "pers": 5}},
+				{"label": "CUMA TIGA POIN", "sub": "+5 Pelatih • +5 Ruang Ganti", "color": "#1E5668", "effects": {"pelatih": 5, "ruangGanti": 5}},
+				{"label": "UNTUK RUANG GANTI", "sub": "+13 Ruang Ganti • +2 Pelatih", "color": "#7B4F1D", "effects": {"ruangGanti": 13, "pelatih": 2}},
 			]
 		},
 	]

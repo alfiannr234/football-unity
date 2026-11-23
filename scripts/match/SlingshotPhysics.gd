@@ -6,9 +6,9 @@ extends RefCounted
 
 const GRAVITY := 9.81
 const BALL_RADIUS := 0.115
-const AIR_DRAG := 0.18
+const AIR_DRAG := 0.11
 const GRASS_RESTITUTION := 0.56
-const GRASS_FRICTION := 0.84
+const GRASS_FRICTION := 0.88
 
 # Standard FIFA goal dimensions centered at z = -52.5 (top goal) or z = +52.5 (bottom goal)
 const PITCH_HALF_W := 34.0
@@ -17,6 +17,15 @@ const GOAL_HALF_W := 3.66
 const GOAL_HEIGHT := 2.44
 const GOAL_DEPTH := 2.2
 const POST_RADIUS := 0.08
+
+static func get_power_color(pct: int) -> Color:
+	if pct >= 81:
+		return Color("#EF4444")  # Merah: 81% - 100%
+	elif pct >= 61:
+		return Color("#FB923C")  # Orange: 61% - 80%
+	elif pct >= 40:
+		return Color("#FACC15")  # Kuning: 40% - 60%
+	return Color("#86EFAC")      # Rendah: < 40%
 
 static func compute_launch_params(
 	drag_screen_delta: Vector2,
@@ -36,20 +45,21 @@ static func compute_launch_params(
 	var mag := clampf(drag_screen_delta.length() / maxf(max_drag_px, 1.0), 0.0, 1.0)
 	var dir_2d := drag_screen_delta.normalized() if drag_screen_delta.length() > 2.0 else Vector2(0, -1)
 
-	# Speed scaled by Kekuatan (60 -> ~27 m/s, 99 -> ~36 m/s)
-	var max_speed := lerpf(21.0, 36.5, clampf(float(kekuatan) / 99.0, 0.2, 1.0))
-	var speed := lerpf(7.5, max_speed, mag)
+	# Balanced realistic kick speed (not OP on shots) + mild >= 65% long-pass carry polish
+	var max_speed := lerpf(20.5, 34.5, clampf(float(kekuatan) / 99.0, 0.2, 1.0))
+	var long_drive_boost: float = 1.0
+	if mag >= 0.65:
+		long_drive_boost = lerpf(1.03, 1.08, clampf((mag - 0.65) / 0.35, 0.0, 1.0))
+	var speed := lerpf(7.8, max_speed, mag) * long_drive_boost
 
-	# Vertical loft angle (radians): pulling harder gives higher loft up to ~25 deg, moderated by spin_offset.y
-	var base_loft := lerpf(0.08, 0.38, mag)
-	if is_penalty:
-		base_loft = lerpf(0.05, 0.26, mag)
-	elif is_free_kick:
-		base_loft = lerpf(0.16, 0.44, mag)
-	var loft := clampf(base_loft - spin_offset.y * 0.12, 0.03, 0.52)
+	# Shot stays flat/grounded by default; ONLY lofts when strike angle on ball (spin_offset.y > 0.08, lower half of ball) is set!
+	var loft: float = 0.0
+	if spin_offset.y > 0.08:
+		var loft_t := clampf((spin_offset.y - 0.08) / 0.92, 0.0, 1.0)
+		var max_loft := 0.48 if is_free_kick else (0.34 if is_penalty else 0.42)
+		loft = lerpf(0.05, max_loft, loft_t) * lerpf(0.65, 1.0, mag)
 
 	# Convert 2D aim (x right, y up on screen -> -Z on pitch) into 3D horizontal direction
-	# When user pulls DOWN on screen (start.y < current.y), drag_screen_delta = start - current has y < 0 (aiming UP / -Z)
 	var horiz := Vector3(dir_2d.x, 0.0, dir_2d.y).normalized()
 	if horiz.length() < 0.001:
 		horiz = Vector3(0.0, 0.0, -1.0)
@@ -65,7 +75,8 @@ static func compute_launch_params(
 	if apply_random_spread and mag > 0.05:
 		var yaw_err := deg_to_rad(randf_range(-spread_deg, spread_deg))
 		horiz = horiz.rotated(Vector3.UP, yaw_err)
-		loft = clampf(loft + deg_to_rad(randf_range(-spread_deg * 0.4, spread_deg * 0.4)), 0.02, 0.56)
+		if loft > 0.01:
+			loft = clampf(loft + deg_to_rad(randf_range(-spread_deg * 0.35, spread_deg * 0.35)), 0.02, 0.54)
 
 	var v_horiz := speed * cos(loft)
 	var v_vert := speed * sin(loft)
@@ -73,10 +84,12 @@ static func compute_launch_params(
 
 	# Magnus spin vector omega (rad/s): lateral spin_offset.x curves left/right
 	var curve_scale := lerpf(5.5, 19.5, clampf(float(efek) / 99.0, 0.0, 1.0))
-	var omega := Vector3(spin_offset.y * curve_scale * 0.4, -spin_offset.x * curve_scale, 0.0)
+	var omega := Vector3(spin_offset.y * curve_scale * 0.4 if loft > 0.01 else 0.0, -spin_offset.x * curve_scale, 0.0)
 
 	return {
 		"power_ratio": mag,
+		"power_pct": int(round(mag * 100.0)),
+		"is_lofted": loft > 0.01,
 		"velocity": velocity,
 		"omega": omega,
 		"spread_deg": spread_deg,
@@ -112,9 +125,11 @@ static func step_ball(
 			hit_event = "bounce"
 		else:
 			next_vel.y = 0.0
-			next_vel.x *= (1.0 - 1.6 * dt)
-			next_vel.z *= (1.0 - 1.6 * dt)
-			omega *= (1.0 - 2.0 * dt)
+			var h_spd := Vector2(next_vel.x, next_vel.z).length()
+			var roll_drag := 0.38 if h_spd > 11.0 else (0.58 if h_spd > 6.5 else 0.88)
+			next_vel.x *= maxf(0.0, 1.0 - roll_drag * dt)
+			next_vel.z *= maxf(0.0, 1.0 - roll_drag * dt)
+			omega *= maxf(0.0, 1.0 - 1.5 * dt)
 
 	# Top Goal Frame & Net Check (z <= -PITCH_HALF_L) using exact plane-crossing interpolation (no tunneling!)
 	var goal_z := -PITCH_HALF_L

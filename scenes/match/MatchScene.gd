@@ -4,7 +4,7 @@ signal match_completed(report: Dictionary)
 signal mode_exited
 
 enum RunMode { CAREER_MATCH, PRACTICE_MODE, DUEL_MODE, MOVIOLA_REPLAY }
-enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, HEADER_TIMING, QTE_DRIBBLE_DUEL, QTE_LONG_CONTROL, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, FULLTIME }
+enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, HEADER_TIMING, QTE_DRIBBLE_DUEL, QTE_LONG_CONTROL, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, COIN_FLIP, PENALTY_SHOOTOUT, FULLTIME }
 enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS, HEADER_CROSS, DRIBBLE_DUEL, LONG_PASS_CONTROL, CORNER_KICK, GK_BUILDUP }
 
 var run_mode: RunMode = RunMode.CAREER_MATCH
@@ -42,6 +42,8 @@ var _moment_banner: PanelContainer
 var _moment_title_lbl: Label
 var _moment_sub_lbl: Label
 var _power_lbl: Label
+var _aim_power_pill: PanelContainer
+var _aim_power_pill_lbl: Label
 var _spin_pad: SpinBallPad
 var _dribble_pad: DribbleJoystickPad
 var _dribble_input: Vector2 = Vector2.ZERO
@@ -79,6 +81,20 @@ var _board_poss_bar: ColorRect
 var _board_hl_lbl: Label
 var _board_hl_portraits: HBoxContainer
 var _board_hl_badge: Label
+var _board_hl_name_lbl: Label
+var _board_hl_action_lbl: Label
+var _board_hero_card: PanelContainer
+var _board_mini_stats_vb: VBoxContainer
+var _hero_hl_queue: Array[Dictionary] = []
+var _hero_hl_timer: float = 0.0
+var _shots_us: int = 0
+var _shots_them: int = 0
+var _saves_us: int = 0
+var _saves_them: int = 0
+var _corners_us: int = 0
+var _corners_them: int = 0
+var _fouls_us: int = 0
+var _fouls_them: int = 0
 var _board_cards_bar: PanelContainer
 var _board_cards_lbl: Label
 var _board_sub_banner: PanelContainer
@@ -89,12 +105,62 @@ var _board_energy_lbl: Label
 var _board_timeline: Control
 var _board_events: Array[Dictionary] = []
 var _board_paused: bool = false
+var _board_bg: Control
+var _board_emblem: Control
+var _board_comp_lbl: Label
+var _board_stad_lbl: Label
+var _board_home_lbl: Label
+var _board_away_lbl: Label
+var _board_home_score: Label
+var _board_away_score: Label
+var _board_home_badge_wrap: Control
+var _board_away_badge_wrap: Control
+var _board_tab_btns: Array[Button] = []
+var _board_views: Array[Control] = []
+var _board_view_idx: int = 0
+var _board_stats_vb: VBoxContainer
+var _board_squad_vb: VBoxContainer
+var _board_sparkline: Control
+var _board_rating_hist: Array[float] = [6.2]
+var _board_hold_fast: bool = false
+var _board_spd_btn: Button
+var _board_pause_btn: Button
 var _strat_btn: Button
 var _inten_btn: Button
 var _lineup_panel: Control
 var _lineup_timer: float = 0.0
 var _halftime_panel: Control
 var _halftime_done: bool = false
+var _quiz_bonus_energy: bool = false
+var _in_extra_time: bool = false
+var _et_end_min: float = 90.0
+var _pen_us: int = -1
+var _pen_them: int = -1
+var _invader_shown: bool = false
+var _invader_panel: Control
+var _coin_flip_panel: Control
+var _coin_canvas: Control
+var _coin_status_lbl: Label
+var _coin_go_btn: Button
+var _coin_choice_btns: Array[Button] = []
+var _coin_choice: String = "ANGKA"
+var _coin_result: String = "GAMBAR"
+var _coin_winner_us: bool = true
+var _coin_anim_t: float = 0.0
+var _coin_spinning: bool = false
+var _pso_panel: Control
+var _pso_score_lbl: Label
+var _pso_status_lbl: Label
+var _pso_row_us: HBoxContainer
+var _pso_row_them: HBoxContainer
+var _pso_btn_row: HBoxContainer
+var _pso_done_btn: Button
+var _pso_us_kicks: Array[String] = []
+var _pso_them_kicks: Array[String] = []
+var _pso_round: int = 1
+var _pso_user_first: bool = true
+var _pso_turn_us: bool = true
+var _pso_waiting_kick: bool = false
 var _ask_panel: Control
 var _pending_ask_type: MomentType = MomentType.FREE_KICK
 var _sim_event_timer: float = 0.0
@@ -200,6 +266,25 @@ var _incoming_pass_is_our_gk: bool = false
 var _corner_taker_is_user: bool = false
 var _corner_side: float = 1.0
 var _last_pass_state: String = ""
+var _pending_foul_moment: int = -1
+var _pending_foul_spot: Vector3 = Vector3.ZERO
+var _dribble_tackle_grace: float = 0.0
+var _last_kick_power_ratio: float = 0.0
+var _celebrating_goal: bool = false
+var _celebration_t: float = 0.0
+var _celebration_origin: Vector3 = Vector3.ZERO
+var _celebration_confetti: Control
+var _celebration_particles: Array[Dictionary] = []
+var _goal_popup_panel: PanelContainer
+var _goal_replay_active: bool = false
+var _goal_replay_delay: float = 0.0
+var _goal_replay_frames: Array = []
+var _goal_replay_idx: int = 0
+var _goal_replay_accum: float = 0.0
+var _goal_replay_snapped_cam: bool = false
+var _goal_replay_banner: PanelContainer
+var _pending_celeb_info: Dictionary = {}
+var _last_live_ticker_txt: String = "PERTANDINGAN BERLANGSUNG SEIMBANG"
 
 # Slingshot Input State
 var _dragging: bool = false
@@ -711,6 +796,45 @@ func _build_hud() -> void:
 
 	_build_board_and_overlays()
 
+	# Confetti particle layer & animated Goal Scorer Pop-Up Banner (3D pitch celebrations)
+	_celebration_confetti = Control.new()
+	_celebration_confetti.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_celebration_confetti.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_celebration_confetti.visible = false
+	_celebration_confetti.draw.connect(_draw_celebration_confetti)
+	add_child(_celebration_confetti)
+
+	_goal_popup_panel = PanelContainer.new()
+	_goal_popup_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_goal_popup_panel.offset_left = -220
+	_goal_popup_panel.offset_right = 220
+	_goal_popup_panel.offset_top = -142
+	_goal_popup_panel.offset_bottom = -28
+	_goal_popup_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_goal_popup_panel.visible = false
+	_goal_popup_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color("#091426", 0.96), UITheme.ACCENT_GOLD, 2, 8))
+	add_child(_goal_popup_panel)
+
+	# Instant Goal Replay Top Broadcast Pill (Behind Opponent GK POV)
+	_goal_replay_banner = PanelContainer.new()
+	_goal_replay_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_goal_replay_banner.offset_left = -188
+	_goal_replay_banner.offset_right = 188
+	_goal_replay_banner.offset_top = 60
+	_goal_replay_banner.offset_bottom = 90
+	_goal_replay_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_goal_replay_banner.visible = false
+	_goal_replay_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081224", 0.94), Color("#DC2645"), 2, 6))
+	add_child(_goal_replay_banner)
+	var gr_lbl := Label.new()
+	gr_lbl.text = "● TAYANGAN ULANG  •  BELAKANG GAWANG"
+	gr_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	gr_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	gr_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	gr_lbl.add_theme_font_size_override("font_size", 11)
+	gr_lbl.add_theme_color_override("font_color", Color("#FB7185"))
+	_goal_replay_banner.add_child(gr_lbl)
+
 	# Top-Right Unified Open-Play Action Pill (TEMBAK / UMPAN)
 	_action_bar = HBoxContainer.new()
 	_action_bar.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -800,14 +924,30 @@ func _build_hud() -> void:
 	_power_lbl.add_theme_font_size_override("font_size", 18)
 	add_child(_power_lbl)
 
-	# Spin / Magnus Curve Touch Ball at Bottom-Right
+	_aim_power_pill = PanelContainer.new()
+	_aim_power_pill.visible = false
+	_aim_power_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_aim_power_pill.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081326E8"), UITheme.ACCENT_GOLD, 2, 6))
+	add_child(_aim_power_pill)
+	_aim_power_pill_lbl = Label.new()
+	_aim_power_pill_lbl.text = "50%"
+	_aim_power_pill_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_aim_power_pill_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_aim_power_pill_lbl.add_theme_font_size_override("font_size", 14)
+	_aim_power_pill.add_child(_aim_power_pill_lbl)
+
+	# Spin / Strike Angle Touch Ball at Bottom-Right (bottom half = loft / lambung)
 	_spin_pad = SpinBallPad.new()
 	_spin_pad.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_spin_pad.offset_left = -114
 	_spin_pad.offset_top = -134
 	_spin_pad.offset_right = -16
 	_spin_pad.offset_bottom = -20
-	_spin_pad.spin_changed.connect(func(sp: Vector2): _spin_offset = sp)
+	_spin_pad.spin_changed.connect(func(sp: Vector2):
+		_spin_offset = sp
+		if _dragging:
+			_draw_aim_and_ring()
+	)
 	add_child(_spin_pad)
 
 	_goal_flash_rect = ColorRect.new()
@@ -926,7 +1066,29 @@ func _start_selected_mode() -> void:
 	_key_moment_minutes.sort()
 	_next_moment_idx = 0
 	_halftime_done = false
+	_quiz_bonus_energy = false
+	_in_extra_time = false
+	_et_end_min = 90.0
+	_pen_us = -1
+	_pen_them = -1
+	_invader_shown = false
+	_pending_foul_moment = -1
+	_pending_foul_spot = Vector3.ZERO
+	_dribble_tackle_grace = 0.0
+	_board_hold_fast = false
+	_board_view_idx = 0
+	_board_rating_hist = [6.2]
 	_board_events.clear()
+	_hero_hl_queue.clear()
+	_hero_hl_timer = 0.0
+	_shots_us = 0
+	_shots_them = 0
+	_saves_us = 0
+	_saves_them = 0
+	_corners_us = 0
+	_corners_them = 0
+	_fouls_us = 0
+	_fouls_them = 0
 	_board_paused = false
 	_our_yellows = 0
 	_our_reds = 0
@@ -943,6 +1105,14 @@ func _start_selected_mode() -> void:
 	_init_match_rosters()
 	if _board_panel != null:
 		_board_panel.visible = false
+		_refresh_board_header_identities()
+		_switch_board_tab(0)
+	if _coin_flip_panel != null:
+		_coin_flip_panel.visible = false
+	if _pso_panel != null:
+		_pso_panel.visible = false
+	if _invader_panel != null:
+		_invader_panel.visible = false
 	if _board_sub_banner != null:
 		_board_sub_banner.visible = false
 	if _board_cards_bar != null:
@@ -996,19 +1166,52 @@ func _process(delta: float) -> void:
 		MatchPhase.REBOUND_SCRAMBLE:
 			_process_rebound_scramble(delta)
 		MatchPhase.MOMENT_RESULT:
-			_result_timer -= delta
-			if _result_timer <= 0.0:
-				_result_toast.visible = false
-				if _rating_delta_lbl != null:
-					_rating_delta_lbl.visible = false
-				_advance_after_moment()
+			if _goal_replay_active:
+				_process_goal_replay(delta)
+			else:
+				if _celebrating_goal:
+					_process_goal_celebration(delta)
+				_result_timer -= delta
+				if _result_timer <= 0.0:
+					_stop_goal_celebration()
+					_result_toast.visible = false
+					if _rating_delta_lbl != null:
+						_rating_delta_lbl.visible = false
+					_advance_after_moment()
+		MatchPhase.COIN_FLIP:
+			if _coin_spinning and _coin_canvas != null:
+				_coin_anim_t += delta
+				_coin_canvas.queue_redraw()
+				if _coin_anim_t >= 1.35:
+					_finish_coin_spin()
+
+func _is_current_knockout_match() -> bool:
+	if run_mode != RunMode.CAREER_MATCH or not CareerState.has_active_career:
+		return false
+	var fix := CareerState.get_current_fixture()
+	if bool(fix.get("is_knockout", false)):
+		return true
+	var st_lbl := str(fix.get("stage", ""))
+	if st_lbl in ["8 BESAR", "SEMI FINAL", "FINAL", "16 BESAR", "32 BESAR", "BABAK 1"]:
+		return true
+	var comp := str(fix.get("comp", ""))
+	return comp in ["PIALA", "TURNAMEN_ASIA", "PIALA_DUNIA_KLUB"]
 
 func _process_simulation(delta: float) -> void:
 	if _board_paused:
 		return
-	var min_step: float = delta * 6.5 * _sim_speed
+	if _hero_hl_timer > 0.0:
+		_hero_hl_timer -= delta
+	if _hero_hl_timer <= 0.0 and not _hero_hl_queue.is_empty():
+		var next_hl: Dictionary = _hero_hl_queue.pop_front()
+		_display_hero_highlight(next_hl)
+		if bool(next_hl.get("log_feed", false)):
+			_append_small_feed_row(int(next_hl.get("min", 0)), str(next_hl.get("kind", "ASSIST")), str(next_hl.get("feed_txt", "")), next_hl.get("accent", UITheme.ACCENT_CYAN), bool(next_hl.get("is_us", true)), true)
+		_hero_hl_timer = 1.25
+	var eff_speed: float = 4.5 if _board_hold_fast else _sim_speed
+	var min_step: float = delta * 6.5 * eff_speed
 	_minute += min_step
-	_minute_lbl.text = "%d'" % mini(90, int(_minute))
+	_minute_lbl.text = "%d'" % mini(int(_et_end_min), int(_minute))
 
 	# 20% faster in-match Energy drain while user is on the pitch (scaled by Intensity & Fisik)
 	if run_mode == RunMode.CAREER_MATCH and not _user_subbed_out:
@@ -1070,6 +1273,14 @@ func _process_simulation(delta: float) -> void:
 			_add_rich_board_highlight(int(_minute), "OPP_GOAL", "GOL LAWAN: %s" % osc_name, ("Assist: %s (%s)" % [oast_name, fix["opp_code"]] if not oast_name.is_empty() else "Gol %s!" % fix["opp_code"]), opp_sc, opp_ast, false)
 		_update_score_label()
 
+	# Mid-match Final Pitch Invader event (New 6 detail)
+	if run_mode == RunMode.CAREER_MATCH and not _invader_shown and _minute >= 62.0 and _minute <= 72.0:
+		var fx_inv := CareerState.get_current_fixture()
+		if str(fx_inv.get("stage", "")) == "FINAL" and randf() < delta * 0.25:
+			_invader_shown = true
+			_open_pitch_invader_popup()
+			return
+
 	_sync_board_hud()
 
 	if not _user_subbed_out and _next_moment_idx < _key_moment_minutes.size() and int(_minute) >= _key_moment_minutes[_next_moment_idx]:
@@ -1098,15 +1309,31 @@ func _process_simulation(delta: float) -> void:
 			m_type = MomentType.PENALTY
 		if _board_panel != null:
 			_board_panel.visible = false
-		if run_mode == RunMode.CAREER_MATCH and (m_type == MomentType.FREE_KICK or m_type == MomentType.PENALTY) and randf() < 0.55:
-			_open_ask_set_piece(m_type)
+		if run_mode == RunMode.CAREER_MATCH and (m_type == MomentType.FREE_KICK or m_type == MomentType.PENALTY or m_type == MomentType.CORNER_KICK) and randf() < 0.70:
+			_open_ask_set_piece(m_type, randf() < 0.50)
 		elif run_mode == RunMode.CAREER_MATCH and m_type == MomentType.PENALTY and randf() < 0.30:
 			_trigger_key_moment(MomentType.TEAMMATE_PENALTY)
 		else:
 			_trigger_key_moment(m_type)
 		return
 
-	if _minute >= 90.0:
+	if _minute >= _et_end_min:
+		if _is_current_knockout_match() and _score_us == _score_them:
+			if not _in_extra_time:
+				_in_extra_time = true
+				_et_end_min = 120.0
+				_board_hold_fast = false
+				AudioSynth.play_whistle(false)
+				var u_d: Dictionary = _get_user_roster_dict()
+				_add_rich_board_highlight(90, "INFO", "PERPANJANGAN WAKTU!", "Skor imbang %d-%d! Laga berlanjut ke 91' - 120'!" % [_score_us, _score_them], u_d, {}, true)
+				if not _user_subbed_out:
+					_key_moment_minutes.append(randi_range(96, 114))
+					_key_moment_minutes.sort()
+				_sync_board_hud()
+				return
+			else:
+				_open_coin_flip_phase()
+				return
 		_finish_career_match()
 
 func _trigger_key_moment(m_type: MomentType) -> void:
@@ -1161,6 +1388,7 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_key_pass_awarded = false
 	_qte_progress = 0.0
 	_qte_resolved = false
+	_dribble_tackle_grace = 0.45
 	if _qte_overlay != null:
 		_qte_overlay.visible = false
 	if _rating_delta_lbl != null:
@@ -1234,6 +1462,10 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 		MomentType.FREE_KICK:
 			var x_off := randf_range(-9.0, 9.0)
 			var z_off := randf_range(-33.0, -25.0)
+			if _pending_foul_spot != Vector3.ZERO:
+				x_off = clampf(_pending_foul_spot.x, -26.0, 26.0)
+				z_off = clampf(_pending_foul_spot.z, -35.6, -16.0)
+				_pending_foul_spot = Vector3.ZERO
 			_player_pos = Vector3(x_off, 0.0, z_off + 1.4)
 			_ball_pos = Vector3(x_off, 0.115, z_off)
 			var wall_dir := (Vector3(0, 0, -52.5) - _ball_pos).normalized()
@@ -1449,6 +1681,8 @@ func _input(event: InputEvent) -> void:
 		_draw_aim_and_ring()
 
 func _release_slingshot() -> void:
+	if _aim_power_pill != null:
+		_aim_power_pill.visible = false
 	var delta_px := _drag_start - _drag_current
 	if delta_px.length() < 14.0:
 		_power_lbl.text = ""
@@ -1494,7 +1728,15 @@ func _release_slingshot() -> void:
 
 	_ball_vel = _rotate_corner_launch(launch["velocity"]) if (_moment_type == MomentType.CORNER_KICK and _corner_taker_is_user) else launch["velocity"]
 	_ball_omega = launch["omega"]
+	_last_kick_power_ratio = float(launch.get("power_ratio", 0.5))
 	_flight_timer = 0.0
+	_current_clip_frames.clear()
+	_current_clip_frames.append({
+		"ball": [_ball_pos.x, _ball_pos.y, _ball_pos.z],
+		"gk": [_gk_pos.x, _gk_pos.z],
+		"player": [_player_pos.x, _player_pos.z],
+		"gk_dive": 0.0,
+	})
 	_clear_defender_slides()
 	_gk_react_timer = float(get_opp_gk_profile().get("reaction_delay", 0.22))
 	_gk_dive_dir = 0.0
@@ -1550,7 +1792,7 @@ func _rotate_corner_launch(vel: Vector3) -> Vector3:
 	var fwd := to_box.normalized()
 	var right := Vector2(-fwd.y, fwd.x)
 	var world_xz := fwd * (-vel.z) + right * vel.x
-	return Vector3(world_xz.x, maxf(vel.y, 4.4), world_xz.y)
+	return Vector3(world_xz.x, maxf(vel.y, 0.0), world_xz.y)
 
 func get_player_max_run_speed(spd_attr: int) -> float:
 	# Realistic speed strictly driven by player's Kecepatan attribute (40..99 -> ~3.8..8.2 m/s)
@@ -1737,8 +1979,8 @@ func _process_ball_flight(delta: float) -> void:
 				_enter_user_follow_up_shot("BOLA KEMBALI KE KAMU!", "Rekan mengembalikan bola — tarik ketapel TEMBAK atau umpan!")
 				return
 
-		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, FREE_KICK, HEADER_CROSS, CORNER_KICK — with FIFA Law 11 Offside check!)
-		if _carry_tm_idx < 0 and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS, MomentType.CORNER_KICK]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
+		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, FREE_KICK, HEADER_CROSS, CORNER_KICK, GK_BUILDUP — with FIFA Law 11 Offside check!)
+		if _carry_tm_idx < 0 and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS, MomentType.CORNER_KICK, MomentType.GK_BUILDUP]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
 			var catch_rad: float = 2.45 if _moment_type == MomentType.CORNER_KICK else (2.25 if (_moment_type in [MomentType.PASS, MomentType.FREE_KICK, MomentType.HEADER_CROSS]) else 1.85)
 			for ti in range(_teammate_positions.size()):
 				if ti == _controlling_teammate_idx:
@@ -1794,12 +2036,13 @@ func _process_ball_flight(delta: float) -> void:
 				_show_moment_result("TEMBAKAN REKAN DITEPIS KIPER!" if _shot_by_teammate else "DITEPIS KIPER!", UITheme.ACCENT_CYAN, 1.4)
 				return
 
-	# Record Moviola keyframes
+	# Record Moviola & Goal-Replay keyframes
 	if _current_clip_frames.size() < 90:
 		_current_clip_frames.append({
 			"ball": [_ball_pos.x, _ball_pos.y, _ball_pos.z],
 			"gk": [_gk_pos.x, _gk_pos.z],
 			"player": [_player_pos.x, _player_pos.z],
+			"gk_dive": _gk_dive_dir,
 		})
 
 	# Update Trail & Teammates
@@ -1821,22 +2064,29 @@ func _process_ball_flight(delta: float) -> void:
 			if absf(pred_goal_x) <= 6.0:
 				is_shot_on_frame = true
 	var is_curved_fk: bool = (_moment_type == MomentType.FREE_KICK and absf(_spin_offset.x) > 0.25)
+	var h_speed_now: float = Vector2(_ball_vel.x, _ball_vel.z).length()
+	var is_long_kick: bool = (_last_kick_power_ratio >= 0.65)
+	# Strong kicks (>= 65%) fly uninterrupted at full pace across midfield until slowing down or deep flight!
+	var pass_scramble_ready: bool = false
+	if is_long_kick:
+		pass_scramble_ready = (_flight_timer >= 1.45 and _ball_pos.y < 1.85) or (_flight_timer >= 0.65 and h_speed_now < 9.5 and _ball_pos.y < 1.85)
+	else:
+		pass_scramble_ready = (_flight_timer >= 0.45 and _ball_pos.y < 2.1 and _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE, MomentType.GK_BUILDUP] and not is_shot_on_frame) or (_moment_type == MomentType.PASS and _flight_timer >= 0.42 and _ball_pos.y < 2.1)
 	var loose_pass_trigger: bool = (
 		in_pitch_xz
 		and _carry_tm_idx < 0
 		and _moment_type != MomentType.PENALTY
 		and _moment_type != MomentType.TEAMMATE_PENALTY
 		and (
-			(_flight_timer >= 0.24 and _ball_pos.y < 2.1 and _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE] and not is_shot_on_frame)
-			or (_moment_type == MomentType.PASS and _flight_timer >= 0.22 and _ball_pos.y < 2.1)
-			or (_flight_timer >= 0.48 and _ball_vel.length() < 5.2 and _ball_pos.z > -51.0 and not is_curved_fk)
+			pass_scramble_ready
+			or (_flight_timer >= 0.65 and h_speed_now < 5.2 and _ball_pos.z > -51.0 and not is_curved_fk)
 			or (_flight_timer >= 0.65 and _moment_type == MomentType.CORNER_KICK and _ball_pos.y < 1.35)
 		)
 	)
 	if loose_pass_trigger:
 		_enter_rebound_scramble("BOLA KE RUANG KOSONG! KEJAR BOLA!", true)
 		return
-	if is_oob or _flight_timer > 3.2 or (_flight_timer > 0.6 and _ball_vel.length() < 1.2):
+	if is_oob or _flight_timer > 4.8 or (_flight_timer > 0.85 and _ball_vel.length() < 1.1):
 		if _shot_by_teammate:
 			_credit_key_pass_if_pending()
 			_update_last_shot("WIDE")
@@ -2070,6 +2320,9 @@ func _animate_gk_idle(delta: float) -> void:
 				_gk_pos = Vector3(0.0, 0.0, -51.6)
 
 	if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
+		_dribble_tackle_grace = maxf(0.0, _dribble_tackle_grace - delta)
+		_ensure_defender_slide_arrays()
+		var opp_agil: float = get_opp_defender_agility()
 		# Identify nearest active defender on pitch to press ball carrier across all open play
 		var chaser_idx: int = -1
 		var best_dist: float = 999.0
@@ -2085,38 +2338,36 @@ func _animate_gk_idle(delta: float) -> void:
 
 		for i in range(_defender_positions.size()):
 			if i == chaser_idx:
-				# Pressing defender moves toward ball carrier to tackle/steal (speed scaled by mode & slow-mo)
 				var to_ball: Vector3 = Vector3(_ball_pos.x - _defender_positions[i].x, 0.0, _ball_pos.z - _defender_positions[i].z)
 				var dist: float = to_ball.length()
-				if eff_def_speed > 0.01 and dist > 0.01:
-					_defender_positions[i] += to_ball.normalized() * eff_def_speed * delta
-					if i < _defenders.size():
-						_defenders[i].frame = stride_front
-				elif i < _defenders.size():
-					_defenders[i].frame = 0
-				if can_steal and run_mode != RunMode.MOVIOLA_REPLAY and _phase == MatchPhase.KEY_MOMENT_AIM and eff_def_speed > 0.01 and dist < steal_dist:
+				if _defender_slide_timers[i] > 0.0:
+					_defender_slide_timers[i] = maxf(0.0, _defender_slide_timers[i] - delta)
+					_defender_positions[i] += _defender_slide_dirs[i] * (7.1 * opp_agil) * delta
 					if i < _defenders.size():
 						_defenders[i].frame = 3
-					_dragging = false
-					_aim_imm.clear_surfaces()
-					_ring_imm.clear_surfaces()
-					_moment_banner.visible = false
-					_shots_telemetry.append({
-						"type": _moment_type_str(),
-						"outcome": "BLOCKED",
-						"pitchCoord": {"x": clampf((_ball_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _ball_pos.z) / 52.5, 0.05, 0.95)},
-						"goalCoord": {"x": 0.5, "y": 0.5},
-						"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
-					})
-					AudioSynth.play_save()
-					if _controlling_teammate_idx >= 0:
-						if _user_assisted_pass:
-							_carry_assist_pending = true
-							_credit_key_pass_if_pending()
-						_show_moment_result("REKAN DIREBUT BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.2)
-					else:
-						_adjust_rating(-0.30, "DIREBUT BEK")
-						_show_moment_result("DIREBUT BEK!", UITheme.ACCENT_RED, 1.2)
+						_defenders[i].rotation_degrees.z = 42.0 if _defender_slide_dirs[i].x >= 0.0 else -42.0
+					if _defender_slide_timers[i] <= 0.0:
+						if i < _defenders.size():
+							_defenders[i].billboard = BaseMaterial3D.BILLBOARD_ENABLED
+							_defenders[i].rotation_degrees = Vector3.ZERO
+							_defenders[i].frame = 0
+				else:
+					# Pressing defender moves toward ball carrier and may lunge into a tackle
+					if eff_def_speed > 0.01 and dist > 0.01:
+						_defender_positions[i] += to_ball.normalized() * eff_def_speed * delta
+						if i < _defenders.size():
+							_defenders[i].frame = stride_front
+						if _dribble_tackle_grace <= 0.0 and _is_user_dribbling_active() and not _defender_slid_this_kick[i] and dist >= 1.05 and dist < 2.35 * clampf(opp_agil, 0.85, 1.3) and randf() < delta * 2.4:
+							_defender_slid_this_kick[i] = true
+							_defender_slide_timers[i] = 0.34
+							_defender_slide_dirs[i] = to_ball.normalized()
+					elif i < _defenders.size():
+						_defenders[i].frame = 0
+				var cur_dist := Vector2(_ball_pos.x - _defender_positions[i].x, _ball_pos.z - _defender_positions[i].z).length()
+				var tackle_reach: float = maxf(0.90, steal_dist)
+				var tackle_enabled: bool = (can_steal or _is_user_dribbling_active()) and eff_def_speed > 0.01
+				if tackle_enabled and _dribble_tackle_grace <= 0.0 and run_mode != RunMode.MOVIOLA_REPLAY and _phase == MatchPhase.KEY_MOMENT_AIM and cur_dist < tackle_reach:
+					_resolve_carrier_tackle_outcome(_get_active_carrier_pos(), i, _defender_slide_timers[i] > 0.0, true)
 					return
 			else:
 				# Secondary defenders shadow attacking teammates & support pressure at mode-scaled speed
@@ -2219,6 +2470,7 @@ func _enter_teammate_user_control(tm_idx: int, from_direct_user_pass: bool) -> v
 		_user_hockey_assist_eligible = false
 	_controlling_teammate_idx = tm_idx
 	_carry_tm_idx = -1
+	_dribble_tackle_grace = 0.45
 	_clear_defender_slides()
 	_phase = MatchPhase.KEY_MOMENT_AIM
 	_moment_type = MomentType.SHOT
@@ -2374,13 +2626,7 @@ func _process_teammate_carry(delta: float) -> void:
 	_sync_3d_sprites()
 
 	if hit_def:
-		AudioSynth.play_save()
-		_credit_key_pass_if_pending()
-		_shot_by_teammate = false
-		_carry_assist_pending = false
-		_update_last_shot("BLOCKED")
-		_add_board_event(int(_minute), "INFO", "%d' Rekan yang membawa bola dihentikan bek lawan!" % int(_minute), false)
-		_show_moment_result("REKAN DIHENTIKAN BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.35)
+		_resolve_carrier_tackle_outcome(carrier, 0, randf() < 0.45, false)
 		return
 
 	# Opportunity: carrying teammate passes back to our rushing striker (one-two)!
@@ -2799,10 +3045,11 @@ func _enter_rebound_scramble(banner_msg: String, is_loose_pass: bool = false) ->
 	_rebound_timer = 0.0
 	_rebound_grace = 0.12 if is_loose_pass else 0.24
 	if is_loose_pass:
-		# Cushion high-speed through-balls on grass so nearby teammates and opponents can visibly chase & reach them inside the pitch
+		# Preserve strong >= 65% long-ball momentum; only gently cushion soft through-balls
 		var hvel := Vector2(_ball_vel.x, _ball_vel.z)
-		if hvel.length() > 10.2:
-			hvel = hvel.normalized() * 10.2
+		var max_cap: float = 22.0 if _last_kick_power_ratio >= 0.65 else 13.5
+		if hvel.length() > max_cap:
+			hvel = hvel.normalized() * max_cap
 			_ball_vel.x = hvel.x
 			_ball_vel.z = hvel.y
 	_dragging = false
@@ -2852,7 +3099,7 @@ func _process_rebound_scramble(delta: float) -> void:
 		if str(step["hit"]) == "goal":
 			_handle_goal_scored()
 			return
-	var grass_damp: float = 1.65 if _scramble_is_loose_pass else 0.65
+	var grass_damp: float = 0.22 if (_scramble_is_loose_pass and _last_kick_power_ratio >= 0.65) else (0.50 if _scramble_is_loose_pass else 0.45)
 	_ball_vel.x *= maxf(0.0, 1.0 - grass_damp * delta)
 	_ball_vel.z *= maxf(0.0, 1.0 - grass_damp * delta)
 
@@ -3107,7 +3354,8 @@ func _handle_goal_scored() -> void:
 			if is_instance_valid(_goal_flash_rect):
 				_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
 				create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
-			_show_moment_result("ASSIST! REKAN CETAK GOL!", UITheme.ACCENT_GOLD, 1.6)
+			_start_goal_replay_then_celebration(tm_name, int(_minute), u_name, false)
+			_show_moment_result("ASSIST! REKAN CETAK GOL!", UITheme.ACCENT_GOLD, 2.2)
 			return
 		var combo_bonus := _user_hockey_assist_eligible
 		if combo_bonus:
@@ -3122,7 +3370,8 @@ func _handle_goal_scored() -> void:
 		if is_instance_valid(_goal_flash_rect):
 			_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.55)
 			create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.38)
-		_show_moment_result("GOOOOL KOMBINASI TIM! (+0.1 RATING)" if combo_bonus else "GOOOOL REKAN SETIM!", UITheme.ACCENT_GOLD, 1.6)
+		_start_goal_replay_then_celebration(tm_name, int(_minute), "", false)
+		_show_moment_result("GOOOOL KOMBINASI TIM! (+0.1 RATING)" if combo_bonus else "GOOOOL REKAN SETIM!", UITheme.ACCENT_GOLD, 2.2)
 		return
 	_my_goals += 1
 	if _moment_type == MomentType.PENALTY:
@@ -3141,7 +3390,346 @@ func _handle_goal_scored() -> void:
 	if is_instance_valid(_goal_flash_rect):
 		_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.65)
 		create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.40)
-	_show_moment_result("GOOOOL!!", UITheme.ACCENT_GOLD, 1.65)
+	_start_goal_replay_then_celebration(u_name, int(_minute), ast_nm, true)
+	_show_moment_result("GOOOOL!!", UITheme.ACCENT_GOLD, 2.45)
+
+func _start_goal_replay_then_celebration(scorer_name: String, goal_min: int, assist_name: String, is_user_goal: bool) -> void:
+	_pending_celeb_info = {
+		"scorer": scorer_name,
+		"minute": goal_min,
+		"assist": assist_name,
+		"is_user": is_user_goal,
+		"player_pos": _player_pos,
+		"gk_pos": _gk_pos,
+	}
+	# Build clean replay sequence ending with ball rippling the back of the opponent net!
+	var frames: Array = []
+	var src_frames: Array = _current_clip_frames
+	if src_frames.size() >= 3:
+		var start_i: int = maxi(0, src_frames.size() - 30)
+		for fi in range(start_i, src_frames.size()):
+			frames.append(src_frames[fi].duplicate(true))
+	else:
+		# Synthesize smooth approach trajectory if goal was triggered directly
+		var end_x: float = clampf(_ball_pos.x, -3.1, 3.1)
+		var end_y: float = clampf(_ball_pos.y, 0.35, 1.95)
+		var start_p: Vector3 = _player_pos + Vector3(0.0, 0.15, -0.8)
+		for fi in range(14):
+			var t_f: float = float(fi) / 13.0
+			var bx: float = lerpf(start_p.x, end_x, t_f)
+			var by: float = lerpf(0.15, end_y, t_f) + sin(t_f * PI) * 0.45
+			var bz: float = lerpf(start_p.z, -52.6, t_f)
+			var gkx: float = lerpf(0.0, clampf(end_x * 0.55, -2.5, 2.5), clampf((t_f - 0.35) / 0.65, 0.0, 1.0))
+			frames.append({
+				"ball": [bx, by, bz],
+				"gk": [gkx, -51.6],
+				"player": [_player_pos.x, _player_pos.z],
+				"gk_dive": signf(end_x) if t_f > 0.4 else 0.0,
+			})
+
+	# Append 5 trailing net-ripple frames so the ball visibly hits the back netting in slow-mo!
+	var last_f: Dictionary = frames[frames.size() - 1]
+	var lb: Array = last_f.get("ball", [0.0, 0.8, -52.6])
+	var lgk: Array = last_f.get("gk", [_gk_pos.x, -51.6])
+	var lpl: Array = last_f.get("player", [_player_pos.x, _player_pos.z])
+	var ldive: float = float(last_f.get("gk_dive", _gk_dive_dir))
+	for ni in range(1, 6):
+		var nf: float = float(ni) / 5.0
+		var nz: float = clampf(float(lb[2]) - nf * 1.45, -54.3, -52.55)
+		var ny: float = maxf(0.12, float(lb[1]) * (1.0 - nf * 0.55))
+		frames.append({
+			"ball": [clampf(float(lb[0]), -3.45, 3.45), ny, nz],
+			"gk": [float(lgk[0]), float(lgk[1])],
+			"player": [float(lpl[0]), float(lpl[1])],
+			"gk_dive": ldive,
+		})
+
+	_goal_replay_frames = frames
+	_goal_replay_active = true
+	_goal_replay_delay = 0.45
+	_goal_replay_idx = 0
+	_goal_replay_accum = 0.0
+	_goal_replay_snapped_cam = false
+	_celebrating_goal = false
+	if is_instance_valid(_goal_popup_panel):
+		_goal_popup_panel.visible = false
+	if is_instance_valid(_celebration_confetti):
+		_celebration_confetti.visible = false
+
+func _process_goal_replay(delta: float) -> void:
+	if _goal_replay_delay > 0.0:
+		_goal_replay_delay -= delta
+		return
+
+	if not _goal_replay_snapped_cam:
+		_goal_replay_snapped_cam = true
+		_trail_points.clear()
+		if is_instance_valid(_result_toast):
+			_result_toast.visible = false
+		if is_instance_valid(_goal_replay_banner):
+			_goal_replay_banner.visible = true
+
+	var step_dt: float = 0.052  # Smooth slow-motion broadcast replay (~19 fps)
+	_goal_replay_accum += delta
+	while _goal_replay_accum >= step_dt and _goal_replay_idx < _goal_replay_frames.size():
+		_goal_replay_accum -= step_dt
+		var fr: Dictionary = _goal_replay_frames[_goal_replay_idx]
+		var bp: Array = fr.get("ball", [0.0, 0.5, -52.0])
+		var gp: Array = fr.get("gk", [0.0, -51.6])
+		var pp: Array = fr.get("player", [0.0, -34.0])
+		_ball_pos = Vector3(float(bp[0]), float(bp[1]), float(bp[2]))
+		_gk_pos = Vector3(float(gp[0]), 0.0, float(gp[1]))
+		_player_pos = Vector3(float(pp[0]), 0.0, float(pp[1]))
+		_gk_dive_dir = float(fr.get("gk_dive", 0.0))
+		if absf(_gk_dive_dir) > 0.1:
+			_gk_sprite.frame = 3
+		else:
+			_gk_sprite.frame = 0
+		_player_sprite.frame = 7 if _goal_replay_idx < 4 else 4
+		_trail_points.append(_ball_pos)
+		if _trail_points.size() > 18:
+			_trail_points.pop_front()
+		_goal_replay_idx += 1
+
+	# Behind Opponent GK POV Camera (positioned behind opponent goal net at z = -56.4 looking out!)
+	var pov_x: float = clampf(_ball_pos.x * 0.42, -2.6, 2.6)
+	var cam_behind_goal := Vector3(pov_x, 2.05, -56.4)
+	var look_toward_pitch := Vector3(_ball_pos.x * 0.68, maxf(0.85, _ball_pos.y * 0.85), clampf(_ball_pos.z + 6.5, -51.2, -24.0))
+	if _goal_replay_idx <= 2:
+		_camera.global_position = cam_behind_goal
+		_camera.look_at(look_toward_pitch, Vector3.UP)
+	_cam_target_pos = cam_behind_goal
+	_cam_look_pos = look_toward_pitch
+	_draw_ball_trail()
+	_sync_3d_sprites()
+
+	# Transition seamlessly from Behind-GK Goal Replay -> On-Pitch Celebration + Scorer Pop-Up!
+	if _goal_replay_idx >= _goal_replay_frames.size():
+		_goal_replay_active = false
+		if is_instance_valid(_goal_replay_banner):
+			_goal_replay_banner.visible = false
+		_trail_points.clear()
+		if _trail_imm != null:
+			_trail_imm.clear_surfaces()
+		_gk_dive_dir = 0.0
+		_gk_sprite.frame = 0
+		_player_pos = _pending_celeb_info.get("player_pos", _player_pos)
+		_gk_pos = _pending_celeb_info.get("gk_pos", _gk_pos)
+		var is_u_g: bool = bool(_pending_celeb_info.get("is_user", true))
+		_camera.global_position = _player_pos + Vector3(0.0, 5.5, 10.0)
+		_start_goal_celebration(
+			str(_pending_celeb_info.get("scorer", "PEMAIN")),
+			int(_pending_celeb_info.get("minute", int(_minute))),
+			str(_pending_celeb_info.get("assist", "")),
+			is_u_g
+		)
+		_result_timer = 2.35 if is_u_g else 1.75
+
+func _start_goal_celebration(scorer_name: String, goal_min: int, assist_name: String, is_user_goal: bool) -> void:
+	_celebrating_goal = true
+	_celebration_t = 0.0
+	_celebration_origin = _player_pos
+	_celebration_particles.clear()
+	var club: Dictionary = CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]
+	var c_pri: Color = UITheme.parse_color(club.get("primary", Color("#2563EB")), Color("#2563EB"))
+	var c_sec: Color = UITheme.parse_color(club.get("secondary", Color("#FFFFFF")), Color("#FFFFFF"))
+	var pal: Array[Color] = [UITheme.ACCENT_GOLD, c_pri, c_sec, Color("#FB7185"), Color("#38BDF8")]
+	for i in range(48):
+		var ang: float = randf() * TAU
+		var spd: float = randf_range(90.0, 290.0)
+		_celebration_particles.append({
+			"x": 480.0 + randf_range(-160.0, 160.0),
+			"y": 240.0 + randf_range(-80.0, 40.0),
+			"vx": cos(ang) * spd,
+			"vy": sin(ang) * spd - randf_range(60.0, 140.0),
+			"sz": randf_range(4.0, 8.0),
+			"col": pal[i % pal.size()],
+		})
+	if is_instance_valid(_celebration_confetti):
+		_celebration_confetti.visible = true
+		_celebration_confetti.queue_redraw()
+
+	# Build Goal Scorer Pop-Up Banner (Name + Minute + Score + Avatar!)
+	if is_instance_valid(_goal_popup_panel):
+		for ch in _goal_popup_panel.get_children():
+			_goal_popup_panel.remove_child(ch)
+			ch.queue_free()
+		var pop_sb := StyleBoxFlat.new()
+		pop_sb.bg_color = Color("#081326", 0.96)
+		pop_sb.border_color = UITheme.ACCENT_GOLD if is_user_goal else UITheme.ACCENT_CYAN
+		pop_sb.set_border_width_all(2)
+		pop_sb.border_width_left = 6
+		pop_sb.set_corner_radius_all(8)
+		pop_sb.content_margin_left = 12
+		pop_sb.content_margin_right = 14
+		pop_sb.content_margin_top = 8
+		pop_sb.content_margin_bottom = 8
+		_goal_popup_panel.add_theme_stylebox_override("panel", pop_sb)
+
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 12)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_goal_popup_panel.add_child(hb)
+
+		var av_wrap := PanelContainer.new()
+		av_wrap.custom_minimum_size = Vector2(64, 86)
+		av_wrap.add_theme_stylebox_override("panel", UITheme.make_box(Color("#12243F"), UITheme.ACCENT_GOLD if is_user_goal else UITheme.BORDER_CYAN, 1, 5))
+		av_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(av_wrap)
+		var av := PixelAvatar.new()
+		av.custom_minimum_size = Vector2(56, 78)
+		av.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if is_user_goal and CareerState.has_active_career:
+			av.configure_from_career()
+		else:
+			av.configure_random_npc(absi(scorer_name.hash()), club, false)
+		av.anim_mode = "CELEBRATE"
+		av_wrap.add_child(av)
+
+		var mid_vb := VBoxContainer.new()
+		mid_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mid_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+		mid_vb.add_theme_constant_override("separation", 3)
+		mid_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(mid_vb)
+
+		var tag_l := Label.new()
+		tag_l.text = "★ GOOOOL! SELEBRASI PEMAIN!" if is_user_goal else "★ GOOOOL TIM!"
+		tag_l.add_theme_font_override("font", UITheme.get_display_font())
+		tag_l.add_theme_font_size_override("font_size", 11)
+		tag_l.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		mid_vb.add_child(tag_l)
+
+		var nm_l := Label.new()
+		nm_l.text = scorer_name.to_upper()
+		nm_l.clip_text = true
+		nm_l.add_theme_font_override("font", UITheme.get_display_font())
+		nm_l.add_theme_font_size_override("font_size", 20)
+		nm_l.add_theme_color_override("font_color", Color.WHITE)
+		mid_vb.add_child(nm_l)
+
+		var fix_d: Dictionary = CareerState.get_current_fixture() if CareerState.has_active_career else {}
+		var my_code: String = str(club.get("code", "TIM")).to_upper()
+		var opp_code: String = str(fix_d.get("opp_code", "LWN")).to_upper()
+		var sub_txt: String = "%s %d - %d %s" % [my_code, _score_us, _score_them, opp_code]
+		if not assist_name.is_empty():
+			sub_txt = "ASSIST: %s  •  %s" % [assist_name.to_upper(), sub_txt]
+		var sub_l := Label.new()
+		sub_l.text = sub_txt
+		sub_l.add_theme_font_size_override("font_size", 10)
+		sub_l.add_theme_color_override("font_color", Color("#93C5FD"))
+		mid_vb.add_child(sub_l)
+
+		var min_box := PanelContainer.new()
+		min_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		min_box.custom_minimum_size = Vector2(68, 54)
+		min_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#3B1422"), UITheme.ACCENT_GOLD, 2, 6))
+		min_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(min_box)
+		var m_vb := VBoxContainer.new()
+		m_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+		m_vb.add_theme_constant_override("separation", 0)
+		m_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		min_box.add_child(m_vb)
+		var ml1 := Label.new()
+		ml1.text = "MENIT"
+		ml1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ml1.add_theme_font_size_override("font_size", 8)
+		ml1.add_theme_color_override("font_color", Color("#FCA5A5"))
+		var ml2 := Label.new()
+		ml2.text = "%d'" % maxi(1, goal_min)
+		ml2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ml2.add_theme_font_override("font", UITheme.get_display_font())
+		ml2.add_theme_font_size_override("font_size", 20)
+		ml2.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		m_vb.add_child(ml1)
+		m_vb.add_child(ml2)
+
+		_goal_popup_panel.visible = true
+		_goal_popup_panel.modulate.a = 0.0
+		_goal_popup_panel.pivot_offset = Vector2(220.0, 57.0)
+		_goal_popup_panel.scale = Vector2(0.82, 0.82)
+		var ptw := create_tween()
+		ptw.tween_property(_goal_popup_panel, "modulate:a", 1.0, 0.22)
+		ptw.parallel().tween_property(_goal_popup_panel, "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _process_goal_celebration(delta: float) -> void:
+	_celebration_t += delta
+	# 1. User player celebration run toward corner + joyful fist-pump hops!
+	var run_dir_x: float = 1.0 if _celebration_origin.x >= 0.0 else -1.0
+	if _celebration_t < 0.72:
+		_player_pos.x = clampf(_player_pos.x + run_dir_x * 4.6 * delta, -30.0, 30.0)
+		_player_pos.z = clampf(_player_pos.z + 2.4 * delta, -49.0, 42.0)
+		_player_pos.y = absf(sin(_celebration_t * 14.0)) * 0.25
+		_player_sprite.frame = 1 if fmod(_celebration_t, 0.24) < 0.12 else 2
+	else:
+		# Celebratory jump & triumphant fist-pump dance!
+		_player_pos.y = absf(sin((_celebration_t - 0.72) * 11.5)) * 0.68
+		_player_sprite.frame = 7 if fmod(_celebration_t, 0.30) < 0.15 else 0
+
+	# 2. Teammates sprint over & bounce around celebrating user
+	for ti in range(_teammate_positions.size()):
+		if ti >= _teammates.size() or not _teammates[ti].visible:
+			continue
+		var t_off := Vector3((-2.1 if ti % 2 == 0 else 2.1), 0.0, 1.5 + float(ti) * 0.6)
+		var tgt: Vector3 = _player_pos + t_off
+		var diff := Vector3(tgt.x - _teammate_positions[ti].x, 0.0, tgt.z - _teammate_positions[ti].z)
+		if diff.length() > 0.35:
+			_teammate_positions[ti] += diff.normalized() * 6.8 * delta
+			_teammates[ti].frame = 1 if fmod(_celebration_t + float(ti) * 0.1, 0.24) < 0.12 else 2
+		else:
+			_teammate_positions[ti].y = absf(sin((_celebration_t + float(ti) * 0.4) * 10.5)) * 0.48
+			_teammates[ti].frame = 7
+
+	# 3. Heroic celebration camera swoop toward the celebrating scorer
+	var zoom_t: float = clampf(_celebration_t / 0.85, 0.0, 1.0)
+	var pan_x: float = sin(_celebration_t * 1.4) * 2.2
+	_cam_target_pos = Vector3(_player_pos.x + pan_x, lerpf(8.5, 4.4, zoom_t), _player_pos.z + lerpf(11.5, 6.8, zoom_t))
+	_cam_look_pos = Vector3(_player_pos.x, 1.15 + _player_pos.y * 0.4, _player_pos.z)
+
+	# 4. Golden expanding pulse ring around the celebrating player
+	if _ring_imm != null:
+		_ring_imm.clear_surfaces()
+		var pulse_r: float = 0.9 + fmod(_celebration_t * 2.8, 2.2)
+		_ring_imm.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+		for ri in range(25):
+			var a: float = float(ri) * TAU / 24.0
+			_ring_imm.surface_add_vertex(Vector3(_player_pos.x + cos(a) * pulse_r, 0.08, _player_pos.z + sin(a) * pulse_r))
+		_ring_imm.surface_end()
+
+	# 5. Update 2D confetti burst particles
+	for pt in _celebration_particles:
+		pt["x"] = float(pt["x"]) + float(pt["vx"]) * delta
+		pt["vy"] = float(pt["vy"]) + 320.0 * delta
+		pt["y"] = float(pt["y"]) + float(pt["vy"]) * delta
+	if is_instance_valid(_celebration_confetti):
+		_celebration_confetti.queue_redraw()
+	_sync_3d_sprites()
+
+func _stop_goal_celebration() -> void:
+	_goal_replay_active = false
+	if is_instance_valid(_goal_replay_banner):
+		_goal_replay_banner.visible = false
+	if not _celebrating_goal:
+		return
+	_celebrating_goal = false
+	_player_pos.y = 0.0
+	for ti in range(_teammate_positions.size()):
+		_teammate_positions[ti].y = 0.0
+	if _ring_imm != null:
+		_ring_imm.clear_surfaces()
+	if is_instance_valid(_celebration_confetti):
+		_celebration_confetti.visible = false
+	if is_instance_valid(_goal_popup_panel):
+		_goal_popup_panel.visible = false
+	_sync_3d_sprites()
+
+func _draw_celebration_confetti() -> void:
+	if not is_instance_valid(_celebration_confetti) or not _celebrating_goal:
+		return
+	for pt in _celebration_particles:
+		var s: float = float(pt["sz"])
+		_celebration_confetti.draw_rect(Rect2(float(pt["x"]), float(pt["y"]), s, s * 0.65), pt["col"], true)
 
 func _update_last_shot(outcome: String) -> void:
 	if _shots_telemetry.is_empty():
@@ -3179,12 +3767,81 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 	_result_toast.visible = true
 	create_tween().tween_property(_result_toast, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
 
+func _resolve_carrier_tackle_outcome(carrier_pos: Vector3, def_idx: int, is_sliding: bool, is_user_controlled: bool) -> void:
+	if def_idx >= 0 and def_idx < _defenders.size():
+		_defenders[def_idx].frame = 3
+	_dragging = false
+	_aim_imm.clear_surfaces()
+	_ring_imm.clear_surfaces()
+	_moment_banner.visible = false
+	var drib_attr := CareerState.get_effective_attribute("dribel") if CareerState.has_active_career else 64
+	var agil := get_opp_defender_agility()
+	var foul_chance := clampf(0.28 + float(drib_attr - 58) * 0.0045 + (0.16 if is_sliding else 0.0) + (0.16 if _skill_burst_timer > 0.0 else 0.0) - (agil - 1.0) * 0.12, 0.24, 0.68)
+
+	if randf() < foul_chance and _moment_type != MomentType.PENALTY:
+		AudioSynth.play_whistle(false)
+		_controlling_teammate_idx = -1
+		_carry_tm_idx = -1
+		_shot_by_teammate = false
+		_carry_assist_pending = false
+		_adjust_rating(0.15, "DILANGGAR BEK")
+		if randf() < 0.45:
+			_opp_yellows += 1
+			var card_p: Dictionary = _pick_roster_player(false, false, false)
+			_add_rich_board_highlight(int(_minute), "YELLOW_CARD", "KARTU KUNING LAWAN!", "%s mengganjal keras pembawa bola!" % str(card_p.get("name", "BEK LAWAN")), card_p, {}, false)
+		var in_box: bool = (carrier_pos.z <= -36.0 and absf(carrier_pos.x) <= 20.16)
+		if in_box:
+			_pending_foul_moment = int(MomentType.PENALTY)
+			_pending_foul_spot = Vector3(0.0, 0.0, -41.5)
+			_ticker_lbl.text = "PELANGGARAN DI AREA PENALTI! Wasit menunjuk titik putih!"
+			_add_rich_board_highlight(int(_minute), "INFO", "HADIAH PENALTI!", "Bek lawan menjatuhkan pembawa bola di kotak penalti!", _get_user_roster_dict(), {}, true)
+			_show_moment_result("PELANGGARAN! HADIAH PENALTI!", UITheme.ACCENT_GOLD, 1.15)
+		else:
+			_pending_foul_moment = int(MomentType.FREE_KICK)
+			_pending_foul_spot = Vector3(clampf(carrier_pos.x, -26.0, 26.0), 0.0, clampf(carrier_pos.z, -35.6, -16.0))
+			_ticker_lbl.text = "PELANGGARAN BEK! Hadiah tendangan bebas di depan pertahanan lawan!"
+			_add_rich_board_highlight(int(_minute), "INFO", "TENDANGAN BEBAS!", "Tekel keras di luar kotak penalti berujung pelanggaran!", _get_user_roster_dict(), {}, true)
+			_show_moment_result("PELANGGARAN! TENDANGAN BEBAS!", UITheme.ACCENT_CYAN, 1.15)
+		return
+
+	# Clean tackle (bola kerebut)
+	AudioSynth.play_save()
+	if is_user_controlled:
+		_shots_telemetry.append({
+			"type": _moment_type_str(),
+			"outcome": "BLOCKED",
+			"pitchCoord": {"x": clampf((_ball_pos.x + 34.0) / 68.0, 0.05, 0.95), "y": clampf((52.5 - _ball_pos.z) / 52.5, 0.05, 0.95)},
+			"goalCoord": {"x": 0.5, "y": 0.5},
+			"distanceMeters": snappedf(_ball_pos.distance_to(Vector3(0, 0, -52.5)), 0.1),
+		})
+		if _controlling_teammate_idx >= 0:
+			if _user_assisted_pass:
+				_carry_assist_pending = true
+				_credit_key_pass_if_pending()
+			_show_moment_result("REKAN DIREBUT BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.2)
+		else:
+			_adjust_rating(-0.30, "DIREBUT BEK")
+			_show_moment_result("BOLA KEREBUT BEK!", UITheme.ACCENT_RED, 1.2)
+	else:
+		_credit_key_pass_if_pending()
+		_shot_by_teammate = false
+		_carry_assist_pending = false
+		_update_last_shot("BLOCKED")
+		_add_board_event(int(_minute), "INFO", "%d' Rekan yang membawa bola dihentikan bek lawan!" % int(_minute), false)
+		_show_moment_result("REKAN DIHENTIKAN BEK!", UITheme.ACCENT_GOLD if _key_pass_awarded else UITheme.ACCENT_RED, 1.35)
+
 func _advance_after_moment() -> void:
 	for tm in _teammates:
 		tm.visible = false
 	for df in _defenders:
 		df.visible = false
 	_trail_imm.clear_surfaces()
+
+	if _pending_foul_moment >= 0:
+		var next_foul := _pending_foul_moment as MomentType
+		_pending_foul_moment = -1
+		_trigger_key_moment(next_foul)
+		return
 
 	if run_mode == RunMode.PRACTICE_MODE:
 		_practice_round += 1
@@ -3223,13 +3880,20 @@ func _advance_after_moment() -> void:
 
 func _finish_career_match() -> void:
 	_phase = MatchPhase.FULLTIME
+	_board_hold_fast = false
+	if _quiz_bonus_energy:
+		_user_match_energy = minf(100.0, _user_match_energy + 4.0)
 	AudioSynth.play_whistle(true)
 	var shots_copy: Array = []
 	for s in _shots_telemetry:
 		shots_copy.append(s)
+	var net_extra_drain: int = int(round(_match_extra_energy_drain)) - (4 if _quiz_bonus_energy else 0)
+	var motm_p: Dictionary = _compute_match_motm_player()
 	var report := CareerState.finish_match({
 		"score_us": _score_us,
 		"score_them": _score_them,
+		"pen_us": _pen_us,
+		"pen_them": _pen_them,
 		"my_goals": _my_goals,
 		"my_assists": _my_assists,
 		"rating": _rating,
@@ -3240,7 +3904,8 @@ func _finish_career_match() -> void:
 		"shots": shots_copy,
 		"moviola_clip": _best_clip,
 		"goal_timeline": _goal_timeline.duplicate(true),
-		"extra_energy_drain": int(round(_match_extra_energy_drain)),
+		"motm_player": motm_p,
+		"extra_energy_drain": net_extra_drain,
 		"subbed_out": _user_subbed_out,
 		"sub_minute": _user_sub_minute,
 	})
@@ -3285,7 +3950,7 @@ func _sync_3d_sprites() -> void:
 	_player_sprite.global_position = _player_pos
 	_player_shadow.global_position = Vector3(_player_pos.x, 0.03, _player_pos.z)
 	_gk_sprite.global_position = _gk_pos
-	if absf(_gk_dive_dir) > 0.1 and _phase == MatchPhase.BALL_IN_FLIGHT:
+	if absf(_gk_dive_dir) > 0.1 and (_phase == MatchPhase.BALL_IN_FLIGHT or _goal_replay_active):
 		_gk_sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		_gk_sprite.rotation_degrees = Vector3(-12.0, 0.0, -28.0 if _gk_dive_dir > 0.0 else 28.0)
 	else:
@@ -3424,11 +4089,15 @@ func _draw_aim_and_ring() -> void:
 	_ring_imm.surface_end()
 
 	if not _dragging:
+		if _aim_power_pill != null:
+			_aim_power_pill.visible = false
 		return
 
 	var delta_px := _drag_start - _drag_current
 	if delta_px.length() < 12.0:
 		_power_lbl.text = "0%"
+		if _aim_power_pill != null:
+			_aim_power_pill.visible = false
 		return
 
 	var kek := CareerState.get_effective_attribute("kekuatan") if CareerState.has_active_career else 68
@@ -3443,9 +4112,12 @@ func _draw_aim_and_ring() -> void:
 		_moment_type == MomentType.FREE_KICK,
 		1.0, false
 	)
-	var pct := int(round(float(launch["power_ratio"]) * 100.0))
-	_power_lbl.text = "%d%%" % pct
-	_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	var pct := int(launch.get("power_pct", int(round(float(launch["power_ratio"]) * 100.0))))
+	var pwr_col: Color = SlingshotPhysics.get_power_color(pct)
+	var loft_tag := " • LAMBUNG" if bool(launch.get("is_lofted", false)) else " • DATAR"
+	_power_lbl.text = "%d%%%s" % [pct, loft_tag]
+	_power_lbl.add_theme_color_override("font_color", pwr_col)
+	aim_col = pwr_col
 
 	var is_header_qte := (_moment_type == MomentType.HEADER_CROSS or (_moment_type == MomentType.CORNER_KICK and not _corner_taker_is_user))
 	var preview_origin: Vector3 = Vector3(_player_pos.x, 1.55, _player_pos.z) if is_header_qte else _ball_pos
@@ -3476,8 +4148,28 @@ func _draw_aim_and_ring() -> void:
 				if _is_teammate_offside(aims_tm_idx):
 					_power_lbl.text = "%d%% • OFFSIDE!" % pct
 					_power_lbl.add_theme_color_override("font_color", UITheme.ACCENT_RED)
+					pwr_col = UITheme.ACCENT_RED
 				else:
 					_power_lbl.text = "%d%% • %s" % [pct, ("SUNDUL UMPAN" if is_header_qte else "UMPAN")]
+
+		# Floating Power Percentage Pill pinned right on the projected shot direction!
+		if _aim_power_pill != null and _camera != null:
+			var mid_pt: Vector3 = pts[mini(pts.size() - 1, maxi(1, int(pts.size() * 0.45)))]
+			if not _camera.is_position_behind(mid_pt):
+				var sp2 := _camera.unproject_position(mid_pt)
+				var vp := get_viewport_rect().size
+				_aim_power_pill_lbl.text = "%d%%%s" % [pct, " ▲" if bool(launch.get("is_lofted", false)) else ""]
+				_aim_power_pill_lbl.add_theme_color_override("font_color", pwr_col)
+				_aim_power_pill.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081326E8"), pwr_col, 2, 6))
+				var p_sz := Vector2(78.0 if bool(launch.get("is_lofted", false)) else 58.0, 26.0)
+				_aim_power_pill.size = p_sz
+				_aim_power_pill.position = Vector2(
+					clampf(sp2.x - p_sz.x * 0.5, 12.0, maxf(12.0, vp.x - p_sz.x - 12.0)),
+					clampf(sp2.y - 36.0, 56.0, maxf(56.0, vp.y - p_sz.y - 12.0))
+				)
+				_aim_power_pill.visible = true
+			else:
+				_aim_power_pill.visible = false
 		_aim_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 		for i in range(pts.size() - 1):
 			var p0 := pts[i]
@@ -3952,185 +4644,276 @@ func _on_skip_or_exit() -> void:
 	_finish_career_match()
 
 func _build_board_and_overlays() -> void:
-	# 1. Crimson 2D Live Match Broadcast Board (matching 05_v2_match_board.png!)
-	_board_panel = ColorRect.new()
-	_board_panel.color = Color("#561121")
+	# 1. Broadcast Highlight Board (Gambar 6 2-Column Split + Competition-Adaptive Themes)
+	_board_panel = Control.new()
 	_board_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_board_panel.visible = false
 	add_child(_board_panel)
 
-	var bvb := VBoxContainer.new()
-	bvb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bvb.offset_left = 10
-	bvb.offset_right = -10
-	bvb.offset_top = 10
-	bvb.offset_bottom = -10
-	bvb.add_theme_constant_override("separation", 8)
-	_board_panel.add_child(bvb)
+	_board_bg = Control.new()
+	_board_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_board_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board_bg.draw.connect(_draw_board_backdrop)
+	_board_panel.add_child(_board_bg)
 
+	var outer_hb := HBoxContainer.new()
+	outer_hb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	outer_hb.offset_left = 12
+	outer_hb.offset_right = -12
+	outer_hb.offset_top = 10
+	outer_hb.offset_bottom = -10
+	outer_hb.add_theme_constant_override("separation", 12)
+	_board_panel.add_child(outer_hb)
+
+	# =========================================================================
+	# LEFT BROADCAST RAIL (~356px): Scoreboard | 2 Tabs | Momentum + 4 Stats | Rating/Energy | Controls
+	# =========================================================================
+	var left_rail := VBoxContainer.new()
+	left_rail.custom_minimum_size = Vector2(356, 0)
+	left_rail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left_rail.add_theme_constant_override("separation", 6)
+	outer_hb.add_child(left_rail)
+
+	# 1A. Broadcast Scoreboard Card
 	var top_card := PanelContainer.new()
-	top_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#9A1B32"), Color("#FFFFFF"), 2, 4))
-	bvb.add_child(top_card)
+	top_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0A1D4D", 0.72), Color("#60A5FA", 0.35), 1, 6))
+	left_rail.add_child(top_card)
 	var thb := HBoxContainer.new()
 	thb.add_theme_constant_override("separation", 8)
 	top_card.add_child(thb)
-	_board_min_lbl = Label.new()
-	_board_min_lbl.text = "0'"
-	_board_min_lbl.custom_minimum_size = Vector2(56, 46)
-	_board_min_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_board_min_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_board_min_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_board_min_lbl.add_theme_font_size_override("font_size", 22)
-	_board_min_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	thb.add_child(_board_min_lbl)
 
-	_board_score_lbl = Label.new()
-	_board_score_lbl.text = "LIGA KE-3 • 0 - 0"
-	_board_score_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_board_score_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_board_score_lbl.add_theme_font_size_override("font_size", 16)
-	thb.add_child(_board_score_lbl)
+	_board_emblem = Control.new()
+	_board_emblem.custom_minimum_size = Vector2(56, 56)
+	_board_emblem.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_board_emblem.draw.connect(_draw_comp_emblem)
+	thb.add_child(_board_emblem)
+
+	var hdr_vb := VBoxContainer.new()
+	hdr_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr_vb.add_theme_constant_override("separation", 2)
+	thb.add_child(hdr_vb)
+
+	var comp_top_hb := HBoxContainer.new()
+	comp_top_hb.add_theme_constant_override("separation", 4)
+	hdr_vb.add_child(comp_top_hb)
+	_board_comp_lbl = Label.new()
+	_board_comp_lbl.text = "PIALA ELITE"
+	_board_comp_lbl.clip_text = true
+	_board_comp_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_comp_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_comp_lbl.add_theme_font_size_override("font_size", 10)
+	_board_comp_lbl.add_theme_color_override("font_color", Color("#E2ECFF"))
+	comp_top_hb.add_child(_board_comp_lbl)
 
 	var skip_b := Button.new()
 	skip_b.text = "SKIP >>"
-	UITheme.style_btn(skip_b, Color("#4E2424"), UITheme.ACCENT_RED, 11)
+	skip_b.custom_minimum_size = Vector2(56, 18)
+	skip_b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(skip_b, Color("#4E2424", 0.85), UITheme.ACCENT_RED, 9)
 	skip_b.pressed.connect(_on_skip_or_exit)
-	thb.add_child(skip_b)
+	comp_top_hb.add_child(skip_b)
 
-	# Team Card Discipline Warning Bar (visible whenever any team exceeds >2 yellow or >2 red cards)
-	_board_cards_bar = PanelContainer.new()
-	_board_cards_bar.visible = false
-	_board_cards_bar.add_theme_stylebox_override("panel", UITheme.make_box(Color("#47131A"), UITheme.ACCENT_GOLD, 2, 4))
-	bvb.add_child(_board_cards_bar)
-	_board_cards_lbl = Label.new()
-	_board_cards_lbl.text = ""
-	_board_cards_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_board_cards_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_board_cards_lbl.add_theme_font_size_override("font_size", 11)
-	_board_cards_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	_board_cards_bar.add_child(_board_cards_lbl)
+	# Team Row 1 (Home)
+	var r1 := HBoxContainer.new()
+	r1.add_theme_constant_override("separation", 6)
+	hdr_vb.add_child(r1)
+	_board_home_badge_wrap = CenterContainer.new()
+	_board_home_badge_wrap.custom_minimum_size = Vector2(20, 18)
+	r1.add_child(_board_home_badge_wrap)
+	_board_home_lbl = Label.new()
+	_board_home_lbl.text = "KLUB KITA"
+	_board_home_lbl.clip_text = true
+	_board_home_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_home_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_home_lbl.add_theme_font_size_override("font_size", 12)
+	_board_home_lbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	r1.add_child(_board_home_lbl)
+	var s1_box := PanelContainer.new()
+	s1_box.custom_minimum_size = Vector2(28, 22)
+	s1_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1D4ED8", 0.75), Color("#93C5FD", 0.5), 1, 3))
+	r1.add_child(s1_box)
+	_board_home_score = Label.new()
+	_board_home_score.text = "0"
+	_board_home_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_home_score.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_board_home_score.add_theme_font_override("font", UITheme.get_display_font())
+	_board_home_score.add_theme_font_size_override("font_size", 16)
+	_board_home_score.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	s1_box.add_child(_board_home_score)
 
-	# User Substituted Status Banner (visible after Coach subs user off)
-	_board_sub_banner = PanelContainer.new()
-	_board_sub_banner.visible = false
-	_board_sub_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A263C"), UITheme.ACCENT_CYAN, 2, 4))
-	bvb.add_child(_board_sub_banner)
-	var sub_b_lbl := Label.new()
-	sub_b_lbl.name = "SubLbl"
-	sub_b_lbl.text = "DIGANTI PELATIH — MENONTON SISA LAGA DARI BANGKU CADANGAN"
-	sub_b_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub_b_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	sub_b_lbl.add_theme_font_size_override("font_size", 11)
-	sub_b_lbl.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
-	_board_sub_banner.add_child(sub_b_lbl)
+	# Team Row 2 (Away)
+	var r2 := HBoxContainer.new()
+	r2.add_theme_constant_override("separation", 6)
+	hdr_vb.add_child(r2)
+	_board_away_badge_wrap = CenterContainer.new()
+	_board_away_badge_wrap.custom_minimum_size = Vector2(20, 18)
+	r2.add_child(_board_away_badge_wrap)
+	_board_away_lbl = Label.new()
+	_board_away_lbl.text = "LAWAN"
+	_board_away_lbl.clip_text = true
+	_board_away_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_away_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_away_lbl.add_theme_font_size_override("font_size", 12)
+	_board_away_lbl.add_theme_color_override("font_color", Color("#D1DCEB"))
+	r2.add_child(_board_away_lbl)
+	var s2_box := PanelContainer.new()
+	s2_box.custom_minimum_size = Vector2(28, 22)
+	s2_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1D4ED8", 0.75), Color("#93C5FD", 0.5), 1, 3))
+	r2.add_child(s2_box)
+	_board_away_score = Label.new()
+	_board_away_score.text = "0"
+	_board_away_score.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_away_score.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_board_away_score.add_theme_font_override("font", UITheme.get_display_font())
+	_board_away_score.add_theme_font_size_override("font_size", 16)
+	_board_away_score.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	s2_box.add_child(_board_away_score)
 
-	var f_scroll := ScrollContainer.new()
-	var body_hb := HBoxContainer.new()
-	body_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body_hb.add_theme_constant_override("separation", 10)
-	bvb.add_child(body_hb)
+	# Bottom Header Subrow: Stadium left + White Capsule Clock Pill right
+	var stad_hb := HBoxContainer.new()
+	hdr_vb.add_child(stad_hb)
+	_board_stad_lbl = Label.new()
+	_board_stad_lbl.text = "STADION NASIONAL"
+	_board_stad_lbl.clip_text = true
+	_board_stad_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_stad_lbl.add_theme_font_size_override("font_size", 9)
+	_board_stad_lbl.add_theme_color_override("font_color", Color("#9EB4D8"))
+	stad_hb.add_child(_board_stad_lbl)
 
-	var left_col := VBoxContainer.new()
-	left_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left_col.size_flags_stretch_ratio = 0.48
-	left_col.add_theme_constant_override("separation", 5)
-	body_hb.add_child(left_col)
+	var clk_pill := PanelContainer.new()
+	clk_pill.custom_minimum_size = Vector2(64, 20)
+	clk_pill.add_theme_stylebox_override("panel", UITheme.make_box(Color("#E6ECF4"), Color("#FFFFFF"), 1, 9))
+	stad_hb.add_child(clk_pill)
+	_board_min_lbl = Label.new()
+	_board_min_lbl.text = "0'"
+	_board_min_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_min_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_board_min_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_min_lbl.add_theme_font_size_override("font_size", 12)
+	_board_min_lbl.add_theme_color_override("font_color", Color("#0E1A30"))
+	clk_pill.add_child(_board_min_lbl)
 
-	var right_col := VBoxContainer.new()
-	right_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right_col.size_flags_stretch_ratio = 0.52
-	right_col.add_theme_constant_override("separation", 5)
-	body_hb.add_child(right_col)
+	_board_score_lbl = Label.new()
+	_board_score_lbl.visible = false
+	top_card.add_child(_board_score_lbl)
 
-	# Possession + Timeline Track
+	# 1B. 2 Sleek View Toggle Tabs (SOROTAN | SKUAD, matching Gambar 6)
+	var tab_hb := HBoxContainer.new()
+	tab_hb.add_theme_constant_override("separation", 6)
+	left_rail.add_child(tab_hb)
+	_board_tab_btns.clear()
+	var tab_names := ["▶ SOROTAN", "● SKUAD"]
+	for ti in range(tab_names.size()):
+		var tb := Button.new()
+		tb.text = tab_names[ti]
+		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tb.custom_minimum_size = Vector2(0, 28)
+		tb.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var cap_ti := ti
+		tb.pressed.connect(func(): AudioSynth.play_click(); _switch_board_tab(cap_ti))
+		tab_hb.add_child(tb)
+		_board_tab_btns.append(tb)
+
+	# 1C. Momentum Timeline + 4 Compact Bidirectional Live Stats Panel (Gambar 6!)
 	var poss_box := PanelContainer.new()
-	poss_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#360A14"), Color("#842838"), 1, 4))
-	left_col.add_child(poss_box)
+	poss_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	poss_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#09193D", 0.65), Color("#60A5FA", 0.25), 1, 6))
+	left_rail.add_child(poss_box)
 	var pvb := VBoxContainer.new()
-	pvb.add_theme_constant_override("separation", 3)
+	pvb.add_theme_constant_override("separation", 5)
 	poss_box.add_child(pvb)
 	_board_poss_lbl = Label.new()
 	_board_poss_lbl.text = "PENGUASAAN BOLA 52%"
 	_board_poss_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_board_poss_lbl.add_theme_font_size_override("font_size", 11)
+	_board_poss_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_poss_lbl.add_theme_font_size_override("font_size", 12)
+	_board_poss_lbl.add_theme_color_override("font_color", Color("#FB7185"))
 	pvb.add_child(_board_poss_lbl)
 	var p_bg := ColorRect.new()
-	p_bg.color = Color("#1F080D")
-	p_bg.custom_minimum_size = Vector2(0, 6)
+	p_bg.color = Color("#0F172A", 0.7)
+	p_bg.custom_minimum_size = Vector2(0, 4)
 	pvb.add_child(p_bg)
 	_board_poss_bar = ColorRect.new()
-	_board_poss_bar.color = Color("#EBF1F6")
-	_board_poss_bar.custom_minimum_size = Vector2(200, 6)
+	_board_poss_bar.color = Color("#38BDF8")
+	_board_poss_bar.custom_minimum_size = Vector2(180, 4)
 	p_bg.add_child(_board_poss_bar)
 	_board_timeline = Control.new()
-	_board_timeline.custom_minimum_size = Vector2(0, 22)
+	_board_timeline.custom_minimum_size = Vector2(0, 72)
 	_board_timeline.draw.connect(_draw_board_timeline)
 	pvb.add_child(_board_timeline)
 
-	# Featured Player Highlight Card (enlarged Portrait(s), Event Badge & Exact Minute!)
-	var hl_box := PanelContainer.new()
-	hl_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hl_box.custom_minimum_size = Vector2(0, 210)
-	hl_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#541222"), Color("#D64056"), 2, 8))
-	left_col.add_child(hl_box)
-	var hl_vb := VBoxContainer.new()
-	hl_vb.alignment = BoxContainer.ALIGNMENT_CENTER
-	hl_vb.add_theme_constant_override("separation", 8)
-	hl_box.add_child(hl_vb)
+	_board_mini_stats_vb = VBoxContainer.new()
+	_board_mini_stats_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_board_mini_stats_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	_board_mini_stats_vb.add_theme_constant_override("separation", 5)
+	pvb.add_child(_board_mini_stats_vb)
+	_board_stats_vb = _board_mini_stats_vb
 
-	_board_hl_badge = Label.new()
-	_board_hl_badge.text = "0' • KICKOFF"
-	_board_hl_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_board_hl_badge.add_theme_font_override("font", UITheme.get_display_font())
-	_board_hl_badge.add_theme_font_size_override("font_size", 15)
-	_board_hl_badge.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	hl_vb.add_child(_board_hl_badge)
+	# 1D. Rating + Sparkline | Energy Bar (Gambar 6 bottom-left)
+	var bot_top := HBoxContainer.new()
+	bot_top.add_theme_constant_override("separation", 6)
+	left_rail.add_child(bot_top)
 
-	_board_hl_portraits = HBoxContainer.new()
-	_board_hl_portraits.alignment = BoxContainer.ALIGNMENT_CENTER
-	_board_hl_portraits.add_theme_constant_override("separation", 14)
-	hl_vb.add_child(_board_hl_portraits)
-
-	_board_hl_lbl = Label.new()
-	_board_hl_lbl.text = "KICKOFF! MENUNGGU MOMEN PERTANDINGAN..."
-	_board_hl_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_board_hl_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_board_hl_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_board_hl_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_board_hl_lbl.add_theme_font_size_override("font_size", 13)
-	hl_vb.add_child(_board_hl_lbl)
-
-	# Bottom Rating/Energy + Tactical Strip inside Left Col
-	var stat_hb := HBoxContainer.new()
-	stat_hb.add_theme_constant_override("separation", 8)
-	left_col.add_child(stat_hb)
+	var r_panel := PanelContainer.new()
+	r_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081533", 0.78), Color("#60A5FA", 0.25), 1, 5))
+	bot_top.add_child(r_panel)
+	var r_hb := HBoxContainer.new()
+	r_hb.add_theme_constant_override("separation", 6)
+	r_panel.add_child(r_hb)
 	_board_rating_lbl = Label.new()
-	_board_rating_lbl.text = "RATING 6.2"
-	_board_rating_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_rating_lbl.text = "RATING\n6,2"
 	_board_rating_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_board_rating_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	stat_hb.add_child(_board_rating_lbl)
-	_board_energy_lbl = Label.new()
-	_board_energy_lbl.text = "ENERGI 100%"
-	_board_energy_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN)
-	stat_hb.add_child(_board_energy_lbl)
+	_board_rating_lbl.add_theme_font_size_override("font_size", 13)
+	_board_rating_lbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	r_hb.add_child(_board_rating_lbl)
+	_board_sparkline = Control.new()
+	_board_sparkline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_sparkline.custom_minimum_size = Vector2(54, 28)
+	_board_sparkline.draw.connect(_draw_rating_sparkline)
+	r_hb.add_child(_board_sparkline)
 
+	var e_panel := PanelContainer.new()
+	e_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	e_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color("#081533", 0.78), Color("#60A5FA", 0.25), 1, 5))
+	bot_top.add_child(e_panel)
+	var e_vb := VBoxContainer.new()
+	e_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	e_vb.add_theme_constant_override("separation", 3)
+	e_panel.add_child(e_vb)
+	var e_top := HBoxContainer.new()
+	e_vb.add_child(e_top)
+	var e_title := Label.new()
+	e_title.text = "ENERGI"
+	e_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	e_title.add_theme_font_size_override("font_size", 9)
+	e_title.add_theme_color_override("font_color", UITheme.TEXT_MUTED)
+	e_top.add_child(e_title)
+	_board_energy_lbl = Label.new()
+	_board_energy_lbl.text = "100%"
+	_board_energy_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_energy_lbl.add_theme_font_size_override("font_size", 11)
+	_board_energy_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN)
+	e_top.add_child(_board_energy_lbl)
 	var e_bg := ColorRect.new()
-	e_bg.color = Color("#240A10")
-	e_bg.custom_minimum_size = Vector2(0, 6)
-	left_col.add_child(e_bg)
+	e_bg.color = Color("#111B2E")
+	e_bg.custom_minimum_size = Vector2(0, 7)
+	e_vb.add_child(e_bg)
 	_board_energy_bar = ColorRect.new()
 	_board_energy_bar.color = UITheme.ACCENT_GREEN
-	_board_energy_bar.custom_minimum_size = Vector2(220, 6)
+	_board_energy_bar.custom_minimum_size = Vector2(120, 7)
 	e_bg.add_child(_board_energy_bar)
 
+	# 1E. Tactical Controls Row (STRATEGI | INTENSITAS | TAHAN | II | x1)
 	var tac_hb := HBoxContainer.new()
 	tac_hb.add_theme_constant_override("separation", 4)
-	left_col.add_child(tac_hb)
+	left_rail.add_child(tac_hb)
 	_strat_btn = Button.new()
 	_strat_btn.text = "STRATEGI\nSEIMBANG"
 	_strat_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(_strat_btn, Color("#885A22"), UITheme.ACCENT_GOLD, 10)
+	_strat_btn.custom_minimum_size = Vector2(0, 38)
+	_strat_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(_strat_btn, Color("#B46924"), UITheme.ACCENT_GOLD, 9)
 	_strat_btn.pressed.connect(func():
 		AudioSynth.play_click()
 		var opts := ["SEIMBANG", "MENYERANG", "BERTAHAN"]
@@ -4144,7 +4927,9 @@ func _build_board_and_overlays() -> void:
 	_inten_btn = Button.new()
 	_inten_btn.text = "INTENSITAS\nSEDANG"
 	_inten_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(_inten_btn, Color("#7A4A20"), UITheme.ACCENT_GOLD, 10)
+	_inten_btn.custom_minimum_size = Vector2(0, 38)
+	_inten_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(_inten_btn, Color("#A85B1E"), UITheme.ACCENT_GOLD, 9)
 	_inten_btn.pressed.connect(func():
 		AudioSynth.play_click()
 		var opts := ["RENDAH", "SEDANG", "TINGGI"]
@@ -4155,33 +4940,162 @@ func _build_board_and_overlays() -> void:
 	)
 	tac_hb.add_child(_inten_btn)
 
-	var pause_b := Button.new()
-	pause_b.text = "II"
-	pause_b.custom_minimum_size = Vector2(36, 36)
-	UITheme.style_btn(pause_b, Color("#240A10"), UITheme.BORDER_STEEL, 12)
-	pause_b.pressed.connect(func(): AudioSynth.play_click(); _open_pause_menu())
-	tac_hb.add_child(pause_b)
+	var hold_b := Button.new()
+	hold_b.text = "▸▸\nTAHAN"
+	hold_b.custom_minimum_size = Vector2(54, 38)
+	hold_b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(hold_b, Color("#0E2244"), UITheme.ACCENT_CYAN, 9)
+	hold_b.button_down.connect(func(): _board_hold_fast = true; AudioSynth.play_click())
+	hold_b.button_up.connect(func(): _board_hold_fast = false)
+	tac_hb.add_child(hold_b)
 
-	# Scrollable Commentary Log in Right Col
-	var log_hdr := UITheme.make_section_header("KOMENTAR LANGSUNG")
-	right_col.add_child(log_hdr)
-	var feed_panel := PanelContainer.new()
-	feed_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	feed_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color("#320912"), Color("#782434"), 1, 6))
-	right_col.add_child(feed_panel)
+	_board_pause_btn = Button.new()
+	_board_pause_btn.text = "II"
+	_board_pause_btn.custom_minimum_size = Vector2(34, 38)
+	_board_pause_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(_board_pause_btn, Color("#0E1D38"), UITheme.BORDER_STEEL, 11)
+	_board_pause_btn.pressed.connect(func(): AudioSynth.play_click(); _open_pause_menu())
+	tac_hb.add_child(_board_pause_btn)
+
+	_board_spd_btn = Button.new()
+	_board_spd_btn.text = "x1"
+	_board_spd_btn.custom_minimum_size = Vector2(36, 38)
+	_board_spd_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UITheme.style_btn(_board_spd_btn, Color("#0E1D38"), UITheme.ACCENT_CYAN, 11)
+	_board_spd_btn.pressed.connect(func(): _on_toggle_speed(); _board_spd_btn.text = "x%d" % int(_sim_speed))
+	tac_hb.add_child(_board_spd_btn)
+
+	# =========================================================================
+	# RIGHT STAGE COLUMN (~570px): BIG HERO HIGHLIGHT + SMALL COMPACT FEED (Gambar 6!)
+	# =========================================================================
+	var right_stage := VBoxContainer.new()
+	right_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_stage.add_theme_constant_override("separation", 8)
+	outer_hb.add_child(right_stage)
+
+	# Card Warning & User Subbed Banners
+	_board_cards_bar = PanelContainer.new()
+	_board_cards_bar.visible = false
+	_board_cards_bar.add_theme_stylebox_override("panel", UITheme.make_box(Color("#47131A", 0.9), UITheme.ACCENT_GOLD, 1, 4))
+	right_stage.add_child(_board_cards_bar)
+	_board_cards_lbl = Label.new()
+	_board_cards_lbl.text = ""
+	_board_cards_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_board_cards_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_cards_lbl.add_theme_font_size_override("font_size", 10)
+	_board_cards_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	_board_cards_bar.add_child(_board_cards_lbl)
+
+	_board_sub_banner = PanelContainer.new()
+	_board_sub_banner.visible = false
+	_board_sub_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A263C", 0.9), UITheme.ACCENT_CYAN, 1, 4))
+	right_stage.add_child(_board_sub_banner)
+	var sub_b_lbl := Label.new()
+	sub_b_lbl.name = "SubLbl"
+	sub_b_lbl.text = "DIGANTI PELATIH • MENONTON SISA LAGA DARI BANGKU CADANGAN"
+	sub_b_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_b_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	sub_b_lbl.add_theme_font_size_override("font_size", 10)
+	sub_b_lbl.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	_board_sub_banner.add_child(sub_b_lbl)
+
+	var views_wrap := Control.new()
+	views_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_stage.add_child(views_wrap)
+	_board_views.clear()
+
+	# View 0: BIG HERO HIGHLIGHT BANNER + SMALL COMPACT COMMENTARY FEED
+	var feed_col := VBoxContainer.new()
+	feed_col.set_anchors_preset(Control.PRESET_FULL_RECT)
+	feed_col.add_theme_constant_override("separation", 10)
+	views_wrap.add_child(feed_col)
+	_board_views.append(feed_col)
+
+	_board_hero_card = PanelContainer.new()
+	_board_hero_card.custom_minimum_size = Vector2(0, 108)
+	var hero_sb := StyleBoxFlat.new()
+	hero_sb.bg_color = Color("#122D6D", 0.72)
+	hero_sb.border_color = Color("#60A5FA", 0.50)
+	hero_sb.border_width_left = 4
+	hero_sb.border_width_top = 1
+	hero_sb.border_width_right = 1
+	hero_sb.border_width_bottom = 1
+	hero_sb.set_corner_radius_all(6)
+	hero_sb.content_margin_left = 10
+	hero_sb.content_margin_right = 12
+	hero_sb.content_margin_top = 8
+	hero_sb.content_margin_bottom = 8
+	_board_hero_card.add_theme_stylebox_override("panel", hero_sb)
+	feed_col.add_child(_board_hero_card)
+
+	var hl_hb := HBoxContainer.new()
+	hl_hb.alignment = BoxContainer.ALIGNMENT_BEGIN
+	hl_hb.add_theme_constant_override("separation", 14)
+	_board_hero_card.add_child(hl_hb)
+
+	var port_frame := PanelContainer.new()
+	port_frame.custom_minimum_size = Vector2(82, 86)
+	port_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	port_frame.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0D1D42", 0.85), Color("#93C5FD", 0.45), 1, 5))
+	hl_hb.add_child(port_frame)
+	_board_hl_portraits = HBoxContainer.new()
+	_board_hl_portraits.alignment = BoxContainer.ALIGNMENT_CENTER
+	port_frame.add_child(_board_hl_portraits)
+
+	var hl_text_vb := VBoxContainer.new()
+	hl_text_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hl_text_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hl_text_vb.add_theme_constant_override("separation", 3)
+	hl_hb.add_child(hl_text_vb)
+
+	_board_hl_badge = Label.new()
+	_board_hl_badge.text = "● 0' • KICKOFF"
+	_board_hl_badge.add_theme_font_override("font", UITheme.get_display_font())
+	_board_hl_badge.add_theme_font_size_override("font_size", 11)
+	_board_hl_badge.add_theme_color_override("font_color", Color("#93C5FD"))
+	hl_text_vb.add_child(_board_hl_badge)
+
+	_board_hl_name_lbl = Label.new()
+	_board_hl_name_lbl.text = "PERTANDINGAN DIMULAI"
+	_board_hl_name_lbl.clip_text = true
+	_board_hl_name_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_hl_name_lbl.add_theme_font_size_override("font_size", 21)
+	_board_hl_name_lbl.add_theme_color_override("font_color", Color.WHITE)
+	hl_text_vb.add_child(_board_hl_name_lbl)
+
+	_board_hl_action_lbl = Label.new()
+	_board_hl_action_lbl.text = "MENUNGGU MOMEN PENTING..."
+	_board_hl_action_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_board_hl_action_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_board_hl_action_lbl.add_theme_font_size_override("font_size", 15)
+	_board_hl_action_lbl.add_theme_color_override("font_color", Color("#86EFAC"))
+	hl_text_vb.add_child(_board_hl_action_lbl)
+
+	_board_hl_lbl = Label.new()
+	_board_hl_lbl.visible = false
+	hl_text_vb.add_child(_board_hl_lbl)
+
+	# Small Compact Feed resting cleanly over the competition pitch/star watermark
+	var f_scroll := ScrollContainer.new()
 	f_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	feed_panel.add_child(f_scroll)
+	f_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	feed_col.add_child(f_scroll)
 	_board_feed_vb = VBoxContainer.new()
 	_board_feed_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_board_feed_vb.add_theme_constant_override("separation", 4)
 	f_scroll.add_child(_board_feed_vb)
 
-	var spd_b := Button.new()
-	spd_b.text = "x1"
-	spd_b.custom_minimum_size = Vector2(40, 36)
-	UITheme.style_btn(spd_b, Color("#240A10"), UITheme.ACCENT_CYAN, 12)
-	spd_b.pressed.connect(func(): _on_toggle_speed(); spd_b.text = "x%d" % int(_sim_speed))
-	tac_hb.add_child(spd_b)
+	# View 1: SKUAD
+	var sq_scroll := ScrollContainer.new()
+	sq_scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sq_scroll.visible = false
+	views_wrap.add_child(sq_scroll)
+	_board_squad_vb = VBoxContainer.new()
+	_board_squad_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_board_squad_vb.add_theme_constant_override("separation", 6)
+	sq_scroll.add_child(_board_squad_vb)
+	_board_views.append(sq_scroll)
 
 	# 2. Halftime Locker Panel
 	_halftime_panel = Control.new()
@@ -4201,19 +5115,576 @@ func _build_board_and_overlays() -> void:
 	_lineup_panel.visible = false
 	add_child(_lineup_panel)
 
+	# 5. Coin Flip Panel (after 120' draw in 8 BESAR / SEMI / FINAL)
+	_coin_flip_panel = Control.new()
+	_coin_flip_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_coin_flip_panel.visible = false
+	add_child(_coin_flip_panel)
+
+	# 6. Penalty Shootout Panel
+	_pso_panel = Control.new()
+	_pso_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pso_panel.visible = false
+	add_child(_pso_panel)
+
+	# 7. Pitch Invader Popup Panel
+	_invader_panel = Control.new()
+	_invader_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_invader_panel.visible = false
+	add_child(_invader_panel)
+
+func _get_active_comp_theme() -> Dictionary:
+	var comp := "LIGA"
+	var nat_id := 0
+	if CareerState.has_active_career:
+		var fix := CareerState.get_current_fixture()
+		comp = str(fix.get("comp", "LIGA"))
+		nat_id = int(CareerState.get_current_club().get("nation_id", 0))
+	return GameData.get_competition_theme(comp, nat_id)
+
+func _draw_board_backdrop() -> void:
+	if _board_bg == null:
+		return
+	var s := _board_bg.size
+	if s.x <= 0 or s.y <= 0:
+		return
+	var th := _get_active_comp_theme()
+	var top_col: Color = th.get("bg_top", Color("#132D72"))
+	var bot_col: Color = th.get("bg_bot", Color("#0B1B4C"))
+	var acc_col: Color = th.get("accent", Color("#38BDF8"))
+	var pat: String = str(th.get("pattern", "stars"))
+
+	# Vertical gradient backdrop bands
+	var bands := 14
+	var bh := s.y / float(bands)
+	for i in range(bands):
+		var t := float(i) / float(bands - 1)
+		_board_bg.draw_rect(Rect2(0, float(i) * bh, s.x, bh + 1.5), top_col.lerp(bot_col, t))
+
+	# Unique procedural pattern per competition
+	if pat == "stars":
+		for i in range(28):
+			var sx := fmod(float(i * 197 + 43), s.x)
+			var sy := fmod(float(i * 113 + 29), s.y)
+			var r := 2.0 + float(i % 4) * 1.4
+			_board_bg.draw_circle(Vector2(sx, sy), r, Color(1, 1, 1, 0.08 + 0.04 * float(i % 3)))
+			if i % 4 == 0:
+				_board_bg.draw_line(Vector2(sx - 8, sy), Vector2(sx + 8, sy), Color(acc_col.r, acc_col.g, acc_col.b, 0.10), 1.5)
+				_board_bg.draw_line(Vector2(sx, sy - 8), Vector2(sx, sy + 8), Color(acc_col.r, acc_col.g, acc_col.b, 0.10), 1.5)
+	elif pat == "waves":
+		for i in range(6):
+			var y0 := s.y * (0.12 + float(i) * 0.15)
+			_board_bg.draw_line(Vector2(0, y0 + 35), Vector2(s.x, y0 - 45), Color(acc_col.r, acc_col.g, acc_col.b, 0.10), 18.0)
+	elif pat == "beams":
+		for i in range(7):
+			var x0 := s.x * (float(i) / 6.0)
+			_board_bg.draw_line(Vector2(x0 - 80, 0), Vector2(x0 + 140, s.y), Color(acc_col.r, acc_col.g, acc_col.b, 0.09), 28.0)
+	elif pat == "rays":
+		var origin := Vector2(s.x * 0.5, s.y * 0.22)
+		for i in range(18):
+			var ang := float(i) * TAU / 18.0
+			var p2 := origin + Vector2(cos(ang), sin(ang)) * (s.x * 0.8)
+			_board_bg.draw_line(origin, p2, Color(acc_col.r, acc_col.g, acc_col.b, 0.08), 16.0)
+		for j in range(24):
+			var fx := fmod(float(j * 173 + 61), s.x)
+			var fy := fmod(float(j * 97 + 19), s.y)
+			var fc: Color = [Color("#FACC15", 0.22), Color("#38BDF8", 0.22), Color("#F43F5E", 0.22), Color("#4ADE80", 0.22)][j % 4]
+			_board_bg.draw_rect(Rect2(fx, fy, 5, 3), fc)
+	else:
+		_board_bg.draw_rect(Rect2(0, 0, s.x, s.y * 0.35), Color(acc_col.r, acc_col.g, acc_col.b, 0.08))
+
+	# Faint giant pitch center line & center circle (+ star ring for Elite) centered behind right stage (Gambar 6!)
+	var mid_y := s.y * 0.54
+	var mid_x := s.x * 0.68
+	var wc := Color(1, 1, 1, 0.065)
+	_board_bg.draw_line(Vector2(s.x * 0.36, mid_y), Vector2(s.x, mid_y), wc, 2.5)
+	var rad_c := minf(s.x, s.y) * 0.24
+	_board_bg.draw_arc(Vector2(mid_x, mid_y), rad_c, 0.0, TAU, 48, wc, 2.5)
+	if pat == "stars":
+		for si in range(8):
+			var ang := float(si) * TAU / 8.0 - PI * 0.5
+			var sc := Vector2(mid_x, mid_y) + Vector2(cos(ang), sin(ang)) * (rad_c * 1.18)
+			var spts := PackedVector2Array()
+			for sp_i in range(10):
+				var sa := -PI * 0.5 + float(sp_i) * PI / 5.0
+				var sr := 16.0 if sp_i % 2 == 0 else 6.8
+				spts.append(sc + Vector2(cos(sa), sin(sa)) * sr)
+			_board_bg.draw_colored_polygon(spts, Color(1, 1, 1, 0.07))
+
+func _draw_comp_emblem() -> void:
+	if _board_emblem == null:
+		return
+	var th := _get_active_comp_theme()
+	var c := _board_emblem.size * 0.5
+	var rad := minf(c.x, c.y) - 3.0
+	var bg_c: Color = th.get("badge_bg", Color("#1F4BB8"))
+	var ring_c: Color = th.get("badge_ring", Color("#E2E8F0"))
+	var emb: String = str(th.get("emblem", "star"))
+	_board_emblem.draw_circle(c, rad, bg_c)
+	_board_emblem.draw_arc(c, rad, 0.0, TAU, 36, ring_c, 3.0)
+	_board_emblem.draw_arc(c, rad - 5.0, 0.0, TAU, 32, Color(1, 1, 1, 0.25), 1.5)
+	if emb == "star":
+		var pts := PackedVector2Array([
+			c + Vector2(-12, -13), c + Vector2(12, -13), c + Vector2(12, 2),
+			c + Vector2(0, 14), c + Vector2(-12, 2)
+		])
+		_board_emblem.draw_colored_polygon(pts, Color("#F1F5F9"))
+		_board_emblem.draw_circle(c + Vector2(0, -3), 5.0, bg_c)
+	elif emb == "rings":
+		_board_emblem.draw_arc(c + Vector2(-6, -2), 7.5, 0.0, TAU, 20, Color("#38BDF8"), 2.5)
+		_board_emblem.draw_arc(c + Vector2(6, -2), 7.5, 0.0, TAU, 20, Color("#FACC15"), 2.5)
+		_board_emblem.draw_arc(c + Vector2(0, 5), 7.5, 0.0, TAU, 20, Color("#4ADE80"), 2.5)
+	elif emb == "flame":
+		_board_emblem.draw_rect(Rect2(c.x - 9, c.y - 11, 18, 18), Color("#FB923C"))
+		_board_emblem.draw_circle(c + Vector2(0, 5), 8.0, Color("#FDE047"))
+	elif emb == "leaf":
+		_board_emblem.draw_circle(c, 11.0, Color("#4ADE80"))
+		_board_emblem.draw_line(c + Vector2(0, -10), c + Vector2(0, 10), Color("#052E16"), 2.5)
+	else:
+		_board_emblem.draw_rect(Rect2(c.x - 10, c.y - 10, 20, 14), Color("#FACC15"))
+		_board_emblem.draw_rect(Rect2(c.x - 4, c.y + 4, 8, 7), Color("#FACC15"))
+
+func _refresh_board_header_identities() -> void:
+	if _board_panel == null or not CareerState.has_active_career:
+		return
+	var club := CareerState.get_current_club()
+	var fix := CareerState.get_current_fixture()
+	var comp: String = str(fix.get("comp", "LIGA"))
+	_board_comp_lbl.text = str(fix.get("comp_label", "LIGA")).to_upper()
+	_board_stad_lbl.text = GameData.get_club_stadium_name(int(club["id"]) if bool(fix.get("is_home", true)) else int(fix.get("opp_club_id", 0)))
+
+	for w in [_board_home_badge_wrap, _board_away_badge_wrap]:
+		for ch in w.get_children():
+			ch.queue_free()
+
+	if comp in ["TIMNAS", "TURNAMEN_ASIA"]:
+		var my_nat := clampi(int(CareerState.career["playerProfile"].get("nationId", 16)), 0, maxi(0, GameData.nations.size() - 1))
+		var opp_nat := clampi(int(fix.get("opp_nat_id", 0)), 0, maxi(0, GameData.nations.size() - 1))
+		_board_home_lbl.text = str(GameData.nations[my_nat]["name"]).to_upper()
+		_board_away_lbl.text = str(fix.get("opp_name", "LAWAN")).to_upper()
+		_board_home_badge_wrap.add_child(UITheme.make_flag_rect(my_nat, Vector2(22, 16)))
+		_board_away_badge_wrap.add_child(UITheme.make_flag_rect(opp_nat, Vector2(22, 16)))
+	else:
+		_board_home_lbl.text = str(club["name"]).to_upper()
+		_board_away_lbl.text = str(fix.get("opp_name", "LAWAN")).to_upper()
+		var c1 := ClubCrest.new()
+		c1.custom_minimum_size = Vector2(20, 20)
+		c1.set_club(int(club["id"]))
+		_board_home_badge_wrap.add_child(c1)
+		var c2 := ClubCrest.new()
+		c2.custom_minimum_size = Vector2(20, 20)
+		c2.set_club(int(fix.get("opp_club_id", 0)))
+		_board_away_badge_wrap.add_child(c2)
+
+	if _board_bg != null:
+		_board_bg.queue_redraw()
+	if _board_emblem != null:
+		_board_emblem.queue_redraw()
+
+func _switch_board_tab(idx: int) -> void:
+	_board_view_idx = clampi(idx, 0, maxi(0, _board_views.size() - 1))
+	for i in range(_board_views.size()):
+		_board_views[i].visible = (i == _board_view_idx)
+	for i in range(_board_tab_btns.size()):
+		var act := (i == _board_view_idx)
+		UITheme.style_btn(_board_tab_btns[i], Color("#1D4ED8") if act else Color("#0A152C", 0.72), UITheme.ACCENT_CYAN if act else Color("#FFFFFF", 0.2), 11)
+	if _board_view_idx == 1:
+		_refresh_squad_tab()
+
+func _refresh_stats_tab() -> void:
+	if _board_mini_stats_vb == null or not CareerState.has_active_career:
+		return
+	for c in _board_mini_stats_vb.get_children():
+		_board_mini_stats_vb.remove_child(c)
+		c.queue_free()
+	var rows := [
+		[maxi(_shots_us, _score_us), "●", maxi(_shots_them, _score_them)],
+		[_saves_us, "✓", _saves_them],
+		[_corners_us, "▸", _corners_them],
+		[_fouls_us + _our_yellows + _our_reds, "!", _fouls_them + _opp_yellows + _opp_reds],
+	]
+	for rw in rows:
+		var lv: int = int(rw[0])
+		var ic: String = str(rw[1])
+		var rv: int = int(rw[2])
+		var max_v: float = maxf(1.0, float(maxi(lv, rv)))
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 6)
+		_board_mini_stats_vb.add_child(hb)
+
+		var l1 := Label.new()
+		l1.text = str(lv)
+		l1.custom_minimum_size = Vector2(20, 0)
+		l1.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		l1.add_theme_font_override("font", UITheme.get_display_font())
+		l1.add_theme_font_size_override("font_size", 11)
+		l1.add_theme_color_override("font_color", Color.WHITE)
+		hb.add_child(l1)
+
+		var l_bg := ColorRect.new()
+		l_bg.color = Color("#0F1D3A")
+		l_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		l_bg.custom_minimum_size = Vector2(0, 5)
+		hb.add_child(l_bg)
+		var l_fill := ColorRect.new()
+		l_fill.color = Color("#EF4444")
+		l_fill.anchor_left = 0.0
+		l_fill.anchor_right = float(lv) / max_v if lv > 0 else 0.0
+		l_fill.anchor_bottom = 1.0
+		l_bg.add_child(l_fill)
+
+		var ic_l := Label.new()
+		ic_l.text = ic
+		ic_l.custom_minimum_size = Vector2(18, 0)
+		ic_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ic_l.add_theme_font_size_override("font_size", 10)
+		ic_l.add_theme_color_override("font_color", Color("#94A3B8"))
+		hb.add_child(ic_l)
+
+		var r_bg := ColorRect.new()
+		r_bg.color = Color("#0F1D3A")
+		r_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		r_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		r_bg.custom_minimum_size = Vector2(0, 5)
+		hb.add_child(r_bg)
+		var r_fill := ColorRect.new()
+		r_fill.color = Color("#38BDF8")
+		r_fill.anchor_left = 1.0 - (float(rv) / max_v if rv > 0 else 0.0)
+		r_fill.anchor_right = 1.0
+		r_fill.anchor_bottom = 1.0
+		r_bg.add_child(r_fill)
+
+		var l2 := Label.new()
+		l2.text = str(rv)
+		l2.custom_minimum_size = Vector2(20, 0)
+		l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		l2.add_theme_font_override("font", UITheme.get_display_font())
+		l2.add_theme_font_size_override("font_size", 11)
+		l2.add_theme_color_override("font_color", Color.WHITE)
+		hb.add_child(l2)
+
+func _pos_badge_color(pos: String) -> Color:
+	var pu: String = pos.to_upper()
+	if pu == "GK":
+		return Color("#B47B1B")
+	if pu in ["CB", "LB", "RB", "LWB", "RWB"]:
+		return Color("#2A68B8")
+	if pu in ["CDM", "CM", "LM", "RM", "CAM"]:
+		return Color("#6B4BC4")
+	return Color("#B8324A")
+
+func _sync_live_lineup_ratings() -> void:
+	for pl in _our_lineup:
+		if bool(pl.get("is_user", false)):
+			pl["rating"] = clampf(_rating, 4.0, 10.0)
+			pl["goals"] = _my_goals
+		elif not pl.has("rating"):
+			pl["rating"] = 6.0
+	for pl in _opp_lineup:
+		if not pl.has("rating"):
+			pl["rating"] = 6.0
+
+func _compute_match_motm_player() -> Dictionary:
+	_sync_live_lineup_ratings()
+	var our_club: Dictionary = CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]
+	var opp_club: Dictionary = GameData.clubs[1]
+	if CareerState.has_active_career:
+		var fix: Dictionary = CareerState.get_current_fixture()
+		opp_club = GameData.clubs[clampi(int(fix.get("opp_club_id", 1)), 0, GameData.clubs.size() - 1)]
+	var best_p: Dictionary = {}
+	var best_rtg: float = -1.0
+	for pair in [[_our_lineup, our_club, true], [_opp_lineup, opp_club, false]]:
+		var arr: Array = pair[0]
+		var clb: Dictionary = pair[1]
+		var is_us_side: bool = bool(pair[2])
+		for pl_item in arr:
+			var pl: Dictionary = pl_item
+			var r: float = float(pl.get("rating", 6.0))
+			if r > best_rtg:
+				best_rtg = r
+				best_p = {
+					"name": str(pl.get("name", "PEMAIN")),
+					"pos": str(pl.get("pos", "ST")),
+					"ovr": int(pl.get("ovr", 65)),
+					"seed": int(pl.get("seed", 1)),
+					"rating": snappedf(r, 0.1),
+					"goals": int(pl.get("goals", 0)),
+					"is_user": bool(pl.get("is_user", false)),
+					"is_us": is_us_side,
+					"club_id": int(clb.get("id", 0)),
+					"club_name": str(clb.get("name", "KLUB")),
+				}
+	return best_p
+
+func _refresh_squad_tab() -> void:
+	if _board_squad_vb == null:
+		return
+	_sync_live_lineup_ratings()
+	for c in _board_squad_vb.get_children():
+		_board_squad_vb.remove_child(c)
+		c.queue_free()
+
+	# Top Live Ticker Pill (Gambar 1: "• 23' ADU SEIMBANG DI LINI TENGAH")
+	var tick_p := PanelContainer.new()
+	var tsb := StyleBoxFlat.new()
+	tsb.bg_color = Color("#1A2D42", 0.88)
+	tsb.border_color = Color("#314B69")
+	tsb.set_border_width_all(1)
+	tsb.set_corner_radius_all(5)
+	tsb.content_margin_left = 10
+	tsb.content_margin_right = 10
+	tsb.content_margin_top = 5
+	tsb.content_margin_bottom = 5
+	tick_p.add_theme_stylebox_override("panel", tsb)
+	_board_squad_vb.add_child(tick_p)
+	var tick_l := Label.new()
+	tick_l.text = "•  %d'  %s" % [maxi(1, int(_minute)), _last_live_ticker_txt.to_upper()]
+	tick_l.clip_text = true
+	tick_l.add_theme_font_override("font", UITheme.get_display_font())
+	tick_l.add_theme_font_size_override("font_size", 10)
+	tick_l.add_theme_color_override("font_color", Color("#E2E8F0"))
+	tick_p.add_child(tick_l)
+
+	var our_club: Dictionary = CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]
+	var opp_club: Dictionary = GameData.clubs[1]
+	var opp_name: String = "TIM LAWAN"
+	if CareerState.has_active_career:
+		var fix: Dictionary = CareerState.get_current_fixture()
+		opp_club = GameData.clubs[clampi(int(fix.get("opp_club_id", 1)), 0, GameData.clubs.size() - 1)]
+		opp_name = str(fix.get("opp_name", opp_club.get("name", "TIM LAWAN")))
+
+	var col_hb := HBoxContainer.new()
+	col_hb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col_hb.add_theme_constant_override("separation", 10)
+	_board_squad_vb.add_child(col_hb)
+
+	var sides := [
+		{"name": str(our_club.get("name", "TIM KITA")).to_upper(), "club": our_club, "starters": _our_lineup, "bench": _our_bench},
+		{"name": opp_name.to_upper(), "club": opp_club, "starters": _opp_lineup, "bench": _opp_bench},
+	]
+	for sd_item in sides:
+		var sd: Dictionary = sd_item
+		var clb: Dictionary = sd["club"]
+		var svb := VBoxContainer.new()
+		svb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		svb.add_theme_constant_override("separation", 2)
+		col_hb.add_child(svb)
+
+		# Team Header: ▸ [ClubCrest] TEAM NAME
+		var hdr_hb := HBoxContainer.new()
+		hdr_hb.add_theme_constant_override("separation", 5)
+		svb.add_child(hdr_hb)
+		var arr_l := Label.new()
+		arr_l.text = "▸"
+		arr_l.add_theme_font_size_override("font_size", 10)
+		arr_l.add_theme_color_override("font_color", Color("#CBD5E1"))
+		hdr_hb.add_child(arr_l)
+		var cr := ClubCrest.new()
+		cr.custom_minimum_size = Vector2(15, 15)
+		cr.set_club(int(clb.get("id", 0)))
+		hdr_hb.add_child(cr)
+		var tn_l := Label.new()
+		tn_l.text = str(sd["name"])
+		tn_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tn_l.clip_text = true
+		tn_l.add_theme_font_override("font", UITheme.get_display_font())
+		tn_l.add_theme_font_size_override("font_size", 10)
+		tn_l.add_theme_color_override("font_color", Color.WHITE)
+		hdr_hb.add_child(tn_l)
+
+		# Sub-header: # PEMAIN | OVR | RTG
+		var sh_hb := HBoxContainer.new()
+		sh_hb.add_theme_constant_override("separation", 4)
+		svb.add_child(sh_hb)
+		var sh1 := Label.new()
+		sh1.text = "  # PEMAIN"
+		sh1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sh1.add_theme_font_size_override("font_size", 8)
+		sh1.add_theme_color_override("font_color", Color("#8FA6C0"))
+		sh_hb.add_child(sh1)
+		for sh_col in [["OVR", 24], ["RTG", 28]]:
+			var scl := Label.new()
+			scl.text = str(sh_col[0])
+			scl.custom_minimum_size = Vector2(int(sh_col[1]), 0)
+			scl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			scl.add_theme_font_size_override("font_size", 8)
+			scl.add_theme_color_override("font_color", Color("#8FA6C0"))
+			sh_hb.add_child(scl)
+
+		# 11 Starters
+		var starters: Array = sd["starters"]
+		for pl_item in starters:
+			var pl: Dictionary = pl_item
+			svb.add_child(_make_squad_rating_row(pl, false))
+
+		# CADANGAN Section (Gambar 1 bottom!)
+		var bench: Array = sd["bench"]
+		if not bench.is_empty():
+			var sp_b := Control.new()
+			sp_b.custom_minimum_size = Vector2(0, 4)
+			svb.add_child(sp_b)
+			var bh_l := Label.new()
+			bh_l.text = "▸ CADANGAN"
+			bh_l.add_theme_font_override("font", UITheme.get_display_font())
+			bh_l.add_theme_font_size_override("font_size", 9)
+			bh_l.add_theme_color_override("font_color", Color("#CBD5E1"))
+			svb.add_child(bh_l)
+			for bp_item in bench:
+				var bp: Dictionary = bp_item
+				svb.add_child(_make_squad_rating_row(bp, true))
+
+func _make_squad_rating_row(pl: Dictionary, is_bench: bool) -> PanelContainer:
+	var is_u: bool = bool(pl.get("is_user", false))
+	var pc := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("#163954", 0.92) if is_u else Color("#0A1727", 0.55)
+	sb.border_color = Color("#38BDF8") if is_u else Color(1, 1, 1, 0.06)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(3)
+	sb.content_margin_left = 4
+	sb.content_margin_right = 4
+	sb.content_margin_top = 1
+	sb.content_margin_bottom = 1
+	pc.add_theme_stylebox_override("panel", sb)
+
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 4)
+	pc.add_child(hb)
+
+	# Position Badge
+	var pos_s: String = str(pl.get("pos", "CM"))
+	var pos_p := PanelContainer.new()
+	pos_p.custom_minimum_size = Vector2(26, 14)
+	var psb := StyleBoxFlat.new()
+	psb.bg_color = _pos_badge_color(pos_s)
+	psb.set_corner_radius_all(2)
+	psb.content_margin_left = 2
+	psb.content_margin_right = 2
+	pos_p.add_theme_stylebox_override("panel", psb)
+	var pos_l := Label.new()
+	pos_l.text = pos_s
+	pos_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pos_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pos_l.add_theme_font_override("font", UITheme.get_display_font())
+	pos_l.add_theme_font_size_override("font_size", 7)
+	pos_l.add_theme_color_override("font_color", Color.WHITE)
+	pos_p.add_child(pos_l)
+	hb.add_child(pos_p)
+
+	# #Number + Player Name
+	var nm_txt: String = "%d %s" % [int(pl.get("num", 9)), str(pl.get("name", "PEMAIN"))]
+	if bool(pl.get("subbed_out", false)):
+		nm_txt += " [OUT]"
+	var nm_l := Label.new()
+	nm_l.text = nm_txt
+	nm_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm_l.clip_text = true
+	nm_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nm_l.add_theme_font_override("font", UITheme.get_display_font())
+	nm_l.add_theme_font_size_override("font_size", 9)
+	nm_l.add_theme_color_override("font_color", Color("#67E8F9") if is_u else (Color("#94A3B8") if is_bench else Color("#F1F5F9")))
+	hb.add_child(nm_l)
+
+	# Match events icons (goals / cards)
+	var g_cnt: int = int(pl.get("goals", 0))
+	if g_cnt > 0:
+		var gl := Label.new()
+		gl.text = "●%d" % g_cnt if g_cnt > 1 else "●"
+		gl.add_theme_font_size_override("font_size", 8)
+		gl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		hb.add_child(gl)
+	if bool(pl.get("red", false)):
+		var rc := ColorRect.new()
+		rc.custom_minimum_size = Vector2(6, 9)
+		rc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		rc.color = Color("#EF4444")
+		hb.add_child(rc)
+	elif int(pl.get("yellows", 0)) > 0:
+		var yc := ColorRect.new()
+		yc.custom_minimum_size = Vector2(6, 9)
+		yc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		yc.color = Color("#FACC15")
+		hb.add_child(yc)
+
+	# OVR Badge
+	var ovr_v: int = int(pl.get("ovr", 60))
+	var ovr_p := PanelContainer.new()
+	ovr_p.custom_minimum_size = Vector2(22, 14)
+	var osb := StyleBoxFlat.new()
+	osb.bg_color = Color("#182B44")
+	osb.border_color = UITheme.ACCENT_GOLD if ovr_v >= 78 else (Color("#94A3B8") if ovr_v >= 65 else Color("#B47B48"))
+	osb.set_border_width_all(1)
+	osb.set_corner_radius_all(4)
+	ovr_p.add_theme_stylebox_override("panel", osb)
+	var ovr_l := Label.new()
+	ovr_l.text = str(ovr_v)
+	ovr_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ovr_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ovr_l.add_theme_font_override("font", UITheme.get_display_font())
+	ovr_l.add_theme_font_size_override("font_size", 8)
+	ovr_l.add_theme_color_override("font_color", Color.WHITE)
+	ovr_p.add_child(ovr_l)
+	hb.add_child(ovr_p)
+
+	# Live RTG column (comma decimal: "6,3" or "-" for unused bench)
+	var rtg_l := Label.new()
+	rtg_l.custom_minimum_size = Vector2(28, 0)
+	rtg_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	rtg_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	rtg_l.add_theme_font_override("font", UITheme.get_display_font())
+	rtg_l.add_theme_font_size_override("font_size", 9)
+	if is_bench:
+		rtg_l.text = "-"
+		rtg_l.add_theme_color_override("font_color", Color("#64748B"))
+	else:
+		var rv: float = float(pl.get("rating", 6.0))
+		rtg_l.text = ("%.1f" % rv).replace(".", ",")
+		var rcol: Color = Color("#67E8F9") if is_u else (UITheme.ACCENT_GOLD if rv >= 7.5 else (Color("#86EFAC") if rv >= 6.5 else Color("#E2E8F0")))
+		rtg_l.add_theme_color_override("font_color", rcol)
+	hb.add_child(rtg_l)
+	return pc
+
+func _draw_rating_sparkline() -> void:
+	if _board_sparkline == null or _board_rating_hist.is_empty():
+		return
+	var s := _board_sparkline.size
+	_board_sparkline.draw_line(Vector2(2, s.y * 0.5), Vector2(s.x - 2, s.y * 0.5), Color(1, 1, 1, 0.2), 1.0)
+	var pts := PackedVector2Array()
+	var n := maxi(2, _board_rating_hist.size())
+	for i in range(_board_rating_hist.size()):
+		var x := lerpf(4.0, s.x - 4.0, float(i) / float(n - 1))
+		var rt := clampf((_board_rating_hist[i] - 4.0) / 6.0, 0.0, 1.0)
+		pts.append(Vector2(x, lerpf(s.y - 4.0, 4.0, rt)))
+	if pts.size() >= 2:
+		_board_sparkline.draw_polyline(pts, UITheme.TEXT_WHITE, 2.0)
+		_board_sparkline.draw_circle(pts[pts.size() - 1], 3.0, UITheme.ACCENT_GOLD)
+	elif pts.size() == 1:
+		_board_sparkline.draw_circle(pts[0], 3.0, UITheme.TEXT_WHITE)
+
 func _init_match_rosters() -> void:
 	_our_lineup.clear()
 	_opp_lineup.clear()
 	_our_bench.clear()
 	_opp_bench.clear()
-	var our_club: Dictionary = CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]
-	var opp_club: Dictionary = GameData.clubs[1]
+	var our_club: Dictionary = (CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]).duplicate()
+	var opp_club: Dictionary = GameData.clubs[1].duplicate()
 	var opp_ovr: int = 62
 	if CareerState.has_active_career:
 		var fix: Dictionary = CareerState.get_current_fixture()
 		var opp_id: int = clampi(int(fix.get("opp_club_id", 1)), 0, GameData.clubs.size() - 1)
-		opp_club = GameData.clubs[opp_id]
+		opp_club = GameData.clubs[opp_id].duplicate()
 		opp_ovr = int(fix.get("opp_ovr", opp_club.get("ovr", 62)))
+		var user_is_home: bool = bool(fix.get("is_home", true))
+		var left_c: Dictionary = our_club if user_is_home else opp_club
+		var right_c: Dictionary = opp_club if user_is_home else our_club
+		var our_kit: Dictionary = CareerState.get_selected_match_kit(user_is_home, left_c, right_c)
+		var opp_kit: Dictionary = CareerState.get_selected_match_kit(not user_is_home, left_c, right_c)
+		for kk in ["primary", "secondary", "shorts", "pattern"]:
+			if our_kit.has(kk):
+				our_club[kk] = our_kit[kk]
+			if opp_kit.has(kk):
+				opp_club[kk] = opp_kit[kk]
 
 	var default_positions: Array[String] = ["GK", "LB", "CB", "CB", "RB", "CM", "CM", "CM", "LW", "RW", "ST"]
 	var default_nums: Array[int] = [1, 3, 4, 5, 2, 6, 8, 10, 7, 11, 9]
@@ -4305,6 +5776,19 @@ func _init_match_rosters() -> void:
 			"club": opp_club,
 			"yellows": 0, "red": false, "injured": false, "subbed_out": false,
 		})
+
+	for idx_r in range(_our_lineup.size()):
+		_our_lineup[idx_r]["rating"] = 6.3 if idx_r == 0 else (6.2 if idx_r <= 4 else 6.0)
+		_our_lineup[idx_r]["goals"] = 0
+	for idx_r in range(_opp_lineup.size()):
+		_opp_lineup[idx_r]["rating"] = 6.3 if idx_r == 0 else (6.2 if idx_r <= 4 else 6.0)
+		_opp_lineup[idx_r]["goals"] = 0
+	for bp in _our_bench:
+		bp["rating"] = 6.0
+		bp["goals"] = 0
+	for bp in _opp_bench:
+		bp["rating"] = 6.0
+		bp["goals"] = 0
 
 func _open_lineup_intro() -> void:
 	_lineup_timer = 0.0
@@ -4526,6 +6010,9 @@ func _make_highlight_avatar(p_dict: Dictionary, sz: Vector2, is_gk_kit: bool = f
 	av.custom_minimum_size = sz
 	if bool(p_dict.get("is_user", false)) and CareerState.has_active_career:
 		av.configure_from_career()
+		var u_club: Dictionary = p_dict.get("club", {})
+		if not u_club.is_empty():
+			av.apply_kit(u_club)
 	else:
 		var club_d: Dictionary = p_dict.get("club", GameData.clubs[0])
 		if is_gk_kit or str(p_dict.get("pos", "")) == "GK":
@@ -4588,115 +6075,267 @@ func _make_portrait_card(p_dict: Dictionary, tag_txt: String, tag_col: Color, is
 	vb.add_child(nm)
 	return card
 
-func _add_rich_board_highlight(m: int, kind: String, title: String, desc: String, p1: Dictionary, p2: Dictionary, is_us: bool) -> void:
-	_board_events.append({"min": m, "kind": kind, "us": is_us})
-	var accent_col: Color = Color("#E2E8F0")
-	var badge_title: String = "SOROTAN"
-	var p1_tag: String = "PEMAIN"
-	var p2_tag: String = "REKAN"
-	var p1_gk: bool = false
-	match kind:
-		"GOAL", "OPP_GOAL":
-			accent_col = UITheme.ACCENT_GOLD if kind == "GOAL" else UITheme.ACCENT_RED
-			badge_title = "GOL & ASSIST" if not p2.is_empty() else "GOL!"
-			p1_tag = "PENCETAK GOL"
-			p2_tag = "ASSIST"
-		"SAVE":
-			accent_col = UITheme.ACCENT_CYAN
-			badge_title = "PENYELAMATAN KIPER"
-			p1_tag = "KIPER"
-			p1_gk = true
-		"YELLOW_CARD":
-			accent_col = Color("#FACC15")
-			badge_title = "KARTU KUNING"
-			p1_tag = "KARTU KUNING"
-		"RED_CARD":
-			accent_col = Color("#EF4444")
-			badge_title = "KARTU MERAH!"
-			p1_tag = "KARTU MERAH"
-		"INJURY":
-			accent_col = Color("#FB923C")
-			badge_title = "PEMAIN CEDERA"
-			p1_tag = "CEDERA"
-		"INJURY_RETURN":
-			accent_col = UITheme.ACCENT_GREEN
-			badge_title = "KEMBALI BERMAIN"
-			p1_tag = "PULIH"
-		"INJURY_SUB":
-			accent_col = Color("#FB923C")
-			badge_title = "GANTI PEMAIN CEDERA"
-			p1_tag = "KELUAR (CEDERA)"
-			p2_tag = "MASUK"
-		"USER_SUB":
-			accent_col = UITheme.ACCENT_CYAN
-			badge_title = "PERGANTIAN PELATIH"
-			p1_tag = "KELUAR"
-			p2_tag = "PENGGANTI"
+func _display_hero_highlight(item: Dictionary) -> void:
+	var m: int = int(item.get("min", 0))
+	var badge_title: String = str(item.get("badge", "SOROTAN"))
+	var hero_name: String = str(item.get("name", "PEMAIN")).to_upper()
+	var hero_action: String = str(item.get("action", "")).to_upper()
+	var accent_col: Color = item.get("accent", Color("#86EFAC"))
+	var p: Dictionary = item.get("player", {})
+	var is_gk: bool = bool(item.get("is_gk", false))
 
 	if _board_hl_badge != null:
-		_board_hl_badge.text = "%d' • %s" % [m, badge_title]
+		_board_hl_badge.text = "● %d' • %s" % [m, badge_title]
 		_board_hl_badge.add_theme_color_override("font_color", accent_col)
+	if _board_hl_name_lbl != null:
+		_board_hl_name_lbl.text = hero_name
+	if _board_hl_action_lbl != null:
+		_board_hl_action_lbl.text = hero_action
+		_board_hl_action_lbl.add_theme_color_override("font_color", accent_col)
+	if _board_hl_lbl != null:
+		_board_hl_lbl.text = "%s\n%s" % [hero_name, hero_action]
+
+	if _board_hero_card != null:
+		var th := _get_active_comp_theme()
+		var card_bg: Color = (th.get("bg_top", Color("#132D72")) as Color).lightened(0.08)
+		var hsb := StyleBoxFlat.new()
+		hsb.bg_color = Color(card_bg.r, card_bg.g, card_bg.b, 0.78)
+		hsb.border_color = accent_col
+		hsb.border_width_left = 4
+		hsb.border_width_top = 1
+		hsb.border_width_right = 1
+		hsb.border_width_bottom = 1
+		hsb.set_corner_radius_all(6)
+		hsb.content_margin_left = 10
+		hsb.content_margin_right = 12
+		hsb.content_margin_top = 8
+		hsb.content_margin_bottom = 8
+		_board_hero_card.add_theme_stylebox_override("panel", hsb)
 
 	if _board_hl_portraits != null:
 		for c in _board_hl_portraits.get_children():
 			_board_hl_portraits.remove_child(c)
 			c.queue_free()
-		if not p1.is_empty():
-			_board_hl_portraits.add_child(_make_portrait_card(p1, p1_tag, accent_col, p1_gk, kind))
-		if not p2.is_empty():
-			var p2_col: Color = UITheme.ACCENT_GREEN if kind in ["INJURY_SUB", "USER_SUB"] else UITheme.ACCENT_CYAN
-			_board_hl_portraits.add_child(_make_portrait_card(p2, p2_tag, p2_col, false, ""))
+		if not p.is_empty():
+			var av := _make_highlight_avatar(p, Vector2(74, 74), is_gk)
+			_board_hl_portraits.add_child(av)
 
-	if _board_hl_lbl != null:
-		_board_hl_lbl.text = "%s\n%s" % [title, desc]
-
-	if _board_feed_vb != null:
-		var row := PanelContainer.new()
-		row.add_theme_stylebox_override("panel", UITheme.make_box(Color("#400D1A"), accent_col.darkened(0.25), 1, 6))
-		var rhb := HBoxContainer.new()
-		rhb.add_theme_constant_override("separation", 8)
-		row.add_child(rhb)
-
-		var m_lbl := Label.new()
-		m_lbl.text = "%d'" % m
-		m_lbl.custom_minimum_size = Vector2(36, 0)
-		m_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		m_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		m_lbl.add_theme_font_override("font", UITheme.get_display_font())
-		m_lbl.add_theme_font_size_override("font_size", 12)
-		m_lbl.add_theme_color_override("font_color", accent_col)
-		rhb.add_child(m_lbl)
-
-		if not p1.is_empty():
-			var av1 := _make_highlight_avatar(p1, Vector2(38, 34), p1_gk)
-			rhb.add_child(av1)
-		if not p2.is_empty():
-			var av2 := _make_highlight_avatar(p2, Vector2(32, 28), false)
-			rhb.add_child(av2)
-
+func _append_small_feed_row(m: int, kind: String, text_line: String, accent_col: Color, is_us: bool, major_tint: bool = false) -> void:
+	if _board_feed_vb == null:
+		return
+	var row := PanelContainer.new()
+	if major_tint:
+		var row_bg := Color("#3E1322", 0.58) if is_us else Color("#0B1A34", 0.58)
 		if kind == "YELLOW_CARD" or kind == "RED_CARD":
-			var badge_c := ColorRect.new()
-			badge_c.custom_minimum_size = Vector2(10, 14)
-			badge_c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			badge_c.color = Color("#FACC15") if kind == "YELLOW_CARD" else Color("#EF4444")
-			rhb.add_child(badge_c)
+			row_bg = Color("#133A3E", 0.65)
+		elif kind == "ASSIST":
+			row_bg = Color("#0D3348", 0.62)
+		row.add_theme_stylebox_override("panel", UITheme.make_box(row_bg, Color(accent_col.r, accent_col.g, accent_col.b, 0.35), 1, 3))
+	else:
+		var emp := StyleBoxEmpty.new()
+		emp.content_margin_left = 4
+		emp.content_margin_right = 4
+		emp.content_margin_top = 2
+		emp.content_margin_bottom = 2
+		row.add_theme_stylebox_override("panel", emp)
 
-		var txt_lbl := Label.new()
-		txt_lbl.text = "%s — %s" % [title, desc]
-		txt_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		txt_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		txt_lbl.add_theme_font_size_override("font_size", 11)
-		txt_lbl.add_theme_color_override("font_color", accent_col if kind in ["GOAL", "OPP_GOAL", "RED_CARD", "USER_SUB"] else Color("#F1F5F9"))
-		rhb.add_child(txt_lbl)
+	var rhb := HBoxContainer.new()
+	rhb.add_theme_constant_override("separation", 8)
+	row.add_child(rhb)
 
-		_board_feed_vb.add_child(row)
-		_board_feed_vb.move_child(row, 0)
-		while _board_feed_vb.get_child_count() > 30:
-			var last_c: Node = _board_feed_vb.get_child(_board_feed_vb.get_child_count() - 1)
-			last_c.queue_free()
+	var m_lbl := Label.new()
+	m_lbl.text = "%d'" % m
+	m_lbl.custom_minimum_size = Vector2(28, 0)
+	m_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	m_lbl.add_theme_font_size_override("font_size", 10)
+	m_lbl.add_theme_color_override("font_color", Color("#94A3B8"))
+	rhb.add_child(m_lbl)
+
+	var ic_box := PanelContainer.new()
+	ic_box.custom_minimum_size = Vector2(16, 16)
+	ic_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var ic_bg := Color("#1E3A5F", 0.85)
+	var k_icon := "•"
+	match kind:
+		"GOAL", "OPP_GOAL":
+			ic_bg = Color("#D97706") if kind == "GOAL" else Color("#DC2626")
+			k_icon = "●"
+		"ASSIST":
+			ic_bg = Color("#0284C7")
+			k_icon = "★"
+		"SAVE":
+			ic_bg = Color("#0E7490")
+			k_icon = "✓"
+		"YELLOW_CARD":
+			ic_bg = Color("#CA8A04")
+			k_icon = "!"
+		"RED_CARD":
+			ic_bg = Color("#DC2626")
+			k_icon = "X"
+		"USER_SUB", "INJURY_SUB":
+			ic_bg = Color("#0D9488")
+			k_icon = "▲"
+		"CORNER":
+			ic_bg = Color("#4338CA")
+			k_icon = "▸"
+	ic_box.add_theme_stylebox_override("panel", UITheme.make_box(ic_bg, Color.TRANSPARENT, 0, 2))
+	var icon_lbl := Label.new()
+	icon_lbl.text = k_icon
+	icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon_lbl.add_theme_font_size_override("font_size", 9)
+	icon_lbl.add_theme_color_override("font_color", Color.WHITE)
+	ic_box.add_child(icon_lbl)
+	rhb.add_child(ic_box)
+
+	var txt_lbl := Label.new()
+	txt_lbl.text = text_line.to_upper()
+	txt_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	txt_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	txt_lbl.add_theme_font_size_override("font_size", 10)
+	txt_lbl.add_theme_color_override("font_color", accent_col if major_tint else Color("#DCE8F8"))
+	rhb.add_child(txt_lbl)
+
+	_board_feed_vb.add_child(row)
+	_board_feed_vb.move_child(row, 0)
+	while _board_feed_vb.get_child_count() > 26:
+		var last_c: Node = _board_feed_vb.get_child(_board_feed_vb.get_child_count() - 1)
+		_board_feed_vb.remove_child(last_c)
+		last_c.queue_free()
+
+func _add_rich_board_highlight(m: int, kind: String, title: String, desc: String, p1: Dictionary, p2: Dictionary, is_us: bool) -> void:
+	_board_events.append({"min": m, "kind": kind, "us": is_us})
+	var accent_col: Color = Color("#86EFAC")
+	var badge_title: String = "SOROTAN"
+	var p1_gk: bool = false
+	var hero_name: String = str(p1.get("name", title)).to_upper() if not p1.is_empty() else title.to_upper()
+	var hero_action: String = desc.to_upper() if not desc.is_empty() else title.to_upper()
+
+	match kind:
+		"GOAL", "OPP_GOAL":
+			if is_us:
+				_shots_us += 1
+			else:
+				_shots_them += 1
+			accent_col = UITheme.ACCENT_GOLD if kind == "GOAL" else Color("#FCA5A5")
+			badge_title = "GOL! (%d-%d)" % [_score_us, _score_them]
+			hero_action = "CETAK GOL! (%d-%d)" % [_score_us, _score_them]
+		"SAVE":
+			if is_us:
+				_saves_us += 1
+				_shots_them += 1
+			else:
+				_saves_them += 1
+				_shots_us += 1
+			accent_col = UITheme.ACCENT_CYAN
+			badge_title = "PENYELAMATAN"
+			hero_action = "TEPISAN GEMILANG KIPER!"
+			p1_gk = true
+		"SHOT":
+			if is_us:
+				_shots_us += 1
+			else:
+				_shots_them += 1
+			accent_col = Color("#86EFAC") if is_us else Color("#FCA5A5")
+			badge_title = "PELUANG"
+		"CORNER":
+			if is_us:
+				_corners_us += 1
+			else:
+				_corners_them += 1
+			accent_col = Color("#93C5FD")
+			badge_title = "KORNER"
+		"YELLOW_CARD":
+			if is_us:
+				_fouls_us += 1
+			else:
+				_fouls_them += 1
+			accent_col = Color("#FACC15")
+			badge_title = "KARTU KUNING"
+			hero_action = "KARTU KUNING • PELANGGARAN KERAS"
+		"RED_CARD":
+			if is_us:
+				_fouls_us += 1
+			else:
+				_fouls_them += 1
+			accent_col = Color("#EF4444")
+			badge_title = "KARTU MERAH!"
+			hero_action = "DIUSIR WASIT • KARTU MERAH!"
+		"INJURY":
+			accent_col = Color("#FB923C")
+			badge_title = "CEDERA"
+		"INJURY_RETURN":
+			accent_col = UITheme.ACCENT_GREEN
+			badge_title = "PULIH"
+		"INJURY_SUB", "USER_SUB":
+			accent_col = UITheme.ACCENT_CYAN
+			badge_title = "PERGANTIAN"
+			if not p2.is_empty():
+				hero_action = "DIGANTIKAN OLEH %s" % str(p2.get("name", "CADANGAN")).to_upper()
+
+	# Show Goal Scorer FIRST on the Big Hero Highlight Banner, then queue Assister right after!
+	var main_item := {
+		"min": m,
+		"kind": kind,
+		"badge": badge_title,
+		"name": hero_name,
+		"action": hero_action,
+		"accent": accent_col,
+		"player": p1,
+		"is_gk": p1_gk,
+		"is_us": is_us,
+	}
+	_display_hero_highlight(main_item)
+	_hero_hl_timer = 1.25
+
+	var feed_line := "%s • %s" % [title, desc] if (not desc.is_empty() and desc != title) else title
+	_last_live_ticker_txt = feed_line
+	# Update live ratings & goals on the involved roster entries
+	var p1_nm: String = str(p1.get("name", "")).to_upper()
+	var p2_nm: String = str(p2.get("name", "")).to_upper()
+	var target_list: Array[Dictionary] = _our_lineup if is_us else _opp_lineup
+	for pl in target_list:
+		var r_now: float = float(pl.get("rating", 6.0))
+		if str(pl.get("name", "")).to_upper() == p1_nm:
+			if kind in ["GOAL", "OPP_GOAL"]:
+				pl["goals"] = int(pl.get("goals", 0)) + 1
+				pl["rating"] = clampf(r_now + 0.9, 4.0, 10.0)
+			elif kind == "SAVE":
+				pl["rating"] = clampf(r_now + 0.35, 4.0, 10.0)
+			elif kind == "SHOT":
+				pl["rating"] = clampf(r_now + 0.15, 4.0, 10.0)
+			elif kind == "YELLOW_CARD":
+				pl["rating"] = clampf(r_now - 0.30, 4.0, 10.0)
+			elif kind == "RED_CARD":
+				pl["rating"] = clampf(r_now - 1.0, 4.0, 10.0)
+		elif not p2_nm.is_empty() and str(pl.get("name", "")).to_upper() == p2_nm and kind in ["GOAL", "OPP_GOAL"]:
+			pl["rating"] = clampf(r_now + 0.55, 4.0, 10.0)
+	if _board_view_idx == 1 and _board_panel != null and _board_panel.visible:
+		_refresh_squad_tab()
+
+	var is_major := kind in ["GOAL", "OPP_GOAL", "YELLOW_CARD", "RED_CARD", "USER_SUB", "INJURY_SUB", "SAVE"]
+	_append_small_feed_row(m, kind, feed_line, accent_col, is_us, is_major)
+
+	if kind in ["GOAL", "OPP_GOAL"] and not p2.is_empty():
+		var ast_nm := str(p2.get("name", "REKAN")).to_upper()
+		var sc_nm := str(p1.get("name", "REKAN")).to_upper()
+		_hero_hl_queue.append({
+			"min": m,
+			"kind": "ASSIST",
+			"badge": "ASIS!",
+			"name": ast_nm,
+			"action": "UMPAN ASIS UNTUK %s!" % sc_nm,
+			"accent": Color("#67E8F9"),
+			"player": p2,
+			"is_gk": false,
+			"is_us": is_us,
+			"log_feed": true,
+			"feed_txt": "ASIS %s UNTUK GOL %s!" % [ast_nm, sc_nm],
+		})
 
 	if _board_timeline != null:
 		_board_timeline.queue_redraw()
+	_refresh_stats_tab()
 
 func _add_board_event(m: int, kind: String, txt: String, is_us: bool) -> void:
 	var p: Dictionary = _pick_roster_player(is_us, kind == "SAVE", kind == "GOAL")
@@ -4726,7 +6365,7 @@ func _update_board_cards_banner() -> void:
 	if parts.is_empty():
 		_board_cards_bar.visible = false
 	else:
-		_board_cards_lbl.text = "PERINGATAN KARTU (>2)  •  " + "   |   ".join(parts)
+		_board_cards_lbl.text = "PERINGATAN KARTU (>2)  •  " + "   |   ".join(PackedStringArray(parts))
 		_board_cards_bar.visible = true
 
 func _trigger_match_card(is_us: bool, is_red: bool) -> void:
@@ -4868,55 +6507,81 @@ func _push_random_sim_event() -> void:
 	var m_now: int = mini(90, int(_minute))
 	var tot_y: int = _our_yellows + _opp_yellows
 	var tot_r: int = _our_reds + _opp_reds
-	if r < 0.34:
+	if r < 0.24:
 		var gk_p: Dictionary = _pick_roster_player(is_us, true, false)
 		var team_c: String = str(CareerState.get_current_club().get("code", "TIM") if is_us else CareerState.get_current_fixture().get("opp_code", "LWN")) if CareerState.has_active_career else ("TIM" if is_us else "LWN")
-		_add_rich_board_highlight(m_now, "SAVE", "PENYELAMATAN %s!" % str(gk_p.get("name", "KIPER")), "Kiper %s menepis sepakan keras jarak dekat!" % team_c, gk_p, {}, is_us)
-	elif r < 0.42 and tot_y < 3 and (_minute - _last_card_min) >= 16.0:
+		_add_rich_board_highlight(m_now, "SAVE", "PENYELAMATAN %s!" % str(gk_p.get("name", "KIPER")), "TEPISAN GEMILANG KIPER %s!" % team_c, gk_p, {}, is_us)
+	elif r < 0.42:
+		var sp: Dictionary = _pick_roster_player(is_us, false, true)
+		var shot_acts := ["SUNDUL TINGGI", "VOLI MELAMBUNG DI ATAS", "SEPAKAN KERAS MELEBAR", "TEMBAKAN JARAK JAUH TIPIS"]
+		var act_s: String = shot_acts[randi() % shot_acts.size()]
+		_add_rich_board_highlight(m_now, "SHOT", "%s %s" % [str(sp.get("name", "PEMAIN")), act_s], act_s, sp, {}, is_us)
+	elif r < 0.54:
+		var cp: Dictionary = _pick_roster_player(is_us, false, false)
+		_add_rich_board_highlight(m_now, "CORNER", "KORNER! %s KIRIM BOLA" % str(cp.get("name", "PEMAIN")), "KIRIM UMPAN KORNER MELENGKUNG", cp, {}, is_us)
+	elif r < 0.60 and tot_y < 3 and (_minute - _last_card_min) >= 16.0:
 		_last_card_min = _minute
 		_trigger_match_card(is_us, false)
-	elif r < 0.435 and tot_r < 1 and _minute >= 24.0 and (_minute - _last_card_min) >= 22.0:
+	elif r < 0.615 and tot_r < 1 and _minute >= 24.0 and (_minute - _last_card_min) >= 22.0:
 		_last_card_min = _minute
 		_trigger_match_card(is_us, true)
-	elif r < 0.46 and _total_injuries_match < 1 and _active_injuries.is_empty() and _minute >= 18.0 and _minute <= 78.0 and (_minute - _last_injury_min) >= 25.0:
+	elif r < 0.64 and _total_injuries_match < 1 and _active_injuries.is_empty() and _minute >= 18.0 and _minute <= 78.0 and (_minute - _last_injury_min) >= 25.0:
 		_total_injuries_match += 1
 		_last_injury_min = _minute
 		_trigger_match_injury(is_us)
 	else:
-		var p: Dictionary = _pick_roster_player(is_us, false, true)
-		var lines := [
-			"Aksi berbahaya di kotak penalti lawan!",
-			"Umpan silang tajam menyapu area pertahanan!",
-			"Duel perebutan bola sengit di lini tengah!",
-			"Tendangan penjuru melengkung mengancam gawang!",
+		# Small tactical commentary highlight in the feed below without displacing Big Hero Banner (Gambar 6!)
+		var small_lines := [
+			["INFO", "BLOK TENGAH, PRESSING HANYA SAAT PERLU"],
+			["FOUL", "FOUL DI LINI TENGAH"],
+			["INFO", "DUEL SEIMBANG, TAK ADA YANG MAU KALAH"],
+			["INFO", "IRAMA TURUN, LAGA MULAI TEMPO SEDANG"],
+			["INFO", "DUA ORANG KE BOLA, TAK ADA JALAN KELUAR"],
 		]
-		_add_rich_board_highlight(m_now, "INFO", "AKSI %s" % str(p.get("name", "PEMAIN")), lines[randi() % lines.size()], p, {}, is_us)
+		var pick: Array = small_lines[randi() % small_lines.size()]
+		if str(pick[0]) == "FOUL":
+			if is_us:
+				_fouls_us += 1
+			else:
+				_fouls_them += 1
+			_refresh_stats_tab()
+		_append_small_feed_row(m_now, str(pick[0]), str(pick[1]), Color("#DCE8F8"), is_us, false)
 
 func _draw_board_timeline() -> void:
 	if _board_timeline == null:
 		return
 	var s := _board_timeline.size
-	_board_timeline.draw_line(Vector2(10, s.y * 0.5), Vector2(s.x - 10, s.y * 0.5), Color("#804050"), 2.0)
-	_board_timeline.draw_line(Vector2(s.x * 0.5, 4), Vector2(s.x * 0.5, s.y - 4), Color("#804050"), 1.0)
+	var y_mid := s.y * 0.50
+	var max_m: float = 120.0 if _in_extra_time else 90.0
+	_board_timeline.draw_line(Vector2(10, y_mid), Vector2(s.x - 10, y_mid), Color("#64748B", 0.55), 1.5)
+	_board_timeline.draw_line(Vector2(10, 6), Vector2(26, 6), Color("#EF4444"), 2.0)
+	_board_timeline.draw_line(Vector2(10, s.y - 6), Vector2(26, s.y - 6), Color("#38BDF8"), 2.0)
+	var half_x := lerpf(10.0, s.x - 10.0, 45.0 / max_m)
+	_board_timeline.draw_line(Vector2(half_x, 8), Vector2(half_x, s.y - 12), Color("#94A3B8", 0.45), 1.0)
+	if _in_extra_time:
+		var x90 := lerpf(10.0, s.x - 10.0, 90.0 / max_m)
+		_board_timeline.draw_line(Vector2(x90, 8), Vector2(x90, s.y - 12), Color("#94A3B8", 0.45), 1.0)
+
+	var font := UITheme.get_ui_font()
+	if font != null:
+		_board_timeline.draw_string(font, Vector2(8, s.y - 2), "0", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#94A3B8"))
+		_board_timeline.draw_string(font, Vector2(half_x - 6, s.y - 2), "45", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#94A3B8"))
+		_board_timeline.draw_string(font, Vector2(s.x - 24, s.y - 2), "120" if _in_extra_time else "90", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#94A3B8"))
+
 	for ev in _board_events:
-		var x := lerpf(10.0, s.x - 10.0, clampf(float(ev["min"]) / 90.0, 0.0, 1.0))
-		var y0 := s.y * 0.5
-		var dy := -11.0 if bool(ev["us"]) else 11.0
+		var x := lerpf(10.0, s.x - 10.0, clampf(float(ev["min"]) / max_m, 0.0, 1.0))
+		var is_u := bool(ev["us"])
 		var k: String = str(ev["kind"])
-		var col: Color = Color.WHITE
+		var bar_h := 22.0 if k.contains("GOAL") else (14.0 if k == "SAVE" else 10.0)
+		var bar_col := Color("#EF4444") if is_u else Color("#38BDF8")
+		var y1 := y_mid - bar_h if is_u else y_mid + bar_h
+		_board_timeline.draw_line(Vector2(x, y_mid), Vector2(x, y1), bar_col, 4.0)
 		if k.contains("GOAL"):
-			col = UITheme.ACCENT_GOLD
-		elif k == "SAVE":
-			col = UITheme.ACCENT_CYAN
+			_board_timeline.draw_circle(Vector2(x, y1 + (-4.0 if is_u else 4.0)), 3.5, Color("#F8FAFC"))
 		elif k == "YELLOW_CARD":
-			col = Color("#FACC15")
+			_board_timeline.draw_rect(Rect2(x - 2, s.y - 14, 5, 7), Color("#FACC15"))
 		elif k == "RED_CARD":
-			col = Color("#EF4444")
-		elif k.begins_with("INJURY"):
-			col = Color("#FB923C")
-		elif k == "USER_SUB":
-			col = UITheme.ACCENT_GREEN
-		_board_timeline.draw_line(Vector2(x, y0), Vector2(x, y0 + dy), col, 3.0)
+			_board_timeline.draw_rect(Rect2(x - 2, s.y - 14, 5, 7), Color("#EF4444"))
 
 func _sync_board_hud() -> void:
 	if _board_panel == null or not CareerState.has_active_career:
@@ -4924,24 +6589,38 @@ func _sync_board_hud() -> void:
 	var club := CareerState.get_current_club()
 	var fix := CareerState.get_current_fixture()
 	var eng: int = clampi(int(round(_user_match_energy)), 0, 100)
-	_board_min_lbl.text = "%d'" % mini(90, int(_minute))
+	_board_min_lbl.text = "%d'" % mini(int(_et_end_min), int(_minute))
+	if _board_home_score != null:
+		_board_home_score.text = str(_score_us)
+	if _board_away_score != null:
+		_board_away_score.text = str(_score_them)
 	_board_score_lbl.text = "%s %d - %d %s" % [club["code"], _score_us, _score_them, fix["opp_code"]]
 	var poss: int = clampi(50 + int(club["ovr"]) - int(fix["opp_ovr"]), 34, 68)
 	_board_poss_lbl.text = "%s %d%%" % [str(club["name"]).to_upper(), poss]
 	var p_bg := _board_poss_bar.get_parent() as Control
 	var p_w: float = p_bg.size.x if (p_bg != null and p_bg.size.x > 20.0) else 360.0
 	_board_poss_bar.size.x = p_w * (float(poss) / 100.0)
-	_board_rating_lbl.text = "RATING %.1f" % _rating
-	_board_energy_lbl.text = "ENERGI %d%%" % eng
+	_board_rating_lbl.text = ("RATING\n%.1f" % _rating).replace(".", ",")
+	if _board_rating_hist.is_empty() or absf(_board_rating_hist[_board_rating_hist.size() - 1] - _rating) >= 0.05:
+		_board_rating_hist.append(_rating)
+		if _board_rating_hist.size() > 14:
+			_board_rating_hist.remove_at(0)
+	if _board_sparkline != null:
+		_board_sparkline.queue_redraw()
+	_board_energy_lbl.text = "%d%%" % eng
 	var e_bg := _board_energy_bar.get_parent() as Control
 	var e_w: float = e_bg.size.x if (e_bg != null and e_bg.size.x > 20.0) else 360.0
 	_board_energy_bar.size.x = e_w * (float(eng) / 100.0)
 	_board_energy_bar.color = UITheme.ACCENT_RED if eng <= 25 else (UITheme.ACCENT_GOLD if eng < 45 else UITheme.ACCENT_GREEN)
 	_board_energy_lbl.add_theme_color_override("font_color", _board_energy_bar.color)
 	_update_board_cards_banner()
+	_refresh_stats_tab()
+	if _board_view_idx == 1:
+		_refresh_squad_tab()
 
 func _open_halftime_locker() -> void:
 	_phase = MatchPhase.HALFTIME
+	_board_hold_fast = false
 	if _board_panel != null:
 		_board_panel.visible = false
 	_spin_pad.visible = false
@@ -4968,7 +6647,7 @@ func _open_halftime_locker() -> void:
 	bg.anchor_left = 0.0
 	bg.anchor_right = 1.0
 	bg.anchor_top = 0.0
-	bg.anchor_bottom = 0.34
+	bg.anchor_bottom = 0.30
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_halftime_panel.add_child(bg)
 
@@ -4976,49 +6655,104 @@ func _open_halftime_locker() -> void:
 	trim_line.color = UITheme.ACCENT_RED
 	trim_line.anchor_left = 0.0
 	trim_line.anchor_right = 1.0
-	trim_line.anchor_top = 0.34
-	trim_line.anchor_bottom = 0.34
+	trim_line.anchor_top = 0.30
+	trim_line.anchor_bottom = 0.30
 	trim_line.offset_bottom = 3
 	_halftime_panel.add_child(trim_line)
 
 	var card := PanelContainer.new()
-	card.anchor_left = 0.20
-	card.anchor_right = 0.80
-	card.anchor_top = 0.5
-	card.anchor_bottom = 0.5
-	card.offset_top = -135
-	card.offset_bottom = 135
-	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A0D12", 0.94), UITheme.ACCENT_RED, 2, 12))
+	card.anchor_left = 0.16
+	card.anchor_right = 0.84
+	card.anchor_top = 0.56
+	card.anchor_bottom = 0.56
+	card.offset_top = -178
+	card.offset_bottom = 178
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#150C12", 0.96), UITheme.ACCENT_GOLD, 2, 10))
 	_halftime_panel.add_child(card)
 
 	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
+	vb.add_theme_constant_override("separation", 8)
 	card.add_child(vb)
 
 	var st_str: String = "UNGGUL" if _score_us > _score_them else ("TERTINGGAL" if _score_us < _score_them else "SKOR SERI")
 	var ttl := Label.new()
-	ttl.text = "HALFTIME: %d - %d\n%s" % [_score_us, _score_them, st_str]
+	ttl.text = "HALFTIME: %d - %d (%s)" % [_score_us, _score_them, st_str]
 	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ttl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ttl.add_theme_font_override("font", UITheme.get_display_font())
 	ttl.add_theme_font_size_override("font_size", 18)
 	vb.add_child(ttl)
 
 	var eng: int = clampi(int(round(_user_match_energy)), 0, 100)
 	var info := Label.new()
-	info.text = "RATING: %.1f  •  ENERGI: %d%%\nPelatih: Fokus 45 menit kedua!" % [_rating, eng]
+	info.text = "RATING: %.1f  •  ENERGI: %d%%" % [_rating, eng]
 	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vb.add_child(info)
+
+	# KUIS RUANG GANTI (+4 ENERGI SAAT PELUIT AKHIR)
+	var quiz_box := PanelContainer.new()
+	quiz_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0D1C32"), UITheme.ACCENT_CYAN, 1, 6))
+	vb.add_child(quiz_box)
+	var qvb := VBoxContainer.new()
+	qvb.add_theme_constant_override("separation", 5)
+	quiz_box.add_child(qvb)
+
+	var q_hdr := Label.new()
+	q_hdr.text = "★ KUIS RUANG GANTI  •  BENAR = +4 ENERGI SAAT PELUIT AKHIR"
+	q_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	q_hdr.add_theme_font_size_override("font_size", 11)
+	q_hdr.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	qvb.add_child(q_hdr)
+
+	var tm_sample: Dictionary = _our_lineup[randi_range(0, maxi(0, _our_lineup.size() - 1))] if not _our_lineup.is_empty() else {"name": "KAPLAN", "num": 10, "pos": "CM"}
+	for p_item in _our_lineup:
+		if not bool(p_item.get("is_user", false)):
+			tm_sample = p_item
+			break
+	var ans_num: int = int(tm_sample.get("num", 10))
+	var q_txt := Label.new()
+	q_txt.text = "Berapa nomor punggung rekan setimmu, %s (%s)?" % [str(tm_sample.get("name", "REKAN")), str(tm_sample.get("pos", "CM"))]
+	q_txt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	q_txt.add_theme_font_size_override("font_size", 12)
+	qvb.add_child(q_txt)
+
+	var opts_nums: Array[int] = [ans_num, (ans_num + 3) % 30 + 1, (ans_num + 7) % 30 + 1]
+	opts_nums.shuffle()
+	var q_hb := HBoxContainer.new()
+	q_hb.add_theme_constant_override("separation", 6)
+	qvb.add_child(q_hb)
+	var q_btns: Array[Button] = []
+	for opt_n in opts_nums:
+		var qb := Button.new()
+		qb.text = "#%d" % opt_n
+		qb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		qb.custom_minimum_size = Vector2(0, 34)
+		UITheme.style_btn(qb, Color("#132C4E"), UITheme.BORDER_CYAN, 13)
+		var picked_n := opt_n
+		qb.pressed.connect(func():
+			for ob in q_btns:
+				ob.disabled = true
+			if picked_n == ans_num:
+				_quiz_bonus_energy = true
+				AudioSynth.play_achievement()
+				q_hdr.text = "✓ BENAR! +4 ENERGI AKAN DITERIMA SAAT PELUIT AKHIR"
+				q_hdr.add_theme_color_override("font_color", UITheme.ACCENT_GREEN)
+				UITheme.style_btn(qb, Color("#14532D"), UITheme.ACCENT_GREEN, 13)
+			else:
+				q_hdr.text = "X KURANG TEPAT! JAWABANNYA #%d" % ans_num
+				q_hdr.add_theme_color_override("font_color", UITheme.ACCENT_RED)
+				UITheme.style_btn(qb, Color("#7F1D1D"), UITheme.ACCENT_RED, 13)
+		)
+		q_hb.add_child(qb)
+		q_btns.append(qb)
 
 	var drink_b := Button.new()
 	drink_b.text = "BELI MINUMAN ENERGI (+28%) • $13.500"
-	drink_b.custom_minimum_size = Vector2(0, 42)
+	drink_b.custom_minimum_size = Vector2(0, 38)
 	UITheme.style_btn(drink_b, Color("#401A20"), UITheme.ACCENT_GOLD, 12)
 	drink_b.pressed.connect(func():
 		if CareerState.buy_emergency_drink(13500):
 			_user_match_energy = minf(100.0, _user_match_energy + 28.0)
-			info.text = "RATING: %.1f  •  ENERGI: %d%%\nPelatih: Energi pulih! Fokus 45 menit kedua!" % [_rating, int(round(_user_match_energy))]
+			info.text = "RATING: %.1f  •  ENERGI: %d%% (PULIH!)" % [_rating, int(round(_user_match_energy))]
 			AudioSynth.play_achievement()
 			drink_b.text = "ENERGI PULIH! SIAP TAMPIL"
 			drink_b.disabled = true
@@ -5027,8 +6761,8 @@ func _open_halftime_locker() -> void:
 
 	var go2 := Button.new()
 	go2.text = "BABAK KEDUA"
-	go2.custom_minimum_size = Vector2(0, 48)
-	UITheme.style_btn(go2, Color("#0E1D30"), UITheme.ACCENT_CYAN, 18)
+	go2.custom_minimum_size = Vector2(0, 44)
+	UITheme.style_btn(go2, Color("#0E1D30"), UITheme.ACCENT_CYAN, 17)
 	go2.pressed.connect(func():
 		AudioSynth.play_whistle(false)
 		_halftime_panel.visible = false
@@ -5039,7 +6773,385 @@ func _open_halftime_locker() -> void:
 	vb.add_child(go2)
 	_halftime_panel.visible = true
 
-func _open_ask_set_piece(m_type: MomentType) -> void:
+func _open_pitch_invader_popup() -> void:
+	_board_paused = true
+	_board_hold_fast = false
+	for c in _invader_panel.get_children():
+		c.queue_free()
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.04, 0.08, 0.80)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_invader_panel.add_child(dim)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_invader_panel.add_child(cc)
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(520, 0)
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#123524"), UITheme.ACCENT_GOLD, 2, 10))
+	cc.add_child(card)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	card.add_child(vb)
+	var hdr := Label.new()
+	hdr.text = "▲ PENYUSUP MASUK LAPANGAN! (%d')" % int(_minute)
+	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hdr.add_theme_font_override("font", UITheme.get_display_font())
+	hdr.add_theme_font_size_override("font_size", 18)
+	hdr.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	vb.add_child(hdr)
+	var av := PixelAvatar.new()
+	av.custom_minimum_size = Vector2(96, 110)
+	av.configure_from_career()
+	av.anim_mode = "CELEBRATE"
+	var chb := HBoxContainer.new()
+	chb.alignment = BoxContainer.ALIGNMENT_CENTER
+	chb.add_child(av)
+	vb.add_child(chb)
+	var desc := Label.new()
+	desc.text = "Seorang suporter nekat melompati papan iklan mengenakan jerseymu! Petugas keamanan mengejarnya sebelum laga berlanjut."
+	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(desc)
+	var btn := Button.new()
+	btn.text = "KETUK UNTUK LANJUT"
+	btn.custom_minimum_size = Vector2(0, 44)
+	UITheme.style_btn(btn, Color("#173B66"), UITheme.ACCENT_CYAN, 15)
+	btn.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.apply_cutscene_effects({"fans": 2})
+		_invader_panel.visible = false
+		_board_paused = false
+		_add_rich_board_highlight(int(_minute), "INFO", "PENYUSUP DIAMANKAN", "Suporter nekat berlari pakai jerseymu! (+2 Fans)", _get_user_roster_dict(), {}, true)
+	)
+	vb.add_child(btn)
+	_invader_panel.visible = true
+
+func _open_coin_flip_phase() -> void:
+	_phase = MatchPhase.COIN_FLIP
+	_board_hold_fast = false
+	_coin_spinning = false
+	_coin_anim_t = 0.0
+	if _board_panel != null:
+		_board_panel.visible = false
+	for c in _coin_flip_panel.get_children():
+		c.queue_free()
+
+	var dim := ColorRect.new()
+	dim.color = Color("#081B12", 0.94)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_coin_flip_panel.add_child(dim)
+
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_coin_flip_panel.add_child(cc)
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(540, 0)
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#12261C"), UITheme.ACCENT_GOLD, 2, 12))
+	cc.add_child(card)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	card.add_child(vb)
+
+	var ttl := Label.new()
+	ttl.text = "UNDIAN KOIN ADU PENALTI (120': %d - %d)" % [_score_us, _score_them]
+	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ttl.add_theme_font_override("font", UITheme.get_display_font())
+	ttl.add_theme_font_size_override("font_size", 18)
+	ttl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	vb.add_child(ttl)
+
+	_coin_canvas = Control.new()
+	_coin_canvas.custom_minimum_size = Vector2(0, 140)
+	_coin_canvas.draw.connect(_draw_pixel_coin)
+	vb.add_child(_coin_canvas)
+
+	_coin_status_lbl = Label.new()
+	_coin_status_lbl.text = "PILIH SISI KOIN! Pemenang undian menentukan penendang pertama."
+	_coin_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_coin_status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_coin_status_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_coin_status_lbl.add_theme_font_size_override("font_size", 14)
+	vb.add_child(_coin_status_lbl)
+
+	var btn_hb := HBoxContainer.new()
+	btn_hb.add_theme_constant_override("separation", 12)
+	vb.add_child(btn_hb)
+	_coin_choice_btns.clear()
+	for side_txt in ["ANGKA", "GAMBAR"]:
+		var b := Button.new()
+		b.text = "●  " + side_txt
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 48)
+		UITheme.style_btn(b, Color("#5A4212"), UITheme.ACCENT_GOLD, 16)
+		var cap_s: String = str(side_txt)
+		b.pressed.connect(func(): _start_coin_spin(cap_s))
+		btn_hb.add_child(b)
+		_coin_choice_btns.append(b)
+
+	_coin_go_btn = Button.new()
+	_coin_go_btn.text = "LANJUT ADU PENALTI"
+	_coin_go_btn.visible = false
+	_coin_go_btn.custom_minimum_size = Vector2(0, 46)
+	UITheme.style_btn(_coin_go_btn, Color("#153B6E"), UITheme.ACCENT_CYAN, 16)
+	_coin_go_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		_coin_flip_panel.visible = false
+		_open_penalty_shootout()
+	)
+	vb.add_child(_coin_go_btn)
+	_coin_flip_panel.visible = true
+
+func _start_coin_spin(choice: String) -> void:
+	AudioSynth.play_click()
+	_coin_choice = choice
+	_coin_result = "GAMBAR" if randf() < 0.5 else "ANGKA"
+	_coin_winner_us = (_coin_choice == _coin_result)
+	_coin_anim_t = 0.0
+	_coin_spinning = true
+	_coin_status_lbl.text = "MELEMPAR KOIN..."
+	for b in _coin_choice_btns:
+		b.disabled = true
+
+func _draw_pixel_coin() -> void:
+	if _coin_canvas == null:
+		return
+	var c := _coin_canvas.size * 0.5
+	var spin_w := absf(cos(_coin_anim_t * 14.0)) if _coin_spinning else 1.0
+	var rad_x := maxf(8.0, 52.0 * spin_w)
+	var rad_y := 52.0
+	_coin_canvas.draw_rect(Rect2(c.x - rad_x, c.y - rad_y, rad_x * 2.0, rad_y * 2.0), Color("#D97706"))
+	_coin_canvas.draw_rect(Rect2(c.x - rad_x * 0.85, c.y - rad_y * 0.85, rad_x * 1.7, rad_y * 1.7), Color("#FACC15"))
+	if not _coin_spinning or spin_w > 0.45:
+		var lbl := _coin_result if not _coin_spinning else ("GAMBAR" if int(_coin_anim_t * 10.0) % 2 == 0 else "ANGKA")
+		var font := UITheme.get_ui_font()
+		if font != null:
+			_coin_canvas.draw_string(font, c + Vector2(-28, 6), lbl, HORIZONTAL_ALIGNMENT_CENTER, 56, 13, Color("#78350F"))
+
+func _finish_coin_spin() -> void:
+	_coin_spinning = false
+	_coin_canvas.queue_redraw()
+	_pso_user_first = _coin_winner_us
+	if _coin_winner_us:
+		AudioSynth.play_achievement()
+	else:
+		AudioSynth.play_click()
+	var order_note := "TIMMU MENENDANG PERTAMA!" if _pso_user_first else "LAWAN MENENDANG PERTAMA!"
+	_coin_status_lbl.text = "KOIN MENUNJUKKAN %s.\n%s" % [_coin_result, order_note]
+	_coin_status_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if _coin_winner_us else UITheme.ACCENT_GOLD)
+	_coin_go_btn.visible = true
+
+func _open_penalty_shootout() -> void:
+	_phase = MatchPhase.PENALTY_SHOOTOUT
+	_pso_us_kicks.clear()
+	_pso_them_kicks.clear()
+	_pso_round = 1
+	_pso_turn_us = _pso_user_first
+	_pso_waiting_kick = true
+	for c in _pso_panel.get_children():
+		c.queue_free()
+
+	var dim := ColorRect.new()
+	dim.color = Color("#081424", 0.95)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pso_panel.add_child(dim)
+
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pso_panel.add_child(cc)
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(600, 0)
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0D1E38"), UITheme.ACCENT_GOLD, 2, 12))
+	cc.add_child(card)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	card.add_child(vb)
+
+	var hdr := Label.new()
+	hdr.text = "● ADU PENALTI (8 BESAR / GUGUR)"
+	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hdr.add_theme_font_override("font", UITheme.get_display_font())
+	hdr.add_theme_font_size_override("font_size", 18)
+	hdr.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	vb.add_child(hdr)
+
+	_pso_score_lbl = Label.new()
+	_pso_score_lbl.text = "PENALTI: 0 - 0"
+	_pso_score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pso_score_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_pso_score_lbl.add_theme_font_size_override("font_size", 24)
+	vb.add_child(_pso_score_lbl)
+
+	_pso_row_us = HBoxContainer.new()
+	_pso_row_us.alignment = BoxContainer.ALIGNMENT_CENTER
+	_pso_row_us.add_theme_constant_override("separation", 6)
+	vb.add_child(_pso_row_us)
+
+	_pso_row_them = HBoxContainer.new()
+	_pso_row_them.alignment = BoxContainer.ALIGNMENT_CENTER
+	_pso_row_them.add_theme_constant_override("separation", 6)
+	vb.add_child(_pso_row_them)
+
+	_pso_status_lbl = Label.new()
+	_pso_status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pso_status_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pso_status_lbl.add_theme_font_size_override("font_size", 14)
+	vb.add_child(_pso_status_lbl)
+
+	_pso_btn_row = HBoxContainer.new()
+	_pso_btn_row.add_theme_constant_override("separation", 8)
+	vb.add_child(_pso_btn_row)
+
+	_pso_done_btn = Button.new()
+	_pso_done_btn.text = "SELESAI & LIHAT HASIL"
+	_pso_done_btn.visible = false
+	_pso_done_btn.custom_minimum_size = Vector2(0, 44)
+	UITheme.style_btn(_pso_done_btn, UITheme.ACCENT_AMBER, UITheme.ACCENT_GOLD, 16)
+	_pso_done_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		_pso_panel.visible = false
+		_finish_career_match()
+	)
+	vb.add_child(_pso_done_btn)
+
+	_pso_panel.visible = true
+	_render_pso_board()
+
+func _pso_goals(arr: Array[String]) -> int:
+	var cnt := 0
+	for k in arr:
+		if k == "✓":
+			cnt += 1
+	return cnt
+
+func _render_pso_board() -> void:
+	var g_us := _pso_goals(_pso_us_kicks)
+	var g_them := _pso_goals(_pso_them_kicks)
+	var club := CareerState.get_current_club()
+	var fix := CareerState.get_current_fixture()
+	_pso_score_lbl.text = "%s %d - %d %s" % [club["code"], g_us, g_them, fix["opp_code"]]
+
+	for r in [_pso_row_us, _pso_row_them]:
+		for ch in r.get_children():
+			ch.queue_free()
+	var slots := maxi(5, maxi(_pso_us_kicks.size(), _pso_them_kicks.size()))
+	for r_pair in [[club["code"], _pso_us_kicks, _pso_row_us], [fix["opp_code"], _pso_them_kicks, _pso_row_them]]:
+		var nm := Label.new()
+		nm.text = str(r_pair[0])
+		nm.custom_minimum_size = Vector2(48, 0)
+		nm.add_theme_font_override("font", UITheme.get_display_font())
+		r_pair[2].add_child(nm)
+		var arr: Array = r_pair[1]
+		for i in range(slots):
+			var mark: String = arr[i] if i < arr.size() else "•"
+			var ml := Label.new()
+			ml.text = mark
+			ml.custom_minimum_size = Vector2(28, 28)
+			ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			ml.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			ml.add_theme_font_override("font", UITheme.get_display_font())
+			ml.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if mark == "✓" else (UITheme.ACCENT_RED if mark == "X" else UITheme.TEXT_MUTED))
+			r_pair[2].add_child(ml)
+
+	for ch in _pso_btn_row.get_children():
+		ch.queue_free()
+
+	# Check completion condition
+	var k_u := _pso_us_kicks.size()
+	var k_t := _pso_them_kicks.size()
+	var finished := false
+	if k_u <= 5 and k_t <= 5:
+		var rem_u := 5 - k_u
+		var rem_t := 5 - k_t
+		if g_us > g_them + rem_t or g_them > g_us + rem_u:
+			finished = true
+		elif k_u == 5 and k_t == 5 and g_us != g_them:
+			finished = true
+	elif k_u == k_t and g_us != g_them:
+		finished = true
+
+	if finished:
+		_pen_us = g_us
+		_pen_them = g_them
+		var won := g_us > g_them
+		_pso_status_lbl.text = "MENANG ADU PENALTI! (%d - %d)" % [g_us, g_them] if won else "KALAH ADU PENALTI (%d - %d)" % [g_us, g_them]
+		_pso_status_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if won else UITheme.ACCENT_RED)
+		_pso_done_btn.visible = true
+		return
+
+	if _pso_turn_us:
+		var is_user_kick := (k_u == 0 and not _user_subbed_out)
+		var kicker_name: String = CareerState.career["playerProfile"]["name"] if is_user_kick else "REKAN TIM"
+		_pso_status_lbl.text = "GILIRAN %s (#%d) — PILIH ARAH TEMBAKAN!" % [kicker_name, k_u + 1]
+		for dir_i in range(3):
+			var dirs := ["← KIRI", "▲ TENGAH", "→ KANAN"]
+			var kb := Button.new()
+			kb.text = dirs[dir_i]
+			kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			kb.custom_minimum_size = Vector2(0, 44)
+			UITheme.style_btn(kb, Color("#153B6E"), UITheme.ACCENT_CYAN, 13)
+			var cap_d := dir_i
+			var cap_uk := is_user_kick
+			kb.pressed.connect(func(): _pso_take_kick(cap_d, cap_uk))
+			_pso_btn_row.add_child(kb)
+	else:
+		_pso_status_lbl.text = "GILIRAN LAWAN (#%d) — PILIH ARAH TEBAKAN KIPER!" % (k_t + 1)
+		for dir_i in range(3):
+			var dirs := ["← LOMPAT KIRI", "▲ DIAM TENGAH", "→ LOMPAT KANAN"]
+			var kb := Button.new()
+			kb.text = dirs[dir_i]
+			kb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			kb.custom_minimum_size = Vector2(0, 44)
+			UITheme.style_btn(kb, Color("#3B1C24"), UITheme.ACCENT_GOLD, 13)
+			var cap_d := dir_i
+			kb.pressed.connect(func(): _pso_keeper_dive(cap_d))
+			_pso_btn_row.add_child(kb)
+
+func _pso_take_kick(dir_idx: int, is_user_kick: bool) -> void:
+	var gk_dir := randi_range(0, 2)
+	var pen_attr := CareerState.get_effective_attribute("penalti") if is_user_kick else 70
+	var conv_chance := clampf(0.55 + float(pen_attr) * 0.0038, 0.58, 0.94)
+	var scored := (dir_idx != gk_dir) or (randf() < conv_chance * 0.65)
+	if is_user_kick and scored:
+		_penalties_scored += 1
+		_adjust_rating(0.4, "Penalti Adu Tos!")
+	_pso_us_kicks.append("✓" if scored else "X")
+	if scored:
+		AudioSynth.play_goal()
+	else:
+		AudioSynth.play_save()
+	_pso_turn_us = false
+	_render_pso_board()
+
+func _pso_keeper_dive(dive_idx: int) -> void:
+	var opp_dir := randi_range(0, 2)
+	var saved := (dive_idx == opp_dir and randf() < 0.55) or randf() < 0.14
+	_pso_them_kicks.append("X" if saved else "✓")
+	if saved:
+		AudioSynth.play_save()
+	else:
+		AudioSynth.play_whistle(false)
+	_pso_turn_us = true
+	_render_pso_board()
+
+func _execute_set_piece_outcome(user_takes: bool) -> void:
+	if user_takes:
+		if _pending_ask_type == MomentType.CORNER_KICK:
+			setup_corner_variant(true)
+		else:
+			_trigger_key_moment(_pending_ask_type)
+	else:
+		if _pending_ask_type == MomentType.PENALTY:
+			_trigger_key_moment(MomentType.TEAMMATE_PENALTY)
+		elif _pending_ask_type == MomentType.CORNER_KICK:
+			setup_corner_variant(false)
+		else:
+			_phase = MatchPhase.SIMULATING
+			if _board_panel != null:
+				_board_panel.visible = true
+
+func _open_ask_set_piece(m_type: MomentType, teammate_asks: bool = false) -> void:
 	_phase = MatchPhase.ASK_SET_PIECE
 	_pending_ask_type = m_type
 	for c in _ask_panel.get_children():
@@ -5052,66 +7164,90 @@ func _open_ask_set_piece(m_type: MomentType) -> void:
 
 	var card := PanelContainer.new()
 	card.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	card.offset_left = 140
-	card.offset_right = -140
-	card.offset_top = -150
+	card.offset_left = 120
+	card.offset_right = -120
+	card.offset_top = -175
 	card.offset_bottom = -18
 	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#121A26", 0.96), UITheme.ACCENT_GOLD, 2, 10))
 	_ask_panel.add_child(card)
 
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-	card.add_child(vb)
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 14)
+	m.add_theme_constant_override("margin_right", 14)
+	m.add_theme_constant_override("margin_top", 10)
+	m.add_theme_constant_override("margin_bottom", 10)
+	card.add_child(m)
 
-	var rel_rg: int = int(CareerState.career["playerProfile"]["relations"]["ruangGanti"])
-	var yes_pct: int = clampi(38 + int(rel_rg * 0.5), 25, 92)
-	var sp_lbl: String = "PENALTI" if m_type == MomentType.PENALTY else "TENDANGAN BEBAS"
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	m.add_child(vb)
+
+	var stat_key: String = "penalti" if m_type == MomentType.PENALTY else "bolaMati"
+	var stat_name: String = "PENALTI" if m_type == MomentType.PENALTY else "BOLA MATI"
+	var attr_val: int = CareerState.get_effective_attribute(stat_key)
+	var chance_pct: int = clampi(int(round(20.0 + float(attr_val) * 0.72)), 20, 95)
+	var sp_lbl: String = "PENALTI" if m_type == MomentType.PENALTY else ("TENDANGAN SUDUT" if m_type == MomentType.CORNER_KICK else "TENDANGAN BEBAS")
+
 	var h := Label.new()
-	h.text = "%s MILIK REKAN SETIM — MINTA EKSEKUSI?" % sp_lbl
+	h.text = ("REKAN MEMINTA BOLA %s — BERIKAN?" % sp_lbl) if teammate_asks else ("%s MILIK REKAN SETIM — MINTA BOLA?" % sp_lbl)
 	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	h.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
 	vb.add_child(h)
+
+	var sub_l := Label.new()
+	sub_l.text = ("Kepercayaan bertahan (%s %d): %d%%" % [stat_name, attr_val, chance_pct]) if teammate_asks else ("Peluang disetujui (%s %d): %d%%" % [stat_name, attr_val, chance_pct])
+	sub_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub_l.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	sub_l.add_theme_font_size_override("font_size", 12)
+	vb.add_child(sub_l)
 
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 8)
 	vb.add_child(hb)
 
 	var b_yes := Button.new()
-	b_yes.text = "MINTA (YA %d%%)" % yes_pct
+	b_yes.text = "YA" if teammate_asks else ("YA (%d%%)" % chance_pct)
 	b_yes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_yes.custom_minimum_size = Vector2(0, 44)
 	UITheme.style_btn(b_yes, Color("#17462E"), UITheme.ACCENT_GREEN, 13)
 	b_yes.pressed.connect(func():
 		AudioSynth.play_click()
 		_ask_panel.visible = false
-		if randi_range(1, 100) <= yes_pct:
-			_add_board_event(int(_minute), "INFO", "%d' Rekan memberimu bola untuk %s!" % [int(_minute), sp_lbl], true)
-			_trigger_key_moment(_pending_ask_type)
-		elif _pending_ask_type == MomentType.PENALTY:
-			_add_board_event(int(_minute), "INFO", "%d' Rekan mengeksekusi penalti — bersiap rebound!" % int(_minute), true)
-			_trigger_key_moment(MomentType.TEAMMATE_PENALTY)
+		if teammate_asks:
+			if CareerState.career.has("playerProfile") and CareerState.career["playerProfile"].has("relations"):
+				var cur_rg := int(CareerState.career["playerProfile"]["relations"].get("ruangGanti", 50))
+				CareerState.career["playerProfile"]["relations"]["ruangGanti"] = clampi(cur_rg + 1, 0, 100)
+			_add_board_event(int(_minute), "INFO", "%d' Kamu memberikan %s kepada rekan setim (+1 Ruang Ganti)." % [int(_minute), sp_lbl], true)
+			_execute_set_piece_outcome(false)
 		else:
-			_add_board_event(int(_minute), "INFO", "%d' Rekan menolak dan eksekusi sendiri." % int(_minute), false)
-			_phase = MatchPhase.SIMULATING
-			if _board_panel != null:
-				_board_panel.visible = true
+			if randi_range(1, 100) <= chance_pct:
+				_add_board_event(int(_minute), "INFO", "%d' Rekan menyetujui! Kamu mengeksekusi %s." % [int(_minute), sp_lbl], true)
+				_execute_set_piece_outcome(true)
+			else:
+				var rej_msg := "%d' Rekan menolak — siap bola rebound!" % int(_minute) if _pending_ask_type == MomentType.PENALTY else "%d' Rekan menolak dan eksekusi sendiri." % int(_minute)
+				_add_board_event(int(_minute), "INFO", rej_msg, false)
+				_execute_set_piece_outcome(false)
 	)
 	hb.add_child(b_yes)
 
 	var b_no := Button.new()
-	b_no.text = "BIARKAN (TIDAK)"
+	b_no.text = ("TIDAK (%d%%)" % chance_pct) if teammate_asks else "TIDAK"
 	b_no.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b_no.custom_minimum_size = Vector2(0, 44)
 	UITheme.style_btn(b_no, Color("#4E2424"), UITheme.ACCENT_RED, 13)
 	b_no.pressed.connect(func():
 		AudioSynth.play_click()
 		_ask_panel.visible = false
-		if _pending_ask_type == MomentType.PENALTY:
-			_trigger_key_moment(MomentType.TEAMMATE_PENALTY)
+		if teammate_asks:
+			if randi_range(1, 100) <= chance_pct:
+				_add_board_event(int(_minute), "INFO", "%d' Rekan mengalah — kamu tetap ambil %s!" % [int(_minute), sp_lbl], true)
+				_execute_set_piece_outcome(true)
+			else:
+				_add_board_event(int(_minute), "INFO", "%d' Kapten menyerahkan %s kepada rekan." % [int(_minute), sp_lbl], false)
+				_execute_set_piece_outcome(false)
 		else:
-			_phase = MatchPhase.SIMULATING
-			if _board_panel != null:
-				_board_panel.visible = true
+			_add_board_event(int(_minute), "INFO", "%d' Kamu membiarkan rekan mengambil %s." % [int(_minute), sp_lbl], true)
+			_execute_set_piece_outcome(false)
 	)
 	hb.add_child(b_no)
 	_ask_panel.visible = true
@@ -5304,8 +7440,13 @@ class SpinBallPad extends Control:
 		draw_line(center - Vector2(rad, 0), center + Vector2(rad, 0), Color(0.2, 0.3, 0.4, 0.3), 1.0)
 		draw_line(center - Vector2(0, rad), center + Vector2(0, rad), Color(0.2, 0.3, 0.4, 0.3), 1.0)
 		var dot := center + spin * rad * 0.78
-		draw_circle(dot, 6.0, Color("#EF4444"))
-		draw_string(UITheme.get_ui_font(), Vector2(26, size.y - 4), "EFEK", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#F5C542"))
+		var is_loft := spin.y > 0.08
+		if is_loft:
+			draw_arc(center, rad - 2.0, 0.12 * PI, 0.88 * PI, 16, Color("#38BDF8", 0.75), 3.0)
+		draw_circle(dot, 6.0, Color("#38BDF8") if is_loft else Color("#EF4444"))
+		draw_arc(dot, 6.0, 0.0, TAU, 16, Color.WHITE, 1.2)
+		var lbl_txt := "LAMBUNG ▲" if is_loft else "SUDUT BOLA"
+		draw_string(UITheme.get_ui_font(), Vector2(4, size.y - 4), lbl_txt, HORIZONTAL_ALIGNMENT_CENTER, size.x - 8, 10, Color("#38BDF8") if is_loft else Color("#F5C542"))
 
 class DribbleJoystickPad extends Control:
 	signal joy_changed(vec: Vector2)

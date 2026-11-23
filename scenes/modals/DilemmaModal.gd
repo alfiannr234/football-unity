@@ -221,7 +221,7 @@ func _show_relasi_feedback(bot: VBoxContainer, base_txt: String, out_txt: String
 	vb.add_child(hdr)
 
 	var rel: Dictionary = CareerState.career.get("playerProfile", {}).get("relations", {})
-	var labels_map := {"pelatih": "Pelatih", "ruangGanti": "Ruang ganti", "fans": "Suporter", "pers": "Pers", "agen": "Agen"}
+	var labels_map := {"pelatih": "Pelatih", "ruangGanti": "Ruang ganti", "fans": "Suporter", "pers": "Pers", "agen": "Agen", "kekasih": "Kekasih"}
 	for rk in deltas.keys():
 		var dv: int = int(deltas[rk])
 		if dv == 0:

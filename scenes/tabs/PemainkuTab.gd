@@ -7,10 +7,15 @@ signal open_city_requested(landmark: String, inside_apt: bool)
 signal open_cutscene_requested(mode_idx: int)
 signal open_volley_requested
 
+const MarketSponsorOverlaysScript := preload("res://scripts/ui/MarketSponsorOverlays.gd")
+
 var _subtab: String = "SKILL"
 var _gaya_sub: String = "JERSEY"
 var _look_sub: String = "POTONGAN"
 var _pending_skills: Dictionary = {}
+var _tab_bar: HBoxContainer
+var _content_hb: HBoxContainer
+var _sponsor_root: HBoxContainer
 var _stage_host: VBoxContainer
 var _body: VBoxContainer
 var _tab_btns: Dictionary = {}
@@ -22,11 +27,11 @@ func _ready() -> void:
 	outer.add_theme_constant_override("separation", 6)
 	add_child(outer)
 
-	# 6 Sub-tabs (SKILL | KONTRAK | RELASI | GAYA | TOKO | KOTA)
-	var thb := HBoxContainer.new()
-	thb.add_theme_constant_override("separation", 4)
-	outer.add_child(thb)
-	for st in ["SKILL", "KONTRAK", "RELASI", "GAYA", "TOKO", "KOTA"]:
+	# 6 Sub-tabs (SKILL | KONTRAK | SPONSOR | RELASI | GAYA | KOTA — TOKO removed because it has its own top nav!)
+	_tab_bar = HBoxContainer.new()
+	_tab_bar.add_theme_constant_override("separation", 4)
+	outer.add_child(_tab_bar)
+	for st in ["SKILL", "KONTRAK", "SPONSOR", "RELASI", "GAYA", "KOTA"]:
 		var b := Button.new()
 		b.text = st
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -37,24 +42,32 @@ func _ready() -> void:
 			_refresh_tab_styles()
 			refresh()
 		)
-		thb.add_child(b)
+		_tab_bar.add_child(b)
 		_tab_btns[st] = b
 
+	# Full-height 2-column dashboard exclusively for SPONSOR (Gambar 3!)
+	_sponsor_root = HBoxContainer.new()
+	_sponsor_root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sponsor_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_sponsor_root.add_theme_constant_override("separation", 12)
+	_sponsor_root.visible = false
+	outer.add_child(_sponsor_root)
+
 	# Landscape Split: Optional Left Locker Showcase + Right Scrollable Body
-	var content_hb := HBoxContainer.new()
-	content_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_hb.add_theme_constant_override("separation", 10)
-	outer.add_child(content_hb)
+	_content_hb = HBoxContainer.new()
+	_content_hb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content_hb.add_theme_constant_override("separation", 10)
+	outer.add_child(_content_hb)
 
 	_stage_host = VBoxContainer.new()
 	_stage_host.custom_minimum_size = Vector2(280, 0)
 	_stage_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_hb.add_child(_stage_host)
+	_content_hb.add_child(_stage_host)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_hb.add_child(scroll)
+	_content_hb.add_child(scroll)
 
 	_body = VBoxContainer.new()
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -65,11 +78,25 @@ func _ready() -> void:
 	_refresh_tab_styles()
 	refresh()
 
+func set_subtab(st: String) -> void:
+	_subtab = st
+	_refresh_tab_styles()
+	refresh()
+
 func _refresh_tab_styles() -> void:
+	if _tab_bar != null:
+		_tab_bar.visible = (_subtab != "TOKO")
 	for k in _tab_btns.keys():
 		var b: Button = _tab_btns[k]
 		var act: bool = (str(k) == _subtab)
-		UITheme.style_btn(b, Color("#173B66") if act else Color("#0B1626"), UITheme.BORDER_CYAN if act else UITheme.BORDER_STEEL, 11)
+		if act and str(k) == "SPONSOR":
+			UITheme.style_btn(b, Color("#F1F5F9"), Color("#FFFFFF"), 11)
+			b.add_theme_color_override("font_color", Color("#0A1322"))
+			b.add_theme_color_override("font_hover_color", Color("#0A1322"))
+		else:
+			UITheme.style_btn(b, Color("#173B66") if act else Color("#0B1626"), UITheme.BORDER_CYAN if act else UITheme.BORDER_STEEL, 11)
+			b.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+			b.add_theme_color_override("font_hover_color", UITheme.TEXT_WHITE)
 		if k == "SKILL" and CareerState.has_active_career:
 			var sp := int(CareerState.career["playerProfile"]["skillPoints"])
 			b.text = "%d POIN" % sp if sp > 0 else "SKILL"
@@ -78,10 +105,23 @@ func refresh() -> void:
 	if not is_inside_tree() or not CareerState.has_active_career:
 		return
 	_refresh_tab_styles()
+	for c in _sponsor_root.get_children():
+		_sponsor_root.remove_child(c)
+		c.queue_free()
 	for c in _stage_host.get_children():
+		_stage_host.remove_child(c)
 		c.queue_free()
 	for c in _body.get_children():
+		_body.remove_child(c)
 		c.queue_free()
+
+	var is_sponsor: bool = (_subtab == "SPONSOR")
+	_sponsor_root.visible = is_sponsor
+	_content_hb.visible = not is_sponsor
+
+	if is_sponsor:
+		_render_sponsor_body()
+		return
 
 	var show_locker := (_subtab in ["SKILL", "KONTRAK", "GAYA"])
 	_stage_host.visible = show_locker
@@ -135,7 +175,7 @@ func _render_locker_stage() -> void:
 			var p: Dictionary = CareerState.career["playerProfile"]
 			lbl.text = "#%d %s" % [int(p["appearance"].get("shirt_num", 9)), p["name"]]
 			lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-			av.custom_minimum_size = Vector2(90, 134)
+			av.custom_minimum_size = Vector2(112, 168)
 			av.configure_from_career()
 			av.anim_mode = "IDLE"
 			av.anim_phase = 0.0
@@ -151,10 +191,17 @@ func _render_locker_stage() -> void:
 
 func _render_skill_body() -> void:
 	var p: Dictionary = CareerState.career["playerProfile"]
+	var attrs: Dictionary = p["attributes"]
 	var total_sp: int = int(p["skillPoints"])
 	var pend_cost: int = 0
 	for k in _pending_skills.keys():
-		pend_cost += int(_pending_skills[k])
+		var steps_k: int = int(_pending_skills[k])
+		var cv: int = int(attrs.get(k, 60))
+		for _s in range(steps_k):
+			if cv >= 99:
+				break
+			pend_cost += CareerState.get_attribute_upgrade_cost(cv)
+			cv += 1
 	if pend_cost > total_sp:
 		_pending_skills.clear()
 		pend_cost = 0
@@ -187,34 +234,78 @@ func _render_skill_body() -> void:
 		)
 		commit_hb.add_child(save_b)
 
-	var attrs: Dictionary = p["attributes"]
+	var attr_cols: Dictionary = {
+		"kekuatan": Color("#F97316"), "akurasi": Color("#38BDF8"), "efek": Color("#A78BFA"),
+		"visi": Color("#FACC15"), "fisik": Color("#F472B6"), "kecepatan": Color("#22D3EE"),
+		"akselerasi": Color("#FB923C"), "dribel": Color("#60A5FA"), "penalti": Color("#EF4444"), "bolaMati": Color("#4ADE80"),
+	}
 	for ak in GameData.ATTRIBUTE_KEYS:
 		if ak == "penalti":
 			_body.add_child(UITheme.make_section_header("BOLA MATI"))
-		var hb := HBoxContainer.new()
-		_body.add_child(hb)
-		var lbl := Label.new()
-		lbl.text = GameData.ATTRIBUTE_LABELS[ak]
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		hb.add_child(lbl)
-
+		var ak_copy: String = ak
 		var p_add: int = int(_pending_skills.get(ak, 0))
+		var base_cur: int = int(attrs[ak]) + p_add
+		var next_cost: int = CareerState.get_attribute_upgrade_cost(base_cur)
 		var val: int = CareerState.get_effective_attribute(ak) + p_add
+
+		var row := PanelContainer.new()
+		row.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0B1628"), Color("#1B3150"), 1, 3))
+		_body.add_child(row)
+		var hb := HBoxContainer.new()
+		hb.add_theme_constant_override("separation", 8)
+		row.add_child(hb)
+
+		var icon := ColorRect.new()
+		icon.custom_minimum_size = Vector2(6, 28)
+		icon.color = attr_cols.get(ak, UITheme.ACCENT_CYAN)
+		hb.add_child(icon)
+
+		var name_vb := VBoxContainer.new()
+		name_vb.custom_minimum_size = Vector2(112, 0)
+		name_vb.add_theme_constant_override("separation", 0)
+		hb.add_child(name_vb)
+		var lbl := Button.new()
+		lbl.text = str(GameData.ATTRIBUTE_LABELS[ak]).to_upper()
+		lbl.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		lbl.flat = true
+		lbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+		lbl.pressed.connect(func(): AudioSynth.play_click(); _show_skill_tooltip(ak_copy))
+		name_vb.add_child(lbl)
+		if next_cost > 1 and base_cur < 99:
+			var cost_tag := Label.new()
+			cost_tag.text = "%d POIN" % next_cost
+			cost_tag.add_theme_color_override("font_color", Color("#F59E0B"))
+			cost_tag.add_theme_font_size_override("font_size", 9)
+			name_vb.add_child(cost_tag)
+
+		var bar_bg := ColorRect.new()
+		bar_bg.color = Color("#13233B")
+		bar_bg.custom_minimum_size = Vector2(70, 8)
+		bar_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		hb.add_child(bar_bg)
+		var bar_fill := ColorRect.new()
+		bar_fill.color = UITheme.get_stat_color(val)
+		bar_fill.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bar_fill.anchor_right = clampf(float(val) / 99.0, 0.02, 1.0)
+		bar_fill.offset_right = 0
+		bar_bg.add_child(bar_fill)
+
 		var vl := Label.new()
 		vl.text = ("%d (+%d)" % [val, p_add]) if p_add > 0 else str(val)
-		vl.custom_minimum_size = Vector2(74, 0)
+		vl.custom_minimum_size = Vector2(60, 0)
 		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		vl.add_theme_color_override("font_color", UITheme.get_stat_color(val))
 		hb.add_child(vl)
 
 		var plus := Button.new()
 		plus.text = "+"
-		plus.custom_minimum_size = Vector2(38, 30)
-		plus.disabled = (rem_sp < 1 or int(attrs[ak]) + p_add >= 99)
-		UITheme.style_btn(plus, Color("#133056"), UITheme.BORDER_CYAN)
+		plus.custom_minimum_size = Vector2(40, 28)
+		plus.disabled = (rem_sp < next_cost or base_cur >= 99)
+		UITheme.style_btn(plus, Color("#243A1C") if next_cost > 1 else Color("#133056"), UITheme.ACCENT_GOLD if next_cost > 1 else UITheme.BORDER_CYAN)
 		plus.pressed.connect(func():
 			AudioSynth.play_click()
-			_pending_skills[ak] = int(_pending_skills.get(ak, 0)) + 1
+			_pending_skills[ak_copy] = int(_pending_skills.get(ak_copy, 0)) + 1
 			refresh()
 		)
 		hb.add_child(plus)
@@ -349,20 +440,125 @@ func _render_contract_body() -> void:
 	)
 	_body.add_child(agree_b)
 
+	if bool(con.get("isFreeAgent", false)):
+		var fa_card := PanelContainer.new()
+		fa_card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#132A1B"), UITheme.ACCENT_GREEN, 2, 6))
+		_body.add_child(fa_card)
+		var fa_lbl := Label.new()
+		fa_lbl.text = "STATUS: PEMAIN BEBAS (BEBAS TRANSFER) • Klub peminat tidak perlu membayar biaya tebusan!"
+		fa_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN)
+		fa_lbl.add_theme_font_size_override("font_size", 11)
+		fa_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		fa_card.add_child(fa_lbl)
+
 	_body.add_child(UITheme.make_section_header("KLAUSUL PRIBADI"))
+	var active_clause: String = str(con.get("clause", "NONE"))
+	var clause_desc_str := "Tanpa klausul. Satu syarat yang tegas, ditukar dengan melepas klausul lain."
+	var clause_title_str := "PILIH KLAUSUL"
+	for cd in GameData.CLAUSE_DEFS:
+		if str(cd["id"]) == active_clause:
+			clause_title_str = "%s (GANTI)" % str(cd["title"])
+			clause_desc_str = "AKTIF SEMUSIM: %s" % str(cd["desc"])
+			break
+	var cl_desc := Label.new()
+	cl_desc.text = clause_desc_str
+	cl_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cl_desc.add_theme_font_size_override("font_size", 11)
+	cl_desc.add_theme_color_override("font_color", UITheme.ACCENT_CYAN if active_clause != "NONE" else UITheme.TEXT_MUTED)
+	_body.add_child(cl_desc)
+
 	var cl_btn := Button.new()
-	cl_btn.text = "KLAUSUL: %s (PILIH / GANTI)" % str(con.get("clause", "NONE"))
+	cl_btn.text = clause_title_str
+	cl_btn.custom_minimum_size = Vector2(0, 40)
+	UITheme.style_btn(cl_btn, Color("#123944") if active_clause != "NONE" else Color("#18273B"), UITheme.ACCENT_CYAN if active_clause != "NONE" else UITheme.BORDER_STEEL, 12)
 	cl_btn.pressed.connect(func():
 		AudioSynth.play_click()
-		var clauses := ["NONE", "BEBAS TRANSFER", "BONUS CLEAN SHEET", "RILIS KLUB BESAR"]
-		con["clause"] = clauses[(clauses.find(str(con.get("clause", "NONE"))) + 1) % clauses.size()]
-		CareerState.save_active_career()
-		refresh()
+		_open_clause_modal()
 	)
 	_body.add_child(cl_btn)
 
+func _open_clause_modal() -> void:
+	var con: Dictionary = CareerState.career["contract"]
+	var cur_clause: String = str(con.get("clause", "NONE"))
+	var overlay := ColorRect.new()
+	overlay.color = Color(0.02, 0.04, 0.08, 0.84)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.z_index = 140
+	add_child(overlay)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(460, 0)
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#162338"), UITheme.BORDER_CYAN, 2, 10))
+	center.add_child(card)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	card.add_child(vb)
+
+	var hdr := Label.new()
+	hdr.text = "KLAUSUL PRIBADI"
+	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hdr.add_theme_font_override("font", UITheme.get_display_font())
+	hdr.add_theme_font_size_override("font_size", 18)
+	vb.add_child(hdr)
+
+	var sub := Label.new()
+	sub.text = "Hanya boleh satu. Disepakati di awal musim."
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 11)
+	sub.add_theme_color_override("font_color", UITheme.TEXT_MUTED)
+	vb.add_child(sub)
+
+	for cd in GameData.CLAUSE_DEFS:
+		var cid: String = str(cd["id"])
+		var d_lbl := Label.new()
+		d_lbl.text = str(cd["desc"])
+		d_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		d_lbl.add_theme_font_size_override("font_size", 11)
+		d_lbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+		vb.add_child(d_lbl)
+
+		var opt_btn := Button.new()
+		var is_sel: bool = (cur_clause == cid)
+		opt_btn.text = ("✓ " if is_sel else "") + str(cd["title"])
+		opt_btn.custom_minimum_size = Vector2(0, 42)
+		UITheme.style_btn(opt_btn, Color("#175966") if is_sel else Color("#123945"), UITheme.ACCENT_GOLD if is_sel else UITheme.ACCENT_CYAN, 13)
+		opt_btn.pressed.connect(func():
+			AudioSynth.play_click()
+			CareerState.set_contract_clause(cid)
+			overlay.queue_free()
+			refresh()
+		)
+		vb.add_child(opt_btn)
+
+	var none_btn := Button.new()
+	none_btn.text = "X  NOL KLAUSUL"
+	none_btn.custom_minimum_size = Vector2(0, 40)
+	UITheme.style_btn(none_btn, Color("#7A2B1D"), UITheme.ACCENT_RED, 13)
+	none_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		CareerState.set_contract_clause("NONE")
+		overlay.queue_free()
+		refresh()
+	)
+	vb.add_child(none_btn)
+
+	var back_btn := Button.new()
+	back_btn.text = "KEMBALI"
+	back_btn.custom_minimum_size = Vector2(0, 38)
+	UITheme.style_btn(back_btn, Color("#1A263C"), UITheme.BORDER_STEEL, 12)
+	back_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		overlay.queue_free()
+	)
+	vb.add_child(back_btn)
+
 func _render_relations_body() -> void:
-	# 5 Relation Characters Strip (matching Screenshot #8)
+	# 6 Relation Characters Strip (including KEKASIH)
 	var rel: Dictionary = CareerState.career["playerProfile"]["relations"]
 	var strips := HBoxContainer.new()
 	strips.add_theme_constant_override("separation", 4)
@@ -375,10 +571,11 @@ func _render_relations_body() -> void:
 		["FANS", "fans", 1],
 		["PERS", "pers", 0],
 		["AGEN", "agen", 4],
+		["KEKASIH", "kekasih", -1],
 	]
 	for sp in specs:
-		var val := int(rel[sp[1]])
-		var tier := CareerState.get_relation_tier(val)
+		var val := int(rel.get(sp[1], 0))
+		var tier := "BELUM ADA" if (sp[1] == "kekasih" and val <= 0) else CareerState.get_relation_tier(val)
 		var card := PanelContainer.new()
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		strips.add_child(card)
@@ -386,35 +583,52 @@ func _render_relations_body() -> void:
 		vb.alignment = BoxContainer.ALIGNMENT_END
 		card.add_child(vb)
 
-		var npc := TextureRect.new()
-		var at := AtlasTexture.new()
-		at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-		at.region = Rect2(int(sp[2]) * 24, 0, 24, 36)
-		npc.texture = at
-		npc.custom_minimum_size = Vector2(48, 72)
-		npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		vb.add_child(npc)
+		if int(sp[2]) >= 0:
+			var npc := TextureRect.new()
+			var at := AtlasTexture.new()
+			at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
+			at.region = Rect2(int(sp[2]) * 24, 0, 24, 36)
+			npc.texture = at
+			npc.custom_minimum_size = Vector2(48, 72)
+			npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			vb.add_child(npc)
+		else:
+			var gf := PixelAvatar.new()
+			gf.custom_minimum_size = Vector2(48, 72)
+			gf.skin_idx = 1
+			gf.hair_style = 5
+			gf.hair_idx = 1
+			gf.beard = false
+			gf.casual_style = 1
+			gf.primary_color = Color("#E11D48")
+			gf.secondary_color = Color("#FCE7F3")
+			if val <= 0:
+				gf.modulate = Color(0.32, 0.36, 0.44, 0.55)
+			gf.queue_redraw()
+			vb.add_child(gf)
 
 		var l1 := Label.new()
 		l1.text = sp[0]
 		l1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l1.add_theme_font_size_override("font_size", 10)
 		var l2 := Label.new()
-		l2.text = "%d\n%s" % [val, tier]
+		l2.text = ("?" if (sp[1] == "kekasih" and val <= 0) else "%d\n%s" % [val, tier])
 		l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l2.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if val >= 60 else (UITheme.ACCENT_RED if val < 40 else UITheme.TEXT_WHITE))
+		l2.add_theme_color_override("font_color", UITheme.TEXT_MUTED if (sp[1] == "kekasih" and val <= 0) else (UITheme.ACCENT_GREEN if val >= 60 else (UITheme.ACCENT_RED if val < 40 else UITheme.TEXT_WHITE)))
 		l2.add_theme_font_size_override("font_size", 11)
 		vb.add_child(l1)
 		vb.add_child(l2)
 
 	_body.add_child(UITheme.make_section_header("RELASI DETAIL"))
 	var coach_name: String = GameData.coaches[int(CareerState.get_current_club()["coach_id"])]["name"]
+	var k_val := int(rel.get("kekasih", 0))
 	var details := [
 		[coach_name, int(rel["pelatih"]), CareerState.get_player_role_status()],
 		["Ruang ganti", int(rel["ruangGanti"]), "+%d umpan rekan" % int(int(rel["ruangGanti"]) / 10)],
 		["Suporter", int(rel["fans"]), UITheme.format_cash(int(CareerState.career["playerProfile"]["marketValue"]))],
 		["Pers", int(rel["pers"]), CareerState.get_relation_tier(int(rel["pers"]))],
 		["Agen", int(rel["agen"]), "+%d%% GAJI" % maxi(5, int(int(rel["agen"]) / 6))],
+		["Kekasih (Wulan)", k_val, "BELUM KENALAN" if k_val <= 0 else CareerState.get_relation_tier(k_val)],
 	]
 	for d in details:
 		var hb := HBoxContainer.new()
@@ -428,60 +642,288 @@ func _render_relations_body() -> void:
 		hb.add_child(l1)
 		hb.add_child(l2)
 
-	# MEREKMU / Sponsor & Rituals
-	_body.add_child(UITheme.make_section_header("MEREKMU • SPONSOR & EVENT SKUAD"))
-	var ev_hb := HBoxContainer.new()
-	ev_hb.add_theme_constant_override("separation", 6)
-	_body.add_child(ev_hb)
-	var sp_shoot := Button.new()
-	sp_shoot.text = "IKLAN CLAPPER & SELFIE"
-	sp_shoot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(sp_shoot, Color("#4E2C66"), UITheme.ACCENT_GOLD, 11)
-	sp_shoot.pressed.connect(func(): AudioSynth.play_click(); open_cutscene_requested.emit(4))
-	ev_hb.add_child(sp_shoot)
-	var ini_b := Button.new()
-	ini_b.text = "MAKAN & NYANYI SKUAD"
-	ini_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	UITheme.style_btn(ini_b, Color("#173B66"), UITheme.ACCENT_CYAN, 11)
-	ini_b.pressed.connect(func(): AudioSynth.play_click(); open_cutscene_requested.emit(3))
-	ev_hb.add_child(ini_b)
+func open_sponsor_detail_modal(sp_item: Dictionary) -> CanvasLayer:
+	var host: Node = get_tree().root if is_inside_tree() else self
+	var active_id: String = str(CareerState.career["sponsor"].get("activeId", ""))
+	var is_cur: bool = (str(sp_item.get("id", "")) == active_id)
+	return MarketSponsorOverlaysScript.open_sponsor_popup(host, sp_item, is_cur, func(): refresh())
 
-	var active_sp := str(CareerState.career["sponsor"].get("activeId", ""))
-	for sp_item in GameData.sponsors_catalog:
-		var is_cur: bool = (str(sp_item["id"]) == active_sp)
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A2E20") if is_cur else UITheme.BG_CARD, UITheme.ACCENT_GOLD if is_cur else UITheme.BORDER_STEEL))
-		_body.add_child(card)
-		var hb := HBoxContainer.new()
-		card.add_child(hb)
-		var vb := VBoxContainer.new()
-		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		hb.add_child(vb)
-		var t1 := Label.new()
-		t1.text = sp_item["name"]
-		t1.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-		var t2 := Label.new()
-		t2.text = "$%d/laga + $%d/gol • Target %d gol -> Bonus $%d" % [int(sp_item["per_match"]), int(sp_item["per_goal"]), int(sp_item["target_goals"]), int(sp_item["season_bonus"])]
-		t2.add_theme_font_size_override("font_size", 11)
-		vb.add_child(t1)
-		vb.add_child(t2)
+# ==============================================================================
+# SPONSOR TAB (Gambar 3 -> Pop-Up Gambar 4)
+# ==============================================================================
+func _render_sponsor_body() -> void:
+	var active_id: String = str(CareerState.career["sponsor"].get("activeId", ""))
+	var prog: int = int(CareerState.career["sponsor"].get("goalsProgress", 0))
+	var wk: int = int(CareerState.career["careerMeta"].get("week", 1))
+	var active_item: Dictionary = {}
+	for item in GameData.sponsors_catalog:
+		if str(item["id"]) == active_id:
+			active_item = item
+			break
 
-		var btn := Button.new()
-		btn.text = "PUTUS" if is_cur else "TEKEN"
-		UITheme.style_btn(btn, UITheme.ACCENT_RED if is_cur else Color("#1D5CA8"), UITheme.BORDER_CYAN)
-		btn.pressed.connect(func():
+	# LEFT COLUMN: MEREKMU Card (Gambar 3!)
+	var left_p := PanelContainer.new()
+	left_p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_p.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left_p.size_flags_stretch_ratio = 0.88
+	var lsb := StyleBoxFlat.new()
+	lsb.bg_color = Color("#0A1322")
+	lsb.border_color = Color("#1B2D47")
+	lsb.set_border_width_all(1)
+	lsb.set_corner_radius_all(6)
+	lsb.content_margin_left = 14
+	lsb.content_margin_right = 14
+	lsb.content_margin_top = 12
+	lsb.content_margin_bottom = 12
+	left_p.add_theme_stylebox_override("panel", lsb)
+	_sponsor_root.add_child(left_p)
+
+	var lvb := VBoxContainer.new()
+	lvb.add_theme_constant_override("separation", 10)
+	left_p.add_child(lvb)
+
+	var m_hdr := Label.new()
+	m_hdr.text = "MEREKMU"
+	m_hdr.add_theme_font_override("font", UITheme.get_display_font())
+	m_hdr.add_theme_font_size_override("font_size", 11)
+	m_hdr.add_theme_color_override("font_color", Color("#8EA3BC"))
+	lvb.add_child(m_hdr)
+
+	var m_div := ColorRect.new()
+	m_div.custom_minimum_size = Vector2(0, 1)
+	m_div.color = Color("#1F334F")
+	lvb.add_child(m_div)
+
+	if active_item.is_empty():
+		var empty_c := VBoxContainer.new()
+		empty_c.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		empty_c.alignment = BoxContainer.ALIGNMENT_CENTER
+		var em_l := Label.new()
+		em_l.text = "Belum ada. Muncul di pers dan mereka akan datang sendiri."
+		em_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		em_l.add_theme_font_size_override("font_size", 12)
+		em_l.add_theme_color_override("font_color", Color("#DCE6F2"))
+		empty_c.add_child(em_l)
+		lvb.add_child(empty_c)
+	else:
+		var act_card := Button.new()
+		act_card.custom_minimum_size = Vector2(0, 126)
+		act_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var acsb := StyleBoxFlat.new()
+		acsb.bg_color = Color("#11231B")
+		acsb.border_color = UITheme.ACCENT_GOLD
+		acsb.set_border_width_all(1)
+		acsb.set_corner_radius_all(6)
+		var acsbh := acsb.duplicate()
+		acsbh.bg_color = Color("#173024")
+		act_card.add_theme_stylebox_override("normal", acsb)
+		act_card.add_theme_stylebox_override("hover", acsbh)
+		act_card.add_theme_stylebox_override("pressed", acsbh)
+		act_card.add_theme_stylebox_override("focus", acsbh)
+		lvb.add_child(act_card)
+
+		var ac_vb := VBoxContainer.new()
+		ac_vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		ac_vb.offset_left = 12
+		ac_vb.offset_right = -12
+		ac_vb.offset_top = 10
+		ac_vb.offset_bottom = -10
+		ac_vb.add_theme_constant_override("separation", 6)
+		ac_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		act_card.add_child(ac_vb)
+
+		var a_top := HBoxContainer.new()
+		a_top.add_theme_constant_override("separation", 10)
+		a_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ac_vb.add_child(a_top)
+		var a_em := CenterContainer.new()
+		a_em.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		a_em.add_child(MarketSponsorOverlaysScript.make_sponsor_emblem(str(active_item["id"]), Vector2(44, 44)))
+		a_top.add_child(a_em)
+		var a_txt := VBoxContainer.new()
+		a_txt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		a_txt.add_theme_constant_override("separation", 2)
+		a_txt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		a_top.add_child(a_txt)
+		var anm := Label.new()
+		anm.text = str(active_item["name"]).to_upper()
+		anm.add_theme_font_override("font", UITheme.get_display_font())
+		anm.add_theme_font_size_override("font_size", 13)
+		anm.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+		anm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var apay := Label.new()
+		apay.text = "%s / LAGA  (+%s/GOL)" % [MarketSponsorOverlaysScript.format_cash_dots(int(active_item["per_match"])), MarketSponsorOverlaysScript.format_cash_dots(int(active_item["per_goal"]))]
+		apay.add_theme_font_size_override("font_size", 11)
+		apay.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		apay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		a_txt.add_child(anm)
+		a_txt.add_child(apay)
+
+		var tg: int = maxi(1, int(active_item["target_goals"]))
+		var prog_l := Label.new()
+		prog_l.text = "TARGET: %d / %d GOL  •  BONUS %s" % [prog, tg, MarketSponsorOverlaysScript.format_cash_dots(int(active_item["season_bonus"]))]
+		prog_l.add_theme_font_size_override("font_size", 11)
+		prog_l.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if prog >= tg else Color("#CBD5E1"))
+		prog_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ac_vb.add_child(prog_l)
+
+		var pb := ProgressBar.new()
+		pb.max_value = float(tg)
+		pb.value = float(mini(prog, tg))
+		pb.show_percentage = false
+		pb.custom_minimum_size = Vector2(0, 8)
+		pb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ac_vb.add_child(pb)
+
+		var act_copy: Dictionary = active_item
+		act_card.pressed.connect(func():
 			AudioSynth.play_click()
-			if is_cur:
-				CareerState.career["sponsor"]["activeId"] = ""
-			else:
-				CareerState.career["sponsor"]["activeId"] = sp_item["id"]
-				CareerState.career["sponsor"]["goalsProgress"] = 0
-				CareerState.career["stats"]["sponsorsSigned"] = int(CareerState.career["stats"].get("sponsorsSigned", 0)) + 1
-			CareerState.evaluate_achievements()
-			CareerState.save_active_career()
-			refresh()
+			open_sponsor_detail_modal(act_copy)
 		)
-		hb.add_child(btn)
+
+	# RIGHT COLUMN: DIINCAR + PRAMUSIM badge + Sponsor Offer Cards (Gambar 3!)
+	var right_vb := VBoxContainer.new()
+	right_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_vb.size_flags_stretch_ratio = 1.12
+	right_vb.add_theme_constant_override("separation", 8)
+	_sponsor_root.add_child(right_vb)
+
+	var rhdr := HBoxContainer.new()
+	rhdr.add_theme_constant_override("separation", 8)
+	right_vb.add_child(rhdr)
+	var di_lbl := Label.new()
+	di_lbl.text = "▸  DIINCAR"
+	di_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	di_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	di_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	di_lbl.add_theme_font_size_override("font_size", 12)
+	di_lbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	rhdr.add_child(di_lbl)
+
+	var tag_p := PanelContainer.new()
+	var tpsb := StyleBoxFlat.new()
+	tpsb.bg_color = Color("#241F10")
+	tpsb.border_color = Color("#B58B2B")
+	tpsb.set_border_width_all(1)
+	tpsb.set_corner_radius_all(3)
+	tpsb.content_margin_left = 8
+	tpsb.content_margin_right = 8
+	tpsb.content_margin_top = 2
+	tpsb.content_margin_bottom = 2
+	tag_p.add_theme_stylebox_override("panel", tpsb)
+	var tag_l := Label.new()
+	tag_l.text = "PRAMUSIM" if wk <= 4 else "TAWARAN AKTIF"
+	tag_l.add_theme_font_override("font", UITheme.get_display_font())
+	tag_l.add_theme_font_size_override("font_size", 9)
+	tag_l.add_theme_color_override("font_color", Color("#F5C430"))
+	tag_p.add_child(tag_l)
+	rhdr.add_child(tag_p)
+
+	var r_sc := ScrollContainer.new()
+	r_sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	r_sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_vb.add_child(r_sc)
+
+	var list_vb := VBoxContainer.new()
+	list_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_vb.add_theme_constant_override("separation", 8)
+	r_sc.add_child(list_vb)
+
+	for sp_item in GameData.sponsors_catalog:
+		var is_cur: bool = (str(sp_item["id"]) == active_id)
+		var card := Button.new()
+		card.custom_minimum_size = Vector2(0, 76)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var csb := StyleBoxFlat.new()
+		csb.bg_color = Color("#11211B") if is_cur else Color("#0A1424")
+		csb.border_color = UITheme.ACCENT_GOLD if is_cur else Color("#1D304D")
+		csb.set_border_width_all(1)
+		csb.set_corner_radius_all(6)
+		var csbh := csb.duplicate()
+		csbh.bg_color = csb.bg_color.lightened(0.10)
+		csbh.border_color = UITheme.ACCENT_CYAN
+		card.add_theme_stylebox_override("normal", csb)
+		card.add_theme_stylebox_override("hover", csbh)
+		card.add_theme_stylebox_override("pressed", csbh)
+		card.add_theme_stylebox_override("focus", csbh)
+		list_vb.add_child(card)
+
+		var hb := HBoxContainer.new()
+		hb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		hb.offset_left = 12
+		hb.offset_right = -12
+		hb.offset_top = 8
+		hb.offset_bottom = -8
+		hb.add_theme_constant_override("separation", 12)
+		hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(hb)
+
+		var em_c := CenterContainer.new()
+		em_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		em_c.add_child(MarketSponsorOverlaysScript.make_sponsor_emblem(str(sp_item["id"]), Vector2(44, 44)))
+		hb.add_child(em_c)
+
+		var ivb := VBoxContainer.new()
+		ivb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ivb.alignment = BoxContainer.ALIGNMENT_CENTER
+		ivb.add_theme_constant_override("separation", 2)
+		ivb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb.add_child(ivb)
+
+		var n_l := Label.new()
+		n_l.text = str(sp_item["name"]).to_upper()
+		n_l.add_theme_font_override("font", UITheme.get_display_font())
+		n_l.add_theme_font_size_override("font_size", 12)
+		n_l.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+		n_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ivb.add_child(n_l)
+
+		var pay_l := Label.new()
+		pay_l.text = "%s / LAGA" % MarketSponsorOverlaysScript.format_cash_dots(int(sp_item["per_match"]))
+		pay_l.add_theme_font_override("font", UITheme.get_display_font())
+		pay_l.add_theme_font_size_override("font_size", 11)
+		pay_l.add_theme_color_override("font_color", Color("#F5C430"))
+		pay_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ivb.add_child(pay_l)
+
+		var meta_l := Label.new()
+		meta_l.text = "%d GOL  •  BONUS %s" % [int(sp_item["target_goals"]), MarketSponsorOverlaysScript.format_cash_dots(int(sp_item["season_bonus"]))]
+		meta_l.add_theme_font_size_override("font_size", 10)
+		meta_l.add_theme_color_override("font_color", Color("#CBD5E1"))
+		meta_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ivb.add_child(meta_l)
+
+		# Right TEKEN / AKTIF pill visual
+		var act_p := PanelContainer.new()
+		act_p.custom_minimum_size = Vector2(92, 36)
+		act_p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var apsb := StyleBoxFlat.new()
+		apsb.bg_color = Color("#133324") if is_cur else Color("#08101C")
+		apsb.border_color = UITheme.ACCENT_GREEN if is_cur else Color("#E2E8F0")
+		apsb.set_border_width_all(1)
+		apsb.border_width_bottom = 3
+		apsb.set_corner_radius_all(3)
+		act_p.add_theme_stylebox_override("panel", apsb)
+		var apl := Label.new()
+		apl.text = "AKTIF" if is_cur else "TEKEN"
+		apl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		apl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		apl.add_theme_font_override("font", UITheme.get_display_font())
+		apl.add_theme_font_size_override("font_size", 11)
+		apl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN if is_cur else UITheme.TEXT_WHITE)
+		apl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		act_p.add_child(apl)
+		var ap_c := CenterContainer.new()
+		ap_c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ap_c.add_child(act_p)
+		hb.add_child(ap_c)
+
+		var sp_copy: Dictionary = sp_item
+		card.pressed.connect(func():
+			AudioSynth.play_click()
+			open_sponsor_detail_modal(sp_copy)
+		)
 
 func _make_club_base_app() -> Dictionary:
 	var p: Dictionary = CareerState.career["playerProfile"]
@@ -1159,3 +1601,132 @@ func _render_kota_body() -> void:
 	UITheme.style_btn(lat_v, Color("#4E2C66"), UITheme.ACCENT_GOLD, 12)
 	lat_v.pressed.connect(func(): AudioSynth.play_click(); open_volley_requested.emit())
 	act_hb.add_child(lat_v)
+
+func _show_skill_tooltip(ak: String) -> void:
+	var old := get_node_or_null("SkillTooltipOverlay")
+	if old != null:
+		old.queue_free()
+
+	var raw_val := int(CareerState.career["playerProfile"]["attributes"].get(ak, 60))
+	var pend := int(_pending_skills.get(ak, 0))
+	var base_display := raw_val + pend
+	var eff_val := CareerState.get_effective_attribute(ak) + pend
+	var next_cost := CareerState.get_attribute_upgrade_cost(base_display)
+	var attr_title := str(GameData.ATTRIBUTE_LABELS.get(ak, ak.to_upper())).to_upper()
+
+	var desc_txt := ""
+	var stat_txt := ""
+	match ak:
+		"kekuatan":
+			desc_txt = "Mengatur seberapa keras tendanganmu meluncur ke gawang dan jangkauan umpan jauh dari luar kotak penalti."
+			stat_txt = "TEMBAKAN: %d KM/H" % int(round(75.0 + float(eff_val) * 0.55))
+		"akurasi":
+			desc_txt = "Mengatur presisi bidikan ke pojok gawang, tendangan placing, maupun akurasi umpan terobosan ke rekan."
+			stat_txt = "DEVIASI: ±%d CM @ 18M" % maxi(4, int(round(48.0 - float(eff_val) * 0.42)))
+		"efek":
+			desc_txt = "Mengatur seberapa tajam bola melengkung melewati pagar hidup lawan dan jangkauan tangan kiper."
+			stat_txt = "EFEK MELENGKUNG: %.2f×" % (0.75 + float(eff_val) * 0.012)
+		"visi":
+			desc_txt = "Membaca pergerakan rekan dan celah pertahanan; di angka 85 memunculkan peringatan garis offside sebelum umpan."
+			if eff_val >= 85:
+				stat_txt = "GARIS OFFSIDE: AKTIF (@ 85)"
+			else:
+				stat_txt = "KURANG %d UNTUK GARIS OFFSIDE @ 85" % (85 - eff_val)
+		"fisik":
+			desc_txt = "Menjaga keseimbangan saat duel bahu dengan bek lawan, ketahanan stamina laga, serta tenaga sundulan udara."
+			stat_txt = "SUNDULANMU: %d KM/H • STAMINA +%d%%" % [int(round(46.0 + float(eff_val) * 0.35)), int(round(float(eff_val) * 0.45))]
+		"kecepatan":
+			desc_txt = "Mengatur kecepatan lari puncakmu saat mengejar umpan terobosan maupun membangun serangan balik."
+			stat_txt = "LARIMU: %.1f M/S" % (6.2 + float(eff_val) * 0.038)
+		"akselerasi":
+			desc_txt = "Mengatur seberapa cepat kamu mencapai kecepatan penuh sejak langkah pertama dan melepas kawalan bek."
+			stat_txt = "AKSELERASI: %.2f S" % maxf(1.60, 3.60 - float(eff_val) * 0.018)
+		"dribel":
+			desc_txt = "Mengontrol kelengketan bola di kakimu saat menggiring cepat di ruang sempit maupun melewati hadangan."
+			stat_txt = "DIREBUT DARI %d CM" % maxi(18, int(round(74.0 - float(eff_val) * 0.52)))
+		"penalti":
+			desc_txt = "Meningkatkan ketenangan eksekusi penalti serta peluang rekan menyetujui permintaanmu mengambil penalti."
+			stat_txt = "CHANCE PENALTI: %d%%" % clampi(int(round(20.0 + float(eff_val) * 0.72)), 20, 95)
+		"bolaMati":
+			desc_txt = "Meningkatkan kualitas tendangan bebas & sepak pojok, serta peluang tim menyerahkan eksekusi bola mati padamu."
+			stat_txt = "CHANCE BOLA MATI: %d%%" % clampi(int(round(20.0 + float(eff_val) * 0.72)), 20, 95)
+		_:
+			desc_txt = "Atribut dasar pemain."
+			stat_txt = "NILAI: %d" % eff_val
+
+	var scrim := PanelContainer.new()
+	scrim.name = "SkillTooltipOverlay"
+	scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scrim.mouse_filter = Control.MOUSE_FILTER_STOP
+	var scrim_sb := StyleBoxFlat.new()
+	scrim_sb.bg_color = Color(0.02, 0.04, 0.09, 0.78)
+	scrim.add_theme_stylebox_override("panel", scrim_sb)
+	add_child(scrim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scrim.add_child(center)
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(410, 0)
+	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0A162C"), UITheme.BORDER_CYAN, 2, 10))
+	center.add_child(card)
+
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_left", 18)
+	m.add_theme_constant_override("margin_right", 18)
+	m.add_theme_constant_override("margin_top", 14)
+	m.add_theme_constant_override("margin_bottom", 14)
+	card.add_child(m)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	m.add_child(vb)
+
+	var top_hb := HBoxContainer.new()
+	vb.add_child(top_hb)
+	var title_lbl := Label.new()
+	title_lbl.text = "%s (%d)" % [attr_title, base_display]
+	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	title_lbl.add_theme_font_size_override("font_size", 16)
+	top_hb.add_child(title_lbl)
+
+	var cost_lbl := Label.new()
+	cost_lbl.text = "UPGRADE: %d POIN" % next_cost
+	cost_lbl.add_theme_color_override("font_color", Color("#F59E0B") if next_cost >= 2 else UITheme.ACCENT_CYAN)
+	cost_lbl.add_theme_font_size_override("font_size", 11)
+	top_hb.add_child(cost_lbl)
+
+	var dlbl := Label.new()
+	dlbl.text = desc_txt
+	dlbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dlbl.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
+	dlbl.add_theme_font_size_override("font_size", 12)
+	vb.add_child(dlbl)
+
+	var stat_box := PanelContainer.new()
+	stat_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0E2242"), UITheme.BORDER_STEEL, 1, 6))
+	vb.add_child(stat_box)
+	var sm := MarginContainer.new()
+	sm.add_theme_constant_override("margin_left", 10)
+	sm.add_theme_constant_override("margin_right", 10)
+	sm.add_theme_constant_override("margin_top", 8)
+	sm.add_theme_constant_override("margin_bottom", 8)
+	stat_box.add_child(sm)
+	var slbl := Label.new()
+	slbl.text = stat_txt
+	slbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	slbl.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	slbl.add_theme_font_size_override("font_size", 13)
+	sm.add_child(slbl)
+
+	var ok_b := Button.new()
+	ok_b.text = "PAHAM"
+	ok_b.custom_minimum_size = Vector2(0, 38)
+	UITheme.style_btn(ok_b, Color("#174C6B"), UITheme.ACCENT_CYAN, 13)
+	ok_b.pressed.connect(func():
+		AudioSynth.play_click()
+		scrim.queue_free()
+	)
+	vb.add_child(ok_b)
