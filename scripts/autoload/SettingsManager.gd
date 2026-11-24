@@ -26,6 +26,9 @@ var data: Dictionary = {
 	"notif_enabled": true,
 	"data_analytics": true,
 	"show_numbers": false,
+	"left_handed": false,
+	"joy_size": 100,
+	"joy_opacity": 70,
 }
 
 var _idle_timer: float = 0.0

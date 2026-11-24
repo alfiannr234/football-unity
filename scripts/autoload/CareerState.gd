@@ -1062,6 +1062,31 @@ func _init_league_table(div_clubs: Array[Dictionary]) -> Array[Dictionary]:
 		})
 	return tbl
 
+func _pick_european_cup_winner(exclude_club_id: int, salt: int, prefer_elite: bool) -> int:
+	var cands: Array[int] = []
+	for c in GameData.clubs:
+		var cid: int = int(c.get("id", -1))
+		if cid < 0 or cid == exclude_club_id:
+			continue
+		if int(c.get("division", 3)) != 1:
+			continue
+		var c_nat: int = int(c.get("nation_id", 0))
+		if ConfederationDataScript.get_nation_confederation(c_nat) != "UEFA":
+			continue
+		var ovr_v: int = int(c.get("ovr", 65))
+		if prefer_elite and ovr_v >= 74:
+			cands.append(cid)
+		elif not prefer_elite and ovr_v >= 65 and ovr_v <= 79:
+			cands.append(cid)
+	if cands.is_empty():
+		for c in GameData.clubs:
+			var cid: int = int(c.get("id", -1))
+			if cid >= 0 and cid != exclude_club_id and int(c.get("division", 3)) == 1:
+				cands.append(cid)
+	if cands.is_empty():
+		return 0 if exclude_club_id != 0 else 1
+	return cands[absi(salt) % cands.size()]
+
 func _build_season_schedule(div_clubs: Array[Dictionary], user_club_id: int, nat_id: int, div_num: int) -> Array[Dictionary]:
 	var sched: Array[Dictionary] = []
 	var opponents: Array[Dictionary] = []
@@ -1141,6 +1166,15 @@ func _build_season_schedule(div_clubs: Array[Dictionary], user_club_id: int, nat
 	if intl_rivals.is_empty():
 		intl_rivals.append({"code": "JPN", "name": "Jepang", "ovr": 78, "colors": [Color("#00235D"), Color("#FFFFFF")]})
 
+	var sc_elite_id: int = int(career.get("careerMeta", {}).get("superCupEliteClubId", -1)) if has_active_career else -1
+	var sc_europa_id: int = int(career.get("careerMeta", {}).get("superCupEuropaClubId", -1)) if has_active_career else -1
+	var user_in_super_cup: bool = (
+		sc_elite_id >= 0 and sc_elite_id < GameData.clubs.size()
+		and sc_europa_id >= 0 and sc_europa_id < GameData.clubs.size()
+		and sc_elite_id != sc_europa_id
+		and (user_club_id == sc_elite_id or user_club_id == sc_europa_id)
+	)
+
 	var opp_ptr := 0
 	for w in range(1, 46):
 		var comp := "LIGA"
@@ -1151,7 +1185,14 @@ func _build_season_schedule(div_clubs: Array[Dictionary], user_club_id: int, nat
 		var grp_w_idx: int = intl_grp_weeks.find(w)
 		var ko_w_idx: int = intl_ko_weeks.find(w)
 
-		if grp_w_idx >= 0:
+		if w == 1 and user_in_super_cup:
+			comp = "PIALA_SUPER_EROPA"
+			stage = "FINAL"
+			comp_label = "PIALA SUPER EROPA • FINAL"
+			is_ko = true
+			var sc_opp_id: int = sc_europa_id if user_club_id == sc_elite_id else sc_elite_id
+			opp = GameData.clubs[sc_opp_id]
+		elif grp_w_idx >= 0:
 			comp = "TIMNAS"
 			stage = "FASE GRUP %d/%d" % [grp_w_idx + 1, intl_grp_weeks.size()] if bool(intl_camp.get("has_knockout", false)) else "KUALIFIKASI P%d" % (grp_w_idx + 1)
 			comp_label = "%s • %s" % [str(intl_camp.get("short_title", "TIMNAS")), stage]
@@ -1207,7 +1248,7 @@ func _build_season_schedule(div_clubs: Array[Dictionary], user_club_id: int, nat
 		else:
 			opp_ptr += 1
 
-		var is_home := (w % 2 == 1)
+		var is_home := (user_club_id == sc_elite_id) if (comp == "PIALA_SUPER_EROPA") else (w % 2 == 1)
 		sched.append({
 			"week": w,
 			"comp": comp,
@@ -2322,6 +2363,11 @@ func pick_contextual_dilemma(timing: String, report: Dictionary = {}) -> Diction
 				if str(d.get("id", "")) == "hari_libur_aktivitas":
 					picked = d
 					break
+		elif my_g >= 1 and randf() < 0.35:
+			for d in pool:
+				if str(d.get("id", "")) == "ditunggu_di_lorong":
+					picked = d
+					break
 		elif my_g >= 1 and randf() < 0.45:
 			for d in pool:
 				if str(d.get("id", "")) == "adu_penalti_kiper":
@@ -2714,10 +2760,82 @@ func finish_match(result: Dictionary) -> Dictionary:
 	st["dribblesWon"] = int(st["dribblesWon"]) + int(result.get("dribbles_won", 0))
 	st["passesWon"] = int(st["passesWon"]) + int(result.get("passes_won", 0))
 	var timnas_trophy_won: Dictionary = {}
+	var final_trophy_won: Dictionary = {}
 	if fix["comp"] == "TIMNAS":
 		st["intlCaps"] = int(st["intlCaps"]) + 1
 		st["intlGoals"] = int(st["intlGoals"]) + my_g
 		timnas_trophy_won = _advance_intl_after_match(fix, us, them, int(result.get("pen_us", -1)), int(result.get("pen_them", -1)))
+		if not timnas_trophy_won.is_empty():
+			final_trophy_won = build_final_ceremony_context(fix, timnas_trophy_won, us, them)
+	elif is_fixture_final(fix):
+		var pen_u_f: int = int(result.get("pen_us", -1))
+		var pen_t_f: int = int(result.get("pen_them", -1))
+		var won_club_final: bool = (us > them) or (us == them and pen_u_f > pen_t_f)
+		var c_club_now: Dictionary = get_current_club()
+		var c_club_nm: String = str(c_club_now.get("name", "Klub"))
+		var yr_now: int = int(career["careerMeta"].get("year", 1))
+		var ck_f: String = str(fix.get("comp", "PIALA")).to_upper()
+		if ck_f == "PIALA_ELITE":
+			career["careerMeta"]["seasonEliteWinnerClubId"] = int(c_club_now["id"]) if won_club_final else int(fix.get("opp_club_id", -1))
+		elif ck_f == "PIALA_EUROPA":
+			career["careerMeta"]["seasonEuropaWinnerClubId"] = int(c_club_now["id"]) if won_club_final else int(fix.get("opp_club_id", -1))
+		if won_club_final:
+			var tr_title_f: String = "PIALA NASIONAL"
+			var tr_name_f: String = "JUARA PIALA NASIONAL (%s)" % c_club_nm
+			var tr_type_f: String = "PIALA"
+			var leg_bonus_f: int = 32
+			var fol_bonus_f: int = 12000
+			match ck_f:
+				"PIALA_ELITE":
+					tr_title_f = "PIALA ELITE"
+					tr_name_f = "JUARA PIALA ELITE (%s)" % c_club_nm
+					tr_type_f = "ELITE"
+					leg_bonus_f = 55
+					fol_bonus_f = 22000
+				"PIALA_EUROPA":
+					tr_title_f = "PIALA EUROPA"
+					tr_name_f = "JUARA PIALA EUROPA (%s)" % c_club_nm
+					tr_type_f = "EUROPA"
+					leg_bonus_f = 45
+					fol_bonus_f = 16000
+				"PIALA_SUPER_EROPA":
+					tr_title_f = "PIALA SUPER EROPA"
+					tr_name_f = "JUARA PIALA SUPER EROPA (%s)" % c_club_nm
+					tr_type_f = "KONTINENTAL"
+					leg_bonus_f = 42
+					fol_bonus_f = 18000
+				"PIALA_CONF":
+					tr_title_f = "PIALA CHALLENGE"
+					tr_name_f = "JUARA PIALA CHALLENGE KONTINENTAL (%s)" % c_club_nm
+					tr_type_f = "KONTINENTAL"
+					leg_bonus_f = 36
+					fol_bonus_f = 13000
+				"PIALA_DUNIA_KLUB":
+					tr_title_f = "PIALA DUNIA KLUB"
+					tr_name_f = "JUARA PIALA DUNIA KLUB KONTINENTAL (%s)" % c_club_nm
+					tr_type_f = "KONTINENTAL"
+					leg_bonus_f = 65
+					fol_bonus_f = 30000
+			career["trophiesList"].append({"name": tr_name_f, "season": yr_now, "type": tr_type_f})
+			st["trophies"] = int(st.get("trophies", 0)) + 1
+			career["careerMeta"]["legacyPoints"] = int(career["careerMeta"].get("legacyPoints", 0)) + leg_bonus_f
+			st["followers"] = int(st.get("followers", 0)) + fol_bonus_f
+			var rel_f: Dictionary = career["playerProfile"].get("relations", {})
+			rel_f["fans"] = clampi(int(rel_f.get("fans", 50)) + 15, 0, 100)
+			rel_f["pers"] = clampi(int(rel_f.get("pers", 50)) + 12, 0, 100)
+			rel_f["ruangGanti"] = clampi(int(rel_f.get("ruangGanti", 50)) + 10, 0, 100)
+			rel_f["pelatih"] = clampi(int(rel_f.get("pelatih", 50)) + 8, 0, 100)
+			_update_legacy_tier()
+			_push_news("DUNIA", "JUARA! %s MENANGKAN FINAL %s KONTRA %s (%d-%d)!" % [c_club_nm.to_upper(), tr_title_f, str(fix.get("opp_name", "Lawan")).to_upper(), us, them])
+			final_trophy_won = build_final_ceremony_context(fix, {
+				"title": tr_title_f,
+				"trophy_name": tr_name_f,
+				"bonus_legacy": leg_bonus_f,
+				"bonus_followers": fol_bonus_f,
+			}, us, them)
+		else:
+			st["finalsLost"] = int(st.get("finalsLost", 0)) + 1
+			_push_news("KLUB", "%s harus puas jadi runner-up setelah kalah di Final %s (%d-%d)." % [c_club_nm, str(fix.get("comp_label", "Final")), us, them])
 
 	# Update season history row
 	var sh: Array = career["seasonHistory"]
@@ -2733,7 +2851,7 @@ func finish_match(result: Dictionary) -> Dictionary:
 	var comp_bucket: String = "LIGA"
 	if comp_key_raw == "PIALA_ELITE":
 		comp_bucket = "PIALA_ELITE"
-	elif comp_key_raw in ["PIALA_EUROPA", "PIALA_CONF", "PIALA_DUNIA_KLUB", "PIALA"]:
+	elif comp_key_raw in ["PIALA_EUROPA", "PIALA_SUPER_EROPA", "PIALA_CONF", "PIALA_DUNIA_KLUB", "PIALA"]:
 		comp_bucket = "KONTINENTAL"
 	elif comp_key_raw in ["TIMNAS", "TURNAMEN_ASIA"]:
 		comp_bucket = "KUALIFIKASI"
@@ -2759,6 +2877,45 @@ func finish_match(result: Dictionary) -> Dictionary:
 
 	var shots: Array = result.get("shots", [])
 	var cur_club_nm: String = str(get_current_club().get("name", "Klub"))
+	# Track Season Best Goal candidate (SALTO / VOLI / TENDANGAN BEBAS / JARAK JAUH / AKSI SOLO) for GOL TERBAIK Gala!
+	var g_cands: Array = result.get("goal_candidates", [])
+	var cur_bg: Dictionary = career["careerMeta"].get("seasonBestGoal", {})
+	var cur_bg_sc: int = int(cur_bg.get("score", 0))
+	for gc in g_cands:
+		if gc is Dictionary:
+			var gcd: Dictionary = gc
+			var gsc: int = int(gcd.get("score", 0))
+			if gsc >= cur_bg_sc:
+				cur_bg_sc = gsc
+				career["careerMeta"]["seasonBestGoal"] = {
+					"style": str(gcd.get("style", "AKSI SOLO")).to_upper(),
+					"minute": int(gcd.get("minute", 68)),
+					"score": gsc,
+					"distance": float(gcd.get("distance", 16.0)),
+					"club_name": cur_club_nm.to_upper(),
+					"opp_name": str(fix.get("opp_name", "LAWAN")).to_upper(),
+				}
+	if my_g > 0 and g_cands.is_empty() and cur_bg_sc < 75:
+		career["careerMeta"]["seasonBestGoal"] = {
+			"style": "AKSI SOLO",
+			"minute": 24 + ((week * 13 + my_g * 17) % 62),
+			"score": 76 + mini(8, my_g * 2),
+			"distance": 15.5,
+			"club_name": cur_club_nm.to_upper(),
+			"opp_name": str(fix.get("opp_name", "LAWAN")).to_upper(),
+		}
+	# Track Season Best Match for End-of-Season Recap (LAGA TERBAIKMU)
+	var cur_bm: Dictionary = career["careerMeta"].get("seasonBestMatch", {})
+	var cur_bm_r: float = float(cur_bm.get("rating", 0.0))
+	var cur_bm_ga: int = int(cur_bm.get("goals", 0)) * 2 + int(cur_bm.get("assists", 0))
+	var this_ga: int = my_g * 2 + my_a
+	if rating > cur_bm_r or (is_equal_approx(rating, cur_bm_r) and this_ga >= cur_bm_ga):
+		career["careerMeta"]["seasonBestMatch"] = {
+			"opp_name": str(fix.get("opp_name", "LAWAN")),
+			"goals": my_g,
+			"assists": my_a,
+			"rating": snappedf(rating, 0.1),
+		}
 	for s_entry in shots:
 		s_entry["season"] = career["careerMeta"]["year"]
 		s_entry["matchId"] = "W%02d_%s" % [week, fix["opp_code"]]
@@ -3062,6 +3219,7 @@ func finish_match(result: Dictionary) -> Dictionary:
 		"poty_award": poty_award,
 		"ballon_gala": ballon_gala,
 		"timnas_trophy_won": timnas_trophy_won,
+		"final_trophy_won": final_trophy_won,
 		"goal_timeline": result.get("goal_timeline", []),
 	}
 	career_updated.emit()
@@ -3857,6 +4015,16 @@ func _rollover_season() -> Dictionary:
 		st["trophies"] = int(st["trophies"]) + 1
 		career["careerMeta"]["legacyPoints"] = int(career["careerMeta"]["legacyPoints"]) + 40
 
+	# Collect ALL team trophies won during this finished season (League + Cup + Elite/Continental + Timnas) for Parade!
+	var season_all_trophies: Array[String] = []
+	for tr_entry in career.get("trophiesList", []):
+		if tr_entry is Dictionary:
+			var trd: Dictionary = tr_entry
+			if int(trd.get("season", -1)) == finished_yr and str(trd.get("type", "")).to_upper() != "INDIVIDU":
+				season_all_trophies.append(str(trd.get("name", "JUARA")))
+	if season_all_trophies.is_empty() and not trophies_won.is_empty():
+		season_all_trophies = trophies_won.duplicate()
+
 	# Snapshot all 3 divisions in user's nation before applying 3-up / 3-down swaps
 	var t_d1: Array[Dictionary] = old_table if div_num == 1 else get_live_division_table(nat_id, 1)
 	var t_d2: Array[Dictionary] = old_table if div_num == 2 else get_live_division_table(nat_id, 2)
@@ -3972,6 +4140,36 @@ func _rollover_season() -> Dictionary:
 	var world_best_name := str(GameData.TOP_SEEDED_PLAYERS[finished_yr % GameData.TOP_SEEDED_PLAYERS.size()]["name"])
 	var in_best_xi := (season_avg >= 7.1 and season_matches >= 14)
 
+	# Snapshot previous-season stats, club tenure, boardroom Suara level & Timnas call-up status BEFORE resetting counters!
+	var prev_stats := {"has_prev": false, "matches": 0, "goals": 0, "assists": 0, "rating": 6.5}
+	var sh_all: Array = career.get("seasonHistory", [])
+	var club_seasons_cnt: int = 0
+	for sh_row in sh_all:
+		if sh_row is Dictionary:
+			var srd: Dictionary = sh_row
+			if int(srd.get("clubId", -1)) == int(club["id"]):
+				club_seasons_cnt += 1
+			if int(srd.get("season", 0)) == finished_yr - 1:
+				prev_stats = {
+					"has_prev": true,
+					"matches": int(srd.get("matches", 0)),
+					"goals": int(srd.get("goals", 0)),
+					"assists": int(srd.get("assists", 0)),
+					"rating": float(srd.get("avgRating", 6.5)),
+				}
+	var cur_suara: int = clampi(int(career["careerMeta"].get("clubSuaraLevel", 1)) + (1 if (season_avg >= 7.2 or season_goals >= 10) else 0), 1, 6)
+	career["careerMeta"]["clubSuaraLevel"] = cur_suara
+	var timnas_snap: Dictionary = get_timnas_overview()
+	var g_target: int = int(career["contract"].get("goalTarget", 10))
+	var won_cup_s: bool = false
+	var won_elite_s: bool = false
+	for tr_name in season_all_trophies:
+		var t_up: String = str(tr_name).to_upper()
+		if t_up.contains("ELITE") or t_up.contains("EUROPA") or t_up.contains("KONTINENTAL") or t_up.contains("CHAMPIONS"):
+			won_elite_s = true
+		elif t_up.contains("PIALA") or t_up.contains("CUP"):
+			won_cup_s = true
+
 	var recap := {
 		"season": finished_yr,
 		"calendar_year": int(career["careerMeta"]["seasonCalendarYear"]),
@@ -3993,6 +4191,28 @@ func _rollover_season() -> Dictionary:
 		"dribbles_won": int(career["careerMeta"].get("seasonDribblesWon", 0)),
 		"clean_sheets": int(career["careerMeta"].get("seasonCleanSheets", 0)),
 		"trophies": trophies_won,
+		"season_trophies": season_all_trophies,
+		"season_best_goal": (career["careerMeta"].get("seasonBestGoal", {}) as Dictionary).duplicate(true),
+		"best_match": (career["careerMeta"].get("seasonBestMatch", {}) as Dictionary).duplicate(true),
+		"prev_stats": prev_stats,
+		"goal_target": g_target,
+		"target_reached": (season_goals >= g_target),
+		"club_seasons": maxi(1, club_seasons_cnt),
+		"club_suara_level": cur_suara,
+		"won_cup": won_cup_s,
+		"won_elite": won_elite_s,
+		"timnas_snapshot": {
+			"status": str(timnas_snap.get("status", "TIDAK DIPANGGIL")),
+			"nation_id": int(timnas_snap.get("nation_id", int(career["playerProfile"].get("nationId", 16)))),
+			"nation_code": str(timnas_snap.get("nation_code", "IDN")),
+			"nation_name": str(timnas_snap.get("nation_name", "INDONESIA")),
+			"continental_title": str(timnas_snap.get("continental_title", "PIALA ASIA")),
+			"rtg_you": float(timnas_snap.get("rtg_you", season_avg)),
+			"rtg_req": float(timnas_snap.get("rtg_req", 6.8)),
+			"level_you": float(timnas_snap.get("level_you", 62.0)),
+			"level_req": int(timnas_snap.get("level_req", 60)),
+		},
+		"player_age": int(career["playerProfile"].get("age", 18)),
 		"sponsor_bonus": sp_payout,
 		"gala_club_won": (pos <= 4 or season_motm >= 4),
 		"gala_liga_won": (season_avg >= 7.2 and season_goals >= 14),
@@ -4012,6 +4232,8 @@ func _rollover_season() -> Dictionary:
 		career["careerMeta"][sk] = 0
 	career["careerMeta"]["seasonTotalRating"] = 0.0
 	career["careerMeta"]["seasonRecordsBroken"] = []
+	career["careerMeta"]["seasonBestGoal"] = {}
+	career["careerMeta"]["seasonBestMatch"] = {}
 	career["careerMeta"]["timnasCalledWeeks"] = []
 	career["careerMeta"]["lastSeasonRecap"] = recap
 	career["careerMeta"]["year"] = finished_yr + 1
@@ -4025,6 +4247,24 @@ func _rollover_season() -> Dictionary:
 	if bool(career["contract"].get("isFreeAgent", false)):
 		career["careerMeta"]["transferWindowWeeksLeft"] = 6
 	career["playerProfile"]["age"] = int(career["playerProfile"]["age"]) + 1
+
+	# Resolve European Super Cup (Pemenang Piala Elite vs Pemenang Piala Europa) for Week 1 of new season!
+	var sc_elite_w: int = int(career["careerMeta"].get("seasonEliteWinnerClubId", -1))
+	var sc_europa_w: int = int(career["careerMeta"].get("seasonEuropaWinnerClubId", -1))
+	for tr_nm_sc in season_all_trophies:
+		var t_sc_up: String = str(tr_nm_sc).to_upper()
+		if t_sc_up.contains("PIALA ELITE") and sc_elite_w < 0:
+			sc_elite_w = int(club["id"])
+		elif t_sc_up.contains("PIALA EUROPA") and sc_europa_w < 0:
+			sc_europa_w = int(club["id"])
+	if sc_elite_w < 0:
+		sc_elite_w = _pick_european_cup_winner(maxi(sc_europa_w, int(club["id"])), finished_yr * 19 + 7, true)
+	if sc_europa_w < 0 or sc_europa_w == sc_elite_w:
+		sc_europa_w = _pick_european_cup_winner(sc_elite_w, finished_yr * 31 + 13, false)
+	career["careerMeta"]["superCupEliteClubId"] = sc_elite_w
+	career["careerMeta"]["superCupEuropaClubId"] = sc_europa_w
+	career["careerMeta"]["seasonEliteWinnerClubId"] = -1
+	career["careerMeta"]["seasonEuropaWinnerClubId"] = -1
 
 	var new_div_clubs := GameData.get_clubs_in_division(int(club["nation_id"]), int(club["division"]))
 	career["leagueTable"] = _init_league_table(new_div_clubs)
@@ -5584,6 +5824,7 @@ func get_user_elite_production() -> Dictionary:
 	# User's elite trophy breakdown
 	var ballon_n: int = 0
 	var boot_n: int = 0
+	var other_indiv_n: int = 0
 	var liga_n: int = 0
 	var piala_n: int = 0
 	var kont_n: int = 0
@@ -5595,18 +5836,20 @@ func get_user_elite_production() -> Dictionary:
 			ballon_n += 1
 		elif tr_s.contains("SEPATU EMAS") or tr_s.contains("TOP SKOR"):
 			boot_n += 1
+		elif tr_s.contains("GOL TERBAIK") or tr_s.contains("GOL TERINDAH") or tr_s.contains("ANAK EMAS") or tr_s.contains("PEMAIN MUDA") or tr_s.contains("PUSKAS"):
+			other_indiv_n += 1
 		elif tr_s.contains("PIALA DUNIA") and not tr_s.contains("KLUB"):
 			wc_n += 1
 		elif tr_s.contains("PIALA ASIA") or tr_s.contains("EURO") or tr_s.contains("COPA") or tr_s.contains("AFRIKA") or tr_s.contains("GOLD CUP") or tr_s.contains("OFC"):
 			cont_nt_n += 1
-		elif tr_s.contains("ELITE") or tr_s.contains("EUROPA") or tr_s.contains("CONF") or tr_s.contains("KONTINENTAL") or tr_s.contains("CHAMPIONS"):
+		elif tr_s.contains("ELITE") or tr_s.contains("EUROPA") or tr_s.contains("SUPER EROPA") or tr_s.contains("CONF") or tr_s.contains("KONTINENTAL") or tr_s.contains("CHAMPIONS"):
 			kont_n += 1
 		elif tr_s.contains("LIGA") or tr_s.contains("DIVISI 1"):
 			liga_n += 1
 		elif tr_s.contains("PIALA") or tr_s.contains("CUP"):
 			piala_n += 1
 
-	var indiv_n: int = ballon_n + boot_n
+	var indiv_n: int = ballon_n + boot_n + other_indiv_n
 	var team_n: int = liga_n + piala_n + kont_n + wc_n
 	return {
 		"name": str(p.get("name", "Pemain")),
@@ -6419,3 +6662,856 @@ func get_ballon_gala_preview_data() -> Dictionary:
 	if not last_g.is_empty() and not last_g.get("ballon_top10", []).is_empty():
 		return last_g
 	return evaluate_october_ballon_gala(false)
+
+# ==============================================================================
+# FINAL MATCH DETECTION & 4-PART CEREMONY CONTEXT (CLUB ELITE + ALL CONFEDERATIONS)
+# ==============================================================================
+func is_fixture_final(fix: Dictionary) -> bool:
+	if fix.is_empty():
+		return false
+	var stg: String = str(fix.get("stage", "")).strip_edges().to_upper()
+	if stg == "FINAL":
+		return true
+	var lbl: String = str(fix.get("comp_label", "")).to_upper()
+	if lbl.contains("FINAL") and not lbl.contains("SEMI") and not lbl.contains("PEREMPAT") and not lbl.contains("QUARTER"):
+		return true
+	var cmp: String = str(fix.get("comp", "")).to_upper()
+	if cmp == "PIALA_SUPER_EROPA":
+		return true
+	if cmp == "TIMNAS" and has_active_career:
+		var intl: Dictionary = career.get("intlState", {})
+		if str(intl.get("phase", "")) == "KNOCKOUT":
+			var ko: Dictionary = intl.get("knockout", {})
+			if str(ko.get("active_round", "")).to_upper() == "FINAL" and str(ko.get("user_status", "")) == "ALIVE":
+				return true
+	return false
+
+func build_final_ceremony_context(fix: Dictionary = {}, trophy_info: Dictionary = {}, score_us: int = -1, score_them: int = -1) -> Dictionary:
+	var fx: Dictionary = fix if not fix.is_empty() else (get_current_fixture() if has_active_career else {})
+	var comp_key: String = str(fx.get("comp", "PIALA_ELITE")).to_upper()
+	var is_timnas: bool = (comp_key == "TIMNAS") or trophy_info.has("nation_code") or trophy_info.has("confed")
+	var club: Dictionary = get_current_club() if has_active_career else {"id": 0, "name": "Klub Elite", "code": "ELB", "primary": Color("#1A66D2"), "secondary": Color("#F4F8FF"), "pattern": "stripes", "stadium": "Stadion Utama"}
+	var p: Dictionary = career.get("playerProfile", {}) if has_active_career else {}
+	var app: Dictionary = p.get("appearance", {})
+	var yr: int = int(career.get("careerMeta", {}).get("year", 1)) if has_active_career else 1
+	var cal_year: int = 2025 + yr
+
+	var player_name: String = str(p.get("name", "Bintang")).to_upper()
+	var player_num: int = int(app.get("shirt_num", 10))
+	var opp_name: String = str(trophy_info.get("opp_name", fx.get("opp_name", "FINALIS"))).to_upper()
+	var opp_code: String = str(fx.get("opp_code", opp_name.left(3))).left(3).to_upper()
+
+	var team_name: String = str(club.get("name", "Klub Elite")).to_upper()
+	var team_code: String = str(club.get("code", "ELB")).left(3).to_upper()
+	var club_id: int = int(club.get("id", 0))
+	var nation_id: int = clampi(int(p.get("nationId", p.get("nationality", 16))), 0, maxi(0, GameData.nations.size() - 1))
+	var nation_code: String = str(GameData.nations[nation_id].get("code", "IDN")).to_upper() if not GameData.nations.is_empty() else "IDN"
+	var primary_col: Color = UITheme.parse_color(club.get("primary", Color("#1D4ED8")), Color("#1D4ED8"))
+	var secondary_col: Color = UITheme.parse_color(club.get("secondary", Color("#F8FAFC")), Color("#F8FAFC"))
+	var kit_pattern: String = str(club.get("pattern", "stripes"))
+	var confed: String = ""
+	var comp_title: String = "PIALA ELITE"
+	var comp_short: String = "ELITE"
+	var accent_col: Color = Color("#38BDF8")
+	var trophy_style: String = "BIG_EARS"
+	var waiting_fans: int = 35000
+	var stadium_name: String = "ARENA FINAL"
+	var airline_name: String = "AEROLINEAS"
+	var led_ticker: String = "PIALA ELITE  •  FINAL"
+	var bonus_legacy: int = int(trophy_info.get("bonus_legacy", 55))
+	var bonus_followers: int = int(trophy_info.get("bonus_followers", 22000))
+
+	if is_timnas:
+		var intl: Dictionary = career.get("intlState", {}) if has_active_career else {}
+		var camp: Dictionary = intl.get("campaign", {})
+		confed = str(trophy_info.get("confed", intl.get("confed", ConfederationDataScript.get_nation_confederation(nation_id)))).to_upper()
+		nation_id = clampi(int(trophy_info.get("nation_id", intl.get("nation_id", nation_id))), 0, maxi(0, GameData.nations.size() - 1))
+		var nat_d: Dictionary = GameData.nations[nation_id] if not GameData.nations.is_empty() else {"name": "Indonesia", "code": "IDN", "colors": [Color("#CE1126"), Color("#FFFFFF")]}
+		nation_code = str(trophy_info.get("nation_code", nat_d.get("code", "IDN"))).to_upper()
+		team_name = str(trophy_info.get("nation_name", nat_d.get("name", "TIMNAS"))).to_upper()
+		team_code = nation_code.left(3)
+		var nat_cols: Array = nat_d.get("colors", [Color("#CE1126"), Color("#FFFFFF")])
+		primary_col = UITheme.parse_color(nat_cols[0], Color("#CE1126")) if not nat_cols.is_empty() else Color("#CE1126")
+		secondary_col = UITheme.parse_color(nat_cols[1], Color("#F8FAFC")) if nat_cols.size() > 1 else Color("#F8FAFC")
+		kit_pattern = "solid"
+		comp_title = str(trophy_info.get("title", camp.get("title", "PIALA KONFEDERASI"))).to_upper()
+		if comp_title == "" or comp_title == "TIMNAS":
+			comp_title = "PIALA %s" % confed
+		var is_wc: bool = comp_title.contains("DUNIA") or str(camp.get("kind", "")) == "WORLD_CUP"
+		bonus_legacy = int(trophy_info.get("bonus_legacy", 60))
+		bonus_followers = int(trophy_info.get("bonus_followers", 25000))
+		if is_wc:
+			comp_short = "DUNIA"
+			accent_col = Color("#FACC15")
+			trophy_style = "WORLD_CUP"
+			waiting_fans = 50000
+			stadium_name = "STADION FINAL DUNIA"
+			airline_name = "GARUDA CHARTER" if nation_code == "IDN" else "AEROLINEAS"
+		else:
+			match confed:
+				"UEFA":
+					comp_short = "EURO"
+					accent_col = Color("#3B82F6")
+					trophy_style = "BIG_EARS"
+					waiting_fans = 35000
+					stadium_name = "ARENA FINAL EURO"
+					airline_name = "EURO AIRWAYS"
+				"CONMEBOL":
+					comp_short = "COPA"
+					accent_col = Color("#FACC15")
+					trophy_style = "CONFED_GOLD"
+					waiting_fans = 40000
+					stadium_name = "ESTADIO FINAL COPA"
+					airline_name = "AEROLINEAS"
+				"AFC":
+					comp_short = "ASIA"
+					accent_col = Color("#38BDF8")
+					trophy_style = "BIG_EARS"
+					waiting_fans = 30000
+					stadium_name = "STADION FINAL ASIA"
+					airline_name = "GARUDA AIR" if nation_code == "IDN" else "ASIA AIRLINES"
+				"CAF":
+					comp_short = "AFCON"
+					accent_col = Color("#22C55E")
+					trophy_style = "CONFED_GOLD"
+					waiting_fans = 28000
+					stadium_name = "STADION FINAL AFRIKA"
+					airline_name = "AFRICA AIR"
+				"CONCACAF":
+					comp_short = "GOLD"
+					accent_col = Color("#F59E0B")
+					trophy_style = "CONFED_GOLD"
+					waiting_fans = 26000
+					stadium_name = "ARENA FINAL GOLD CUP"
+					airline_name = "AMERICAS AIR"
+				"OFC":
+					comp_short = "OFC"
+					accent_col = Color("#06B6D4")
+					trophy_style = "CONFED_SILVER"
+					waiting_fans = 20000
+					stadium_name = "STADION FINAL OSEANIA"
+					airline_name = "PACIFIC AIR"
+				_:
+					comp_short = confed if confed != "" else "INTL"
+					accent_col = Color("#FACC15")
+					trophy_style = "CONFED_GOLD"
+					waiting_fans = 25000
+					stadium_name = "ARENA FINAL INTERNASIONAL"
+					airline_name = "AEROLINEAS"
+		led_ticker = "%s  •  %s" % [comp_short, comp_title]
+	else:
+		match comp_key:
+			"PIALA_ELITE":
+				comp_title = "PIALA ELITE"
+				comp_short = "ELITE"
+				accent_col = Color("#38BDF8")
+				trophy_style = "BIG_EARS"
+				waiting_fans = 35000
+				stadium_name = "ARENA FINAL ELITE"
+				airline_name = "AEROLINEAS"
+			"PIALA_EUROPA":
+				comp_title = "PIALA EUROPA"
+				comp_short = "EUROPA"
+				accent_col = Color("#F97316")
+				trophy_style = "EUROPA_CUP"
+				waiting_fans = 26000
+				stadium_name = "STADION FINAL EUROPA"
+				airline_name = "AEROLINEAS"
+			"PIALA_SUPER_EROPA":
+				comp_title = "PIALA SUPER EROPA"
+				comp_short = "SUPER"
+				accent_col = Color("#E2E8F0")
+				trophy_style = "CONFED_SILVER"
+				waiting_fans = 32000
+				stadium_name = "STADION SUPER EROPA"
+				airline_name = "EURO AIRWAYS"
+			"PIALA_CONF":
+				comp_title = "PIALA CHALLENGE"
+				comp_short = "CONF"
+				accent_col = Color("#22C55E")
+				trophy_style = "CONF_CUP"
+				waiting_fans = 20000
+				stadium_name = "STADION FINAL CHALLENGE"
+				airline_name = "AEROLINEAS"
+			"PIALA_DUNIA_KLUB":
+				comp_title = "PIALA DUNIA KLUB"
+				comp_short = "KLUB"
+				accent_col = Color("#FACC15")
+				trophy_style = "WORLD_CUP"
+				waiting_fans = 45000
+				stadium_name = "ARENA FINAL DUNIA KLUB"
+				airline_name = "AEROLINEAS"
+			_:
+				comp_title = "PIALA NASIONAL"
+				comp_short = "PIALA"
+				accent_col = Color("#EAB308")
+				trophy_style = "BIG_EARS"
+				waiting_fans = 20000
+				stadium_name = "STADION FINAL NASIONAL"
+				airline_name = "AEROLINEAS"
+		if not str(trophy_info.get("title", "")).is_empty():
+			comp_title = str(trophy_info["title"]).to_upper()
+		led_ticker = "%s  •  %s" % [team_code, comp_title]
+
+	# Gather up to 8 real squad teammates for authentic podium (9 players) & lap-of-honour (6 players)
+	var squad_samples: Array[Dictionary] = []
+	var sq_list: Array = []
+	if has_active_career:
+		var sq_raw: Variant = career.get("clubSquad", {})
+		if sq_raw is Dictionary:
+			var sq_d: Dictionary = sq_raw
+			sq_list.append_array(sq_d.get("starters", []))
+			sq_list.append_array(sq_d.get("bench", []))
+		elif sq_raw is Array:
+			sq_list = sq_raw
+	for sp_item in sq_list:
+		if not (sp_item is Dictionary):
+			continue
+		var sd: Dictionary = sp_item
+		if bool(sd.get("is_user", false)):
+			continue
+		var s_name: String = str(sd.get("name", "Rekan"))
+		var s_num: int = int(sd.get("number", sd.get("shirt_num", sd.get("num", 2 + squad_samples.size() * 2))))
+		var s_seed: int = int(sd.get("seed", absi(s_name.hash()) % 9973 + 17))
+		squad_samples.append({"name": s_name, "num": s_num, "seed": s_seed})
+		if squad_samples.size() >= 8:
+			break
+	var fallback_nums: Array[int] = [4, 7, 11, 8, 6, 2, 19, 1]
+	while squad_samples.size() < 8:
+		var idx: int = squad_samples.size()
+		var f_num: int = fallback_nums[idx % fallback_nums.size()]
+		if f_num == player_num:
+			f_num = 14 + idx
+		squad_samples.append({
+			"name": "SKUAD %d" % (idx + 1),
+			"num": f_num,
+			"seed": 413 + idx * 197 + club_id * 13 + nation_id * 7,
+		})
+
+	# Count matching competition trophies + total awards in player's cabinet for Act 3 (LEMARIMU)
+	var cabinet_count: int = 0
+	var cabinet_total: int = 0
+	var indiv_stars: int = 0
+	if has_active_career:
+		var t_list: Array = career.get("trophiesList", [])
+		cabinet_total = t_list.size()
+		for tr_item in t_list:
+			var t_nm: String = (str((tr_item as Dictionary).get("name", "")) if tr_item is Dictionary else str(tr_item)).to_upper()
+			var t_tp: String = (str((tr_item as Dictionary).get("type", "")) if tr_item is Dictionary else "").to_upper()
+			if t_tp == "INDIVIDU":
+				indiv_stars += 1
+			if t_nm.contains(comp_title) or (comp_short != "" and t_nm.contains(comp_short)):
+				cabinet_count += 1
+	cabinet_count = maxi(1, cabinet_count)
+	cabinet_total = maxi(cabinet_count, cabinet_total)
+
+	return {
+		"is_timnas": is_timnas,
+		"confed": confed,
+		"comp_key": comp_key,
+		"comp_title": comp_title,
+		"comp_short": comp_short,
+		"trophy_name": str(trophy_info.get("trophy_name", "JUARA %s (%s)" % [comp_title, team_name])),
+		"team_name": team_name,
+		"team_code": team_code,
+		"club_id": club_id,
+		"nation_id": nation_id,
+		"nation_code": nation_code,
+		"primary": primary_col,
+		"secondary": secondary_col,
+		"pattern": kit_pattern,
+		"accent": accent_col,
+		"trophy_style": trophy_style,
+		"waiting_fans": waiting_fans,
+		"stadium_name": stadium_name,
+		"airline_name": airline_name,
+		"led_ticker": led_ticker,
+		"player_name": player_name,
+		"player_num": player_num,
+		"player_skin": int(app.get("skin", 1)),
+		"player_hair": int(app.get("hair_color", 0)),
+		"cabinet_count": cabinet_count,
+		"cabinet_total": cabinet_total,
+		"indiv_stars": indiv_stars,
+		"opp_name": opp_name,
+		"opp_code": opp_code,
+		"year": cal_year,
+		"score_us": score_us if score_us >= 0 else int(trophy_info.get("score_us", 2)),
+		"score_them": score_them if score_them >= 0 else int(trophy_info.get("score_them", 1)),
+		"bonus_legacy": bonus_legacy,
+		"bonus_followers": bonus_followers,
+		"squad_samples": squad_samples,
+	}
+
+func apply_final_dedication_choice(effects: Dictionary) -> Dictionary:
+	var before_map: Dictionary = {}
+	var after_map: Dictionary = {}
+	var applied: Dictionary = {}
+	if not has_active_career:
+		for k in effects.keys():
+			var dv: int = int(effects[k])
+			before_map[k] = 75
+			after_map[k] = clampi(75 + dv, 0, 100)
+			applied[k] = dv
+		return {"deltas": applied, "before": before_map, "after": after_map}
+	var prof: Dictionary = career["playerProfile"]
+	var rel: Dictionary = prof["relations"]
+	for rk in GameData.RELATION_KEYS:
+		if effects.has(rk):
+			var prev_v: int = int(rel.get(rk, 50))
+			var dv: int = int(effects[rk])
+			var next_v: int = clampi(prev_v + dv, 0, 100)
+			rel[rk] = next_v
+			before_map[rk] = prev_v
+			after_map[rk] = next_v
+			applied[rk] = dv
+	if effects.has("energy"):
+		var prev_e: int = int(prof.get("energy", 80))
+		var de: int = int(effects["energy"])
+		var next_e: int = clampi(prev_e + de, 0, 100)
+		prof["energy"] = next_e
+		before_map["energy"] = prev_e
+		after_map["energy"] = next_e
+		applied["energy"] = de
+	save_active_career()
+	career_updated.emit()
+	return {"deltas": applied, "before": before_map, "after": after_map}
+
+# ==============================================================================
+# END-OF-SEASON CEREMONY CONTEXT & REWARD CLAIM (PART 1: REKOR, PARADE, GALA KLUB, TERBAIK KOMP)
+# ==============================================================================
+func build_season_end_ceremony_context(summary: Dictionary = {}) -> Dictionary:
+	var recap: Dictionary = summary if not summary.is_empty() else career.get("careerMeta", {}).get("lastSeasonRecap", {})
+	var club: Dictionary = get_current_club() if has_active_career else {"id": 0, "name": "Bilbao Leones", "code": "BIL", "division": 1, "nation_id": 1, "primary": Color("#C81E2B"), "secondary": Color("#F8FAFC"), "pattern": "stripes"}
+	var p: Dictionary = career.get("playerProfile", {}) if has_active_career else {}
+	var app: Dictionary = p.get("appearance", {})
+	var nat_id: int = clampi(int(club.get("nation_id", 16)), 0, maxi(0, GameData.nations.size() - 1))
+	var nat_d: Dictionary = GameData.nations[nat_id] if not GameData.nations.is_empty() else {"name": "Indonesia", "code": "IDN", "colors": [Color("#CE1126"), Color("#FFFFFF")]}
+	var nat_name: String = str(nat_d.get("name", "Indonesia")).to_upper()
+	var div_num: int = int(recap.get("division", int(club.get("division", 1))))
+	var league_name: String = "LIGA %s" % nat_name if div_num == 1 else "LIGA %s KE-%d" % [nat_name, div_num]
+	var league_short: String = "PRIMERA" if (nat_id == 1 and div_num == 1) else ("DIVISI %d" % div_num)
+
+	var player_name: String = str(p.get("name", "BINTANG")).to_upper()
+	var player_num: int = int(app.get("shirt_num", 10))
+	var player_pos: String = str(p.get("naturalPosition", "ST")).to_upper()
+	var player_ovr: int = int(p.get("ovr", 78))
+	var avg_rtg: float = maxf(6.2, float(recap.get("avg_rating", 7.8)))
+	var rtg_x10: int = clampi(int(round(avg_rtg * 10.0)), 62, 99)
+	var s_matches: int = maxi(1, int(recap.get("matches", 24)))
+	var s_goals: int = int(recap.get("goals", 18))
+	var s_assists: int = int(recap.get("assists", 5))
+	var league_pos: int = clampi(int(recap.get("league_pos", 4)), 1, 20)
+	var cal_year: int = int(recap.get("calendar_year", 2026))
+	var salary: int = int(career.get("contract", {}).get("salaryPerMatch", 650)) if has_active_career else 650
+
+	# Collect season trophies for City Bus Parade
+	var season_trophies: Array[String] = []
+	var raw_st: Array = recap.get("season_trophies", recap.get("trophies", []))
+	for tr_s in raw_st:
+		season_trophies.append(str(tr_s).to_upper())
+	var won_elite: bool = false
+	for ts in season_trophies:
+		if ts.contains("ELITE") or ts.contains("EUROPA") or ts.contains("KONTINENTAL") or ts.contains("DUNIA"):
+			won_elite = true
+			break
+
+	# Chapter 1 (REKOR): Season rating or goals record holder
+	var is_goal_rec: bool = (s_goals >= 28 and avg_rtg < 8.4)
+	var show_record: bool = (rtg_x10 >= 76 or s_goals >= 20)
+	var record_title: String = "GOL TERBANYAK DALAM SATU MUSIM" if is_goal_rec else "RATING TERBAIK DALAM SATU MUSIM"
+	var record_val: int = s_goals if is_goal_rec else rtg_x10
+	var legend_pool: Array[String] = ["Tino Roldan", "Hector Valdes", "Marco Santini", "Budi Sudarsono", "Gunnar Lind", "Rafael Ortiz"]
+	var prev_legend: String = legend_pool[(nat_id + cal_year) % legend_pool.size()]
+	var prev_val: int = maxi(1, record_val - 1)
+	var prev_year: int = 1984 + ((nat_id * 7 + int(club.get("id", 0)) * 3) % 32)
+
+	# Chapter 3 (GALA KLUB): Extract top Defender, Midfielder, Forward from real squad
+	var sq_list: Array = []
+	if has_active_career:
+		var sq_raw: Variant = career.get("clubSquad", {})
+		if sq_raw is Dictionary:
+			sq_list.append_array((sq_raw as Dictionary).get("starters", []))
+			sq_list.append_array((sq_raw as Dictionary).get("bench", []))
+		elif sq_raw is Array:
+			sq_list = sq_raw
+
+	var top_def: Dictionary = {"name": "BORJA LORENTE", "pos": "CB", "ovr": maxi(62, player_ovr - 4), "rating": 6.7, "seed": 411}
+	var top_mid: Dictionary = {"name": "RAUL ARANGUREN", "pos": "LM", "ovr": maxi(64, player_ovr - 2), "rating": 7.2, "seed": 523}
+	var top_fwd: Dictionary = {"name": player_name, "pos": player_pos, "ovr": player_ovr, "rating": avg_rtg, "seed": 777, "is_user": true}
+	var best_def_ovr: int = -1
+	var best_mid_ovr: int = -1
+	for item in sq_list:
+		if not (item is Dictionary):
+			continue
+		var sd: Dictionary = item
+		if bool(sd.get("is_user", false)):
+			continue
+		var spos: String = str(sd.get("pos", "CM")).to_upper()
+		var sovr: int = int(sd.get("ovr", 65))
+		var snm: String = str(sd.get("name", "Rekan")).to_upper()
+		var sseed: int = absi(snm.hash()) % 9973 + 19
+		if spos in ["CB", "LB", "RB", "LWB", "RWB"] and sovr > best_def_ovr:
+			best_def_ovr = sovr
+			top_def = {"name": snm, "pos": spos, "ovr": sovr, "rating": snappedf(clampf(6.2 + float(sovr - 58) * 0.035, 6.2, 7.6), 0.1), "seed": sseed}
+		elif spos in ["CM", "CDM", "CAM", "LM", "RM"] and sovr > best_mid_ovr:
+			best_mid_ovr = sovr
+			top_mid = {"name": snm, "pos": spos, "ovr": sovr, "rating": snappedf(clampf(6.4 + float(sovr - 58) * 0.04, 6.4, 7.9), 0.1), "seed": sseed}
+
+	var budget_pct: int = clampi(20 - league_pos + season_trophies.size() * 4, 4, 28)
+	var gala_bonus_cash: int = maxi(18000, salary * 42)
+
+	# Chapter 4 (TERBAIK KOMPETISI): Elite Competition or Domestic League Best Player
+	var comp_best_title: String = "PIALA ELITE" if (won_elite or div_num == 1) else league_name
+	var comp_best_is_elite: bool = (won_elite or div_num == 1)
+	var comp_stats_map: Dictionary = career.get("compStats", {}) if has_active_career else {}
+	var elite_cs: Dictionary = comp_stats_map.get("PIALA_ELITE", {})
+	var comp_g: int = int(elite_cs.get("season_g", 0))
+	var comp_a: int = int(elite_cs.get("season_a", 0))
+	if comp_g == 0 and comp_a == 0:
+		comp_g = maxi(4, int(round(float(s_goals) * 0.35)))
+		comp_a = maxi(1, int(round(float(s_assists) * 0.45)))
+	var comp_m: int = maxi(6, mini(13, int(round(float(s_matches) * 0.38))))
+	var comp_bonus_cash: int = maxi(55000, salary * 145)
+
+	# ==========================================================================
+	# PART 2 GRAND GALA AWARDS: GOL TERBAIK (PUSKAS), ANAK EMAS (U-21), PEMAIN TERBAIK DUNIA (BALLON D'OR)
+	# ==========================================================================
+	var user_age: int = int(recap.get("player_age", int(p.get("age", 19))))
+	var best_g_user: Dictionary = recap.get("season_best_goal", career.get("careerMeta", {}).get("seasonBestGoal", {}))
+	var user_g_style: String = str(best_g_user.get("style", "AKSI SOLO")).to_upper()
+	var user_g_min: int = int(best_g_user.get("minute", 77))
+	var user_g_score: int = int(best_g_user.get("score", 78 if s_goals > 0 else 0))
+
+	# 1) GOL TERBAIK (Top 3 Nominees: ranked 1..3 for ke-3 -> ke-2 -> Winner!)
+	var bg_pool: Array[Dictionary] = [
+		{"name": "FACUNDO IBARRA", "club": "ROSARIO ARROYITO", "style": "VOLI", "minute": 16, "score": 90, "seed": 811, "is_user": false},
+		{"name": "GASTON ZAMORA", "club": "MADRID BLANCO", "style": "AKSI SOLO", "minute": 54, "score": 84, "seed": 643, "is_user": false},
+		{"name": "LUKAS WEBER", "club": "MUNCHEN ROTE", "style": "SALTO", "minute": 81, "score": 88, "seed": 509, "is_user": false},
+	]
+	if user_g_score > 0:
+		bg_pool.append({
+			"name": player_name,
+			"club": str(club.get("name", "KLUB")).to_upper(),
+			"style": user_g_style,
+			"minute": user_g_min,
+			"score": user_g_score,
+			"seed": 777,
+			"is_user": true,
+		})
+	bg_pool.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["score"]) > int(b["score"]))
+	var best_goal_top3: Array[Dictionary] = []
+	var best_goal_user_rank: int = -1
+	for bi in range(mini(3, bg_pool.size())):
+		var item: Dictionary = bg_pool[bi].duplicate(true)
+		item["rank"] = bi + 1
+		if bool(item.get("is_user", false)):
+			best_goal_user_rank = bi + 1
+		best_goal_top3.append(item)
+
+	# 2) ANAK EMAS (Top 5 Under-21 Wonderkids: ke-5 -> ke-4 -> ke-3 -> ke-2 -> Winner!)
+	var user_pts: int = maxi(45, s_goals * 3 + s_assists * 2 + int(round(avg_rtg * 8.0)) + season_trophies.size() * 26)
+	var gb_pool: Array[Dictionary] = [
+		{"name": "ALVARO PEREZ", "club": "BARCELONA AZULGRANA", "pts": 140, "goals": 22, "assists": 11, "rating": 7.9, "trophies": 2, "seed": 419, "is_user": false},
+		{"name": "NICLAS CLAUSEN", "club": "DORTMUND SCHWARZGELB", "pts": 79, "goals": 15, "assists": 9, "rating": 7.4, "trophies": 1, "seed": 521, "is_user": false},
+		{"name": "ADRIEN LEFEVRE", "club": "PARIS ROUGE ET BLEU", "pts": 68, "goals": 13, "assists": 8, "rating": 7.2, "trophies": 1, "seed": 617, "is_user": false},
+		{"name": "SCOTT GRIFFITH", "club": "LONDON GUNNERS", "pts": 61, "goals": 11, "assists": 7, "rating": 7.1, "trophies": 1, "seed": 733, "is_user": false},
+		{"name": "ENZO DIALLO", "club": "MILANO NERAZZURRI", "pts": 55, "goals": 10, "assists": 6, "rating": 7.0, "trophies": 0, "seed": 827, "is_user": false},
+	]
+	if user_age <= 21:
+		gb_pool.append({
+			"name": player_name,
+			"club": str(club.get("name", "KLUB")).to_upper(),
+			"pts": user_pts,
+			"goals": s_goals,
+			"assists": s_assists,
+			"rating": avg_rtg,
+			"trophies": season_trophies.size(),
+			"seed": 777,
+			"is_user": true,
+		})
+	gb_pool.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["pts"]) > int(b["pts"]))
+	var golden_boy_top5: Array[Dictionary] = []
+	var golden_boy_user_rank: int = -1
+	for gi in range(mini(5, gb_pool.size())):
+		var item: Dictionary = gb_pool[gi].duplicate(true)
+		item["rank"] = gi + 1
+		if bool(item.get("is_user", false)):
+			golden_boy_user_rank = gi + 1
+		golden_boy_top5.append(item)
+
+	var prev_gb_wins: int = 0
+	if has_active_career:
+		for tr_it in career.get("trophiesList", []):
+			var tns: String = (str((tr_it as Dictionary).get("name", "")) if tr_it is Dictionary else str(tr_it)).to_upper()
+			if tns.contains("ANAK EMAS") or tns.contains("PEMAIN MUDA"):
+				prev_gb_wins += 1
+
+	# 3) PEMAIN TERBAIK DUNIA / BALLON D'OR (Top 10 World: ke-10 -> ... -> ke-2 -> Winner!)
+	var wb_pool: Array[Dictionary] = [
+		{"name": "MORGAN ALBERT", "club": "MUNCHEN ROTE", "pts": 238, "goals": 46, "assists": 20, "rating": 8.5, "trophies": 3, "seed": 911, "is_user": false},
+		{"name": "MATEO MORALES", "club": "MADRID BLANCO", "pts": 141, "goals": 32, "assists": 14, "rating": 8.1, "trophies": 2, "seed": 823, "is_user": false},
+		{"name": "UMAR OBIOHA", "club": "MANCHESTER SKY BLUES", "pts": 136, "goals": 29, "assists": 13, "rating": 7.9, "trophies": 2, "seed": 719, "is_user": false},
+		{"name": "OWEN FAIRBAIRN", "club": "LIVERPOOL REDS", "pts": 122, "goals": 26, "assists": 15, "rating": 7.8, "trophies": 1, "seed": 613, "is_user": false},
+		{"name": "RAUL ARANGUREN", "club": "BARCELONA AZULGRANA", "pts": 118, "goals": 21, "assists": 18, "rating": 7.7, "trophies": 1, "seed": 503, "is_user": false},
+		{"name": "BRUNO PEIXOTO", "club": "PARIS ROUGE ET BLEU", "pts": 116, "goals": 24, "assists": 12, "rating": 7.6, "trophies": 1, "seed": 401, "is_user": false},
+		{"name": "HUGO PERRAULT", "club": "MILANO NERAZZURRI", "pts": 114, "goals": 23, "assists": 10, "rating": 7.5, "trophies": 2, "seed": 313, "is_user": false},
+		{"name": "TOMAS BARROS", "club": "LISBOA ENCARNADOS", "pts": 112, "goals": 20, "assists": 14, "rating": 7.5, "trophies": 1, "seed": 227, "is_user": false},
+		{"name": "JULIAN GAITAN", "club": "LONDON BLUES", "pts": 108, "goals": 19, "assists": 11, "rating": 7.4, "trophies": 1, "seed": 173, "is_user": false},
+		{"name": "KAI LINDNER", "club": "LEIPZIG STIERE", "pts": 102, "goals": 18, "assists": 9, "rating": 7.3, "trophies": 1, "seed": 131, "is_user": false},
+	]
+	wb_pool.append({
+		"name": player_name,
+		"club": str(club.get("name", "KLUB")).to_upper(),
+		"pts": user_pts,
+		"goals": s_goals,
+		"assists": s_assists,
+		"rating": avg_rtg,
+		"trophies": season_trophies.size(),
+		"seed": 777,
+		"is_user": true,
+	})
+	wb_pool.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["pts"]) > int(b["pts"]))
+	var world_best_top10: Array[Dictionary] = []
+	var world_best_user_rank: int = -1
+	for wi in range(mini(10, wb_pool.size())):
+		var item: Dictionary = wb_pool[wi].duplicate(true)
+		item["rank"] = wi + 1
+		if bool(item.get("is_user", false)):
+			world_best_user_rank = wi + 1
+		world_best_top10.append(item)
+
+	# ==========================================================================
+	# PART 3 CHAPTERS: PEMILU PRESIDEN, PANGGILAN TIMNAS (CALLED / NOT CALLED),
+	# DEWAN KLUB (SUARA), DEBAT TV, TIM TERBAIK MUSIM (4-3-3) & REKAP MUSIM!
+	# ==========================================================================
+	var season_num: int = maxi(1, int(recap.get("season", maxi(1, int(career.get("careerMeta", {}).get("year", 2)) - 1))))
+
+	# 4) HASIL PEMILU PRESIDEN KLUB
+	var elec_base: int = 58 + (6 if not season_trophies.is_empty() else 0) + (5 if league_pos <= 4 else (-16 if league_pos >= 12 else 0))
+	var pres_pct: int = clampi(elec_base + ((int(club.get("id", 0)) * 7 + cal_year * 3) % 9) - 4, 34, 72)
+	var chal_pct: int = 100 - pres_pct
+	var pres_won: bool = (pres_pct >= 50)
+
+	# 5) PANGGILAN TIMNAS (DIPANGGIL vs TIDAK DIPANGGIL)
+	var t_snap: Dictionary = recap.get("timnas_snapshot", {})
+	if t_snap.is_empty() and has_active_career:
+		t_snap = get_timnas_overview()
+	var p_nat_id: int = clampi(int(t_snap.get("nation_id", int(p.get("nationId", nat_id)))), 0, maxi(0, GameData.nations.size() - 1))
+	var p_nat_d: Dictionary = GameData.nations[p_nat_id] if not GameData.nations.is_empty() else nat_d
+	var t_status_raw: String = str(t_snap.get("status", "INTI" if (player_ovr >= 66 and avg_rtg >= 7.0) else "TIDAK DIPANGGIL")).to_upper()
+	var t_called: bool = (t_status_raw != "TIDAK DIPANGGIL")
+	var t_nation_name: String = str(t_snap.get("nation_name", str(p_nat_d.get("name", "INDONESIA")))).to_upper()
+	var t_nation_code: String = str(t_snap.get("nation_code", str(p_nat_d.get("code", "IDN")))).to_upper()
+	var t_nation_cols: Array = p_nat_d.get("colors", [Color("#CE1126"), Color("#FFFFFF")])
+	var is_wc_year: bool = (season_num % 4 == 0) or (cal_year % 4 == 2)
+	var t_tourney: String = "MUNDIAL" if is_wc_year else str(t_snap.get("continental_title", "PIALA BENUA")).to_upper()
+	var t_jersey_cur: int = int(p.get("intlJerseyNo", player_num))
+	var jersey_pool: Array[int] = [7, 9, 10, 11, 14, 17, 19, 20, 8, 21]
+	var t_jersey_choices: Array[int] = []
+	for jn in jersey_pool:
+		if jn != t_jersey_cur:
+			t_jersey_choices.append(jn)
+		if t_jersey_choices.size() >= 3:
+			break
+
+	# 6) DEWAN KLUB / PUSAT LATIHAN (SUARA)
+	var coach_pool: Array[String] = ["DIEGO SALAZAR", "CARLOS MENDOZA", "HENDRA PRASETYO", "LUCA FERRARI", "MARCUS VOGEL", "HENRIK LIND"]
+	var coach_name: String = coach_pool[(int(club.get("id", 0)) * 5 + nat_id * 3) % coach_pool.size()]
+	var coach_stars: int = clampi(3 + (1 if div_num <= 2 else 0) + (1 if league_pos <= 4 else 0), 3, 5)
+	var coach_rel: int = clampi(int(p.get("relations", {}).get("pelatih", 81)), 10, 100)
+	var suara_lvl: int = clampi(int(recap.get("club_suara_level", 2)), 1, 6)
+	var club_seasons: int = maxi(1, int(recap.get("club_seasons", season_num)))
+
+	# 7) DEBAT TV (USER vs RIVAL SEBAYA!)
+	var rival_d: Dictionary = {"name": "FREDDIE DUNMORE", "ovr": maxi(66, player_ovr), "pos": "CM" if player_pos == "ST" else "ST", "goals": maxi(6, int(round(float(s_goals) * 0.62))), "seed": 871, "primary": Color("#1D4ED8"), "secondary": Color("#F8FAFC")}
+	for cand in world_best_top10:
+		if not bool(cand.get("is_user", false)):
+			rival_d = {
+				"name": str(cand.get("name", "FREDDIE DUNMORE")).to_upper(),
+				"ovr": clampi(player_ovr + ((int(cand.get("seed", 500)) % 5) - 2), 68, 95),
+				"pos": "CM" if (int(cand.get("seed", 500)) % 2 == 0) else "ST",
+				"goals": int(cand.get("goals", 18)),
+				"seed": int(cand.get("seed", 871)),
+				"primary": Color("#1D4ED8") if (int(cand.get("seed", 1)) % 2 == 0) else Color("#0F766E"),
+				"secondary": Color("#F8FAFC"),
+			}
+			break
+	var u_debate_sc: float = float(s_goals) * 2.2 + avg_rtg * 12.0 + float(season_trophies.size()) * 14.0
+	var r_debate_sc: float = float(int(rival_d["goals"])) * 2.2 + 86.0
+	var debate_user_pct: int = clampi(int(round(u_debate_sc / maxf(1.0, u_debate_sc + r_debate_sc) * 100.0)), 28, 97)
+
+	# 8) TIM INTI / TIM TERBAIK MUSIM (4-3-3 LEAGUE BEST XI!)
+	var in_best_xi: bool = bool(recap.get("in_best_xi", avg_rtg >= 7.1))
+	var xi_templates: Array[Dictionary] = [
+		{"pos": "GK", "name": "SEGOVIA", "num": 1, "seed": 211},
+		{"pos": "LB", "name": "LORENTE", "num": 5, "seed": 223},
+		{"pos": "CB", "name": "ALONSO", "num": 3, "seed": 239},
+		{"pos": "CB", "name": "GALLARDO", "num": 15, "seed": 251},
+		{"pos": "RB", "name": "HERRERA", "num": 17, "seed": 263},
+		{"pos": "CM", "name": "ESPARZA", "num": 7, "seed": 277},
+		{"pos": "CDM", "name": "RODRIGUEZ", "num": 20, "seed": 283},
+		{"pos": "CAM", "name": "REBOLLO", "num": 8, "seed": 293},
+		{"pos": "LW", "name": "ZIMMER", "num": 10, "seed": 307},
+		{"pos": "ST", "name": "LATIMER", "num": 9, "seed": 311},
+		{"pos": "RW", "name": "SERRANO", "num": 11, "seed": 317},
+	]
+	var div_clubs: Array[Dictionary] = GameData.get_clubs_in_division(nat_id, div_num)
+	var user_xi_slot: int = 9
+	if player_pos == "GK":
+		user_xi_slot = 0
+	elif player_pos in ["LB", "LWB"]:
+		user_xi_slot = 1
+	elif player_pos == "CB":
+		user_xi_slot = 2
+	elif player_pos in ["RB", "RWB"]:
+		user_xi_slot = 4
+	elif player_pos in ["CM", "LM"]:
+		user_xi_slot = 5
+	elif player_pos == "CDM":
+		user_xi_slot = 6
+	elif player_pos in ["CAM", "RM"]:
+		user_xi_slot = 7
+	elif player_pos == "LW":
+		user_xi_slot = 8
+	elif player_pos == "RW":
+		user_xi_slot = 10
+	var best_xi_list: Array[Dictionary] = []
+	for xi in range(11):
+		var tpl: Dictionary = xi_templates[xi]
+		var cl_d: Dictionary = club
+		if not div_clubs.is_empty():
+			cl_d = div_clubs[(xi * 3 + cal_year) % div_clubs.size()]
+		if in_best_xi and xi == user_xi_slot:
+			var short_unm: String = player_name.split(" ")[0]
+			best_xi_list.append({
+				"pos": player_pos,
+				"name": short_unm,
+				"num": player_num,
+				"club_id": int(club.get("id", 0)),
+				"primary": UITheme.parse_color(club.get("primary", Color("#C81E2B")), Color("#C81E2B")),
+				"secondary": UITheme.parse_color(club.get("secondary", Color("#F8FAFC")), Color("#F8FAFC")),
+				"seed": 777,
+				"is_user": true,
+			})
+		else:
+			best_xi_list.append({
+				"pos": str(tpl["pos"]),
+				"name": str(tpl["name"]),
+				"num": int(tpl["num"]),
+				"club_id": int(cl_d.get("id", 0)),
+				"primary": UITheme.parse_color(cl_d.get("primary", Color("#1D4ED8")), Color("#1D4ED8")),
+				"secondary": UITheme.parse_color(cl_d.get("secondary", Color("#F8FAFC")), Color("#F8FAFC")),
+				"seed": int(tpl["seed"]),
+				"is_user": false,
+			})
+
+	# 9) REKAP MUSIM (VIDEO 2 EXACT DASHBOARD DATA!)
+	var prev_st: Dictionary = recap.get("prev_stats", {"has_prev": false, "matches": 0, "goals": 0, "assists": 0, "rating": 6.5})
+	var has_prev_s: bool = bool(prev_st.get("has_prev", false))
+	var d_matches: int = s_matches - int(prev_st.get("matches", 0)) if has_prev_s else s_matches
+	var d_goals: int = s_goals - int(prev_st.get("goals", 0)) if has_prev_s else s_goals
+	var d_assists: int = s_assists - int(prev_st.get("assists", 0)) if has_prev_s else s_assists
+	var d_rating: float = snappedf(avg_rtg - float(prev_st.get("rating", 6.5)), 0.1) if has_prev_s else snappedf(avg_rtg - 6.5, 0.1)
+
+	var best_match: Dictionary = recap.get("best_match", {})
+	if best_match.is_empty():
+		var fb_opp: String = str(div_clubs[1].get("name", "Sevilla Verdiblanco")) if div_clubs.size() > 1 else "Sevilla Verdiblanco"
+		best_match = {"opp_name": fb_opp, "goals": maxi(1, mini(4, int(ceil(float(s_goals) / 10.0)))), "assists": 1 if s_assists > 0 else 0, "rating": snappedf(minf(10.0, avg_rtg + 1.1), 0.1)}
+
+	var teammates_table: Array[Dictionary] = [{
+		"pos": player_pos,
+		"name": str(p.get("name", player_name)),
+		"delta": "",
+		"goals": s_goals,
+		"assists": s_assists,
+		"rating": avg_rtg,
+		"is_user": true,
+	}]
+	var tm_cands: Array[Dictionary] = []
+	for item in sq_list:
+		if not (item is Dictionary):
+			continue
+		var sd: Dictionary = item
+		if bool(sd.get("is_user", false)):
+			continue
+		var t_pos: String = str(sd.get("pos", "CM")).to_upper()
+		var t_ovr: int = int(sd.get("ovr", 66))
+		var t_nm: String = str(sd.get("name", "Rekan"))
+		var t_h: int = absi(t_nm.hash())
+		var t_g: int = clampi((t_ovr - 54) / 3 + (t_h % 6) + (4 if t_pos in ["ST", "LW", "RW", "CAM"] else 0), 1, maxi(4, s_goals - 1))
+		var t_a: int = clampi((t_ovr - 56) / 4 + ((t_h / 7) % 5) + (3 if t_pos in ["LM", "RM", "CAM", "CM"] else 0), 0, 12)
+		var t_rtg: float = snappedf(clampf(6.3 + float(t_ovr - 58) * 0.042 + float(t_h % 5) * 0.06, 6.4, 8.2), 0.1)
+		var ovr_diff: int = player_ovr - t_ovr
+		var delta_s: String = ("+%d" % ovr_diff) if ovr_diff > 0 else (str(ovr_diff) if ovr_diff < 0 else "=")
+		tm_cands.append({
+			"pos": t_pos,
+			"name": t_nm,
+			"delta": delta_s,
+			"goals": t_g,
+			"assists": t_a,
+			"rating": t_rtg,
+			"is_user": false,
+		})
+	tm_cands.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["rating"]) > float(b["rating"]))
+	var fallback_tms: Array[Dictionary] = [
+		{"pos": "LM", "name": "Raul Aranguren", "delta": "+10", "goals": 11, "assists": 7, "rating": 7.2, "is_user": false},
+		{"pos": "ST", "name": "Tomas Benavente", "delta": "+10", "goals": 16, "assists": 1, "rating": 6.7, "is_user": false},
+		{"pos": "CB", "name": "Sergio Hormazabal", "delta": "+14", "goals": 5, "assists": 7, "rating": 6.7, "is_user": false},
+		{"pos": "RB", "name": "Hugo Iriarte", "delta": "+17", "goals": 6, "assists": 6, "rating": 6.9, "is_user": false},
+		{"pos": "LW", "name": "Abdul Duah", "delta": "+8", "goals": 8, "assists": 2, "rating": 7.1, "is_user": false},
+	]
+	for ti in range(5):
+		if ti < tm_cands.size():
+			teammates_table.append(tm_cands[ti])
+		else:
+			teammates_table.append(fallback_tms[ti])
+
+	var g_target: int = int(recap.get("goal_target", 11))
+	var target_reached: bool = bool(recap.get("target_reached", s_goals >= g_target))
+	var won_cup: bool = bool(recap.get("won_cup", false))
+	var won_elite_recap: bool = bool(recap.get("won_elite", won_elite))
+	var league_ok: bool = (league_pos <= 6)
+	var club_objs: Array[Dictionary] = [
+		{"label": "LIGA ke-%d" % league_pos, "ok": league_ok},
+		{"label": "PIALA", "ok": won_cup},
+		{"label": "PIALA ELITE", "ok": won_elite_recap},
+	]
+	var obj_done: int = (1 if league_ok else 0) + (1 if won_cup else 0) + (1 if won_elite_recap else 0)
+	var recap_hero_title: String = "JUARA" if not season_trophies.is_empty() else ("PROMOSI" if bool(recap.get("promoted", false)) else "POSISI ke-%d" % league_pos)
+	var recap_hero_comp: String = season_trophies[0] if not season_trophies.is_empty() else league_name
+
+	return {
+		"player_name": player_name,
+		"player_num": player_num,
+		"player_pos": player_pos,
+		"player_ovr": player_ovr,
+		"player_age": user_age,
+		"season_num": season_num,
+		"club_id": int(club.get("id", 0)),
+		"club_name": str(club.get("name", "KLUB")).to_upper(),
+		"club_code": str(club.get("code", "CLB")).left(3).to_upper(),
+		"primary": UITheme.parse_color(club.get("primary", Color("#C81E2B")), Color("#C81E2B")),
+		"secondary": UITheme.parse_color(club.get("secondary", Color("#F8FAFC")), Color("#F8FAFC")),
+		"pattern": str(club.get("pattern", "stripes")),
+		"nation_id": nat_id,
+		"nation_code": str(nat_d.get("code", "IDN")).to_upper(),
+		"nation_colors": nat_d.get("colors", [Color("#CE1126"), Color("#FFFFFF")]),
+		"league_name": league_name,
+		"league_short": league_short,
+		"league_pos": league_pos,
+		"calendar_year": cal_year,
+		"avg_rating": avg_rtg,
+		"rating_x10": rtg_x10,
+		"season_matches": s_matches,
+		"season_goals": s_goals,
+		"season_assists": s_assists,
+		"show_record": show_record,
+		"record_title": record_title,
+		"record_val": record_val,
+		"prev_legend": prev_legend,
+		"prev_val": prev_val,
+		"prev_year": prev_year,
+		"show_parade": not season_trophies.is_empty(),
+		"parade_count": season_trophies.size(),
+		"parade_trophies": season_trophies,
+		"budget_pct": budget_pct,
+		"top_def": top_def,
+		"top_mid": top_mid,
+		"top_fwd": top_fwd,
+		"gala_skill_pts": 2,
+		"gala_bonus_cash": gala_bonus_cash,
+		"show_comp_best": (avg_rtg >= 7.2 or won_elite or league_pos <= 4),
+		"comp_best_title": comp_best_title,
+		"comp_best_is_elite": comp_best_is_elite,
+		"comp_goals": comp_g,
+		"comp_assists": comp_a,
+		"comp_matches": comp_m,
+		"comp_skill_pts": 3,
+		"comp_bonus_cash": comp_bonus_cash,
+		"best_goal_top3": best_goal_top3,
+		"best_goal_user_rank": best_goal_user_rank,
+		"golden_boy_top5": golden_boy_top5,
+		"golden_boy_user_rank": golden_boy_user_rank,
+		"golden_boy_prev_wins": prev_gb_wins,
+		"world_best_top10": world_best_top10,
+		"world_best_user_rank": world_best_user_rank,
+		# Part 3 Context:
+		"president_pct": pres_pct,
+		"challenger_pct": chal_pct,
+		"election_incumbent_won": pres_won,
+		"timnas_called": t_called,
+		"timnas_status": "INTI DI TIMNASMU" if t_status_raw == "INTI" else ("SKUAD TIMNAS" if t_called else "BELUM DIPANGGIL"),
+		"timnas_nation_id": p_nat_id,
+		"timnas_nation_name": t_nation_name,
+		"timnas_nation_code": t_nation_code,
+		"timnas_nation_colors": t_nation_cols,
+		"timnas_tournament": t_tourney,
+		"timnas_jersey_cur": t_jersey_cur,
+		"timnas_jersey_choices": t_jersey_choices,
+		"timnas_rtg_you": float(t_snap.get("rtg_you", avg_rtg)),
+		"timnas_rtg_req": float(t_snap.get("rtg_req", 6.8)),
+		"timnas_level_you": float(t_snap.get("level_you", float(player_ovr))),
+		"timnas_level_req": int(t_snap.get("level_req", 60)),
+		"coach_name": coach_name,
+		"coach_stars": coach_stars,
+		"coach_relation": coach_rel,
+		"suara_level": suara_lvl,
+		"club_seasons": club_seasons,
+		"usul_transfer_unlocked": (suara_lvl >= 2),
+		"rival": rival_d,
+		"debate_user_pct": debate_user_pct,
+		"debate_rival_pct": 100 - debate_user_pct,
+		"in_best_xi": in_best_xi,
+		"best_xi_list": best_xi_list,
+		"recap_hero_title": recap_hero_title,
+		"recap_hero_comp": recap_hero_comp,
+		"recap_has_trophy": not season_trophies.is_empty(),
+		"recap_deltas": {"matches": d_matches, "goals": d_goals, "assists": d_assists, "rating": d_rating},
+		"best_match": best_match,
+		"teammates_table": teammates_table,
+		"goal_target": g_target,
+		"target_reached": target_reached,
+		"club_objectives": club_objs,
+		"club_obj_done": obj_done,
+		"club_obj_total": 3,
+	}
+
+func set_intl_jersey_number(num: int) -> void:
+	if not has_active_career:
+		return
+	var clamped: int = clampi(num, 1, 99)
+	career["playerProfile"]["intlJerseyNo"] = clamped
+	if career["playerProfile"].has("appearance") and career["playerProfile"]["appearance"] is Dictionary:
+		career["playerProfile"]["appearance"]["intl_shirt_num"] = clamped
+	save_active_career()
+	career_updated.emit()
+
+func claim_season_end_trophy(trophy_title: String, legacy_bonus: int, skill_pts: int) -> void:
+	if not has_active_career:
+		return
+	var yr: int = maxi(1, int(career["careerMeta"].get("year", 2)) - 1)
+	var t_list: Array = career["trophiesList"]
+	for ex in t_list:
+		if ex is Dictionary and str((ex as Dictionary).get("name", "")) == trophy_title:
+			return
+	t_list.append({"name": trophy_title, "season": yr, "type": "INDIVIDU"})
+	career["stats"]["trophies"] = int(career["stats"].get("trophies", 0)) + 1
+	career["careerMeta"]["legacyPoints"] = int(career["careerMeta"].get("legacyPoints", 0)) + legacy_bonus
+	if skill_pts > 0:
+		career["playerProfile"]["skillPoints"] = int(career["playerProfile"].get("skillPoints", 0)) + skill_pts
+	_push_news("DUNIA", "PENGHARGAAN DUNIA! %s resmi meraih %s!" % [str(career["playerProfile"]["name"]).to_upper(), trophy_title])
+	_update_legacy_tier()
+	save_active_career()
+	career_updated.emit()
+
+func claim_season_end_award_bonus(skill_pts: int, cash_bonus: int) -> void:
+	if not has_active_career:
+		return
+	var p: Dictionary = career["playerProfile"]
+	if skill_pts > 0:
+		p["skillPoints"] = int(p.get("skillPoints", 0)) + skill_pts
+	if cash_bonus > 0:
+		p["cash"] = int(p.get("cash", 0)) + cash_bonus
+	save_active_career()
+	career_updated.emit()

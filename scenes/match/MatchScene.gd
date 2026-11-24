@@ -4,8 +4,8 @@ signal match_completed(report: Dictionary)
 signal mode_exited
 
 enum RunMode { CAREER_MATCH, PRACTICE_MODE, DUEL_MODE, MOVIOLA_REPLAY }
-enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, HEADER_TIMING, QTE_DRIBBLE_DUEL, QTE_LONG_CONTROL, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, COIN_FLIP, PENALTY_SHOOTOUT, FULLTIME }
-enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS, HEADER_CROSS, DRIBBLE_DUEL, LONG_PASS_CONTROL, CORNER_KICK, GK_BUILDUP }
+enum MatchPhase { INTRO, SIMULATING, HALFTIME, ASK_SET_PIECE, KEY_MOMENT_AIM, HEADER_TIMING, QTE_DRIBBLE_DUEL, QTE_LONG_CONTROL, BALL_IN_FLIGHT, TEAMMATE_CARRY, INCOMING_PASS, THROW_IN_PREP, REBOUND_SCRAMBLE, TEAMMATE_PENALTY_WAIT, MOMENT_RESULT, COIN_FLIP, PENALTY_SHOOTOUT, FULLTIME }
+enum MomentType { SHOT, PASS, DRIBBLE, FREE_KICK, PENALTY, TEAMMATE_PENALTY, TEAMMATE_PASS, THROW_IN, HEADER_CROSS, DRIBBLE_DUEL, LONG_PASS_CONTROL, CORNER_KICK, GK_BUILDUP }
 
 var run_mode: RunMode = RunMode.CAREER_MATCH
 var duel_target: Dictionary = {}
@@ -64,6 +64,27 @@ var _is_paused: bool = false
 var _action_bar: HBoxContainer
 var _action_mode_btns: Dictionary = {}
 var _player_badge_lbl: Label
+var _scorebug_root: Control
+var _sb_comp_ring: MatchHudWidgets.CompEmblemRing
+var _sb_rating_ring: MatchHudWidgets.RatingRingGauge
+var _sb_home_bar: PanelContainer
+var _sb_away_bar: PanelContainer
+var _sb_home_crest: ClubCrest
+var _sb_away_crest: ClubCrest
+var _sb_home_code_lbl: Label
+var _sb_away_code_lbl: Label
+var _sb_min_panel: PanelContainer
+var _sb_comp_ribbon_panel: PanelContainer
+var _sb_comp_ribbon_lbl: Label
+var _ticker_panel: PanelContainer
+var _top_right_bar: HBoxContainer
+var _player_card_panel: PanelContainer
+var _player_card_num_lbl: Label
+var _player_card_avatar: PixelAvatar
+var _player_card_name_lbl: Label
+var _player_card_pos_lbl: Label
+var _player_card_strip: PanelContainer
+var _player_card_last_key: String = ""
 var _goal_flash_rect: ColorRect
 var _moviola_frame: PanelContainer
 var _moviola_ctrl_bar: HBoxContainer
@@ -93,6 +114,7 @@ var _saves_us: int = 0
 var _saves_them: int = 0
 var _corners_us: int = 0
 var _corners_them: int = 0
+var _gk_buildup_count: int = 0
 var _fouls_us: int = 0
 var _fouls_them: int = 0
 var _board_cards_bar: PanelContainer
@@ -224,8 +246,18 @@ var _rebound_grace: float = 0.0
 var _rebound_timer: float = 0.0
 var _shot_by_teammate: bool = false
 var _post_rebound_eligible: bool = false
+var _scramble_from_penalty_rebound: bool = false
 var _tm_penalty_timer: float = 0.0
 var _tm_penalty_kicked: bool = false
+var _throw_in_side: float = 1.0
+var _throw_in_z: float = -24.0
+var _throw_in_timer: float = 0.0
+var _throw_in_duration: float = 2.4
+var _throw_in_thrown: bool = false
+var _throw_in_flight_t: float = 0.0
+var _throw_in_flight_dur: float = 0.72
+var _throw_in_start_pos: Vector3 = Vector3.ZERO
+var _throw_in_target_pos: Vector3 = Vector3.ZERO
 var _carry_tm_idx: int = -1
 var _carry_timer: float = 0.0
 var _carry_shoot_at: float = 1.2
@@ -240,6 +272,12 @@ var _gk_sway_clock: float = 0.0
 var _kick_offside_flags: Array[bool] = []
 var _kick_offside_line_z: float = -35.0
 var _goal_timeline: Array[Dictionary] = []
+var _goal_candidates: Array[Dictionary] = []
+var _acrobatic_ready_style: String = ""
+var _acrobatic_anim_style: String = ""
+var _acrobatic_anim_timer: float = 0.0
+var _acrobatic_anim_dur: float = 0.60
+var _last_shot_style: String = "AKSI SOLO"
 var _shot_on_target_credit: bool = false
 var _key_pass_awarded: bool = false
 var _qte_progress: float = 0.0
@@ -651,100 +689,250 @@ func _make_shadow_sprite(radius: float) -> Sprite3D:
 	return sp
 
 func _build_hud() -> void:
-	# Top Broadcast Scorebug (Landscape compact bar)
-	var top_bar := PanelContainer.new()
-	top_bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top_bar.offset_left = 10
-	top_bar.offset_right = -10
-	top_bar.offset_top = 8
-	top_bar.offset_bottom = 52
-	top_bar.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.03, 0.07, 0.14, 0.92), UITheme.BORDER_CYAN, 1, 3))
-	add_child(top_bar)
+	# =========================================================================
+	# 1. TOP-CENTER BROADCAST SCOREBUG (Gambar 1: Emblem + Club + White Score + Club + Rating Ring + B1/B2 Min + Comp Ribbon)
+	# =========================================================================
+	_scorebug_root = Control.new()
+	_scorebug_root.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_scorebug_root.offset_left = -226
+	_scorebug_root.offset_right = 226
+	_scorebug_root.offset_top = 4
+	_scorebug_root.offset_bottom = 84
+	_scorebug_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_scorebug_root)
 
-	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 8)
-	top_bar.add_child(hb)
+	var sb_vb := VBoxContainer.new()
+	sb_vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sb_vb.alignment = BoxContainer.ALIGNMENT_BEGIN
+	sb_vb.add_theme_constant_override("separation", 2)
+	sb_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scorebug_root.add_child(sb_vb)
 
-	_minute_lbl = Label.new()
-	_minute_lbl.text = "1'"
-	_minute_lbl.custom_minimum_size = Vector2(48, 0)
-	_minute_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_minute_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_minute_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	_minute_lbl.add_theme_font_size_override("font_size", 18)
-	hb.add_child(_minute_lbl)
+	var main_hb := HBoxContainer.new()
+	main_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	main_hb.add_theme_constant_override("separation", 0)
+	main_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sb_vb.add_child(main_hb)
+
+	# Left Circular Competition Emblem
+	_sb_comp_ring = MatchHudWidgets.CompEmblemRing.new()
+	_sb_comp_ring.custom_minimum_size = Vector2(40, 40)
+	main_hb.add_child(_sb_comp_ring)
+
+	# Home Team Bar (Crest + 3-letter Code)
+	_sb_home_bar = PanelContainer.new()
+	_sb_home_bar.custom_minimum_size = Vector2(106, 32)
+	_sb_home_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_sb_home_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hb_sb := StyleBoxFlat.new()
+	hb_sb.bg_color = Color("#1B3654", 0.94)
+	hb_sb.border_color = Color("#7DD3FC", 0.65)
+	hb_sb.border_width_top = 1
+	hb_sb.border_width_bottom = 1
+	hb_sb.content_margin_left = 8
+	hb_sb.content_margin_right = 8
+	_sb_home_bar.add_theme_stylebox_override("panel", hb_sb)
+	main_hb.add_child(_sb_home_bar)
+
+	var home_in := HBoxContainer.new()
+	home_in.alignment = BoxContainer.ALIGNMENT_CENTER
+	home_in.add_theme_constant_override("separation", 6)
+	home_in.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sb_home_bar.add_child(home_in)
+	_sb_home_crest = ClubCrest.new()
+	_sb_home_crest.custom_minimum_size = Vector2(22, 22)
+	_sb_home_crest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	home_in.add_child(_sb_home_crest)
+	_sb_home_code_lbl = Label.new()
+	_sb_home_code_lbl.text = "PBO"
+	_sb_home_code_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_sb_home_code_lbl.add_theme_font_size_override("font_size", 15)
+	_sb_home_code_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	home_in.add_child(_sb_home_code_lbl)
+
+	# Crisp Bright White Center Score Box (Gambar 1: 0 - 0!)
+	var score_box := PanelContainer.new()
+	score_box.custom_minimum_size = Vector2(74, 34)
+	score_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	score_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sc_sb := StyleBoxFlat.new()
+	sc_sb.bg_color = Color("#F5F8FC")
+	sc_sb.border_color = Color("#CBD5E1")
+	sc_sb.set_border_width_all(1)
+	sc_sb.content_margin_left = 6
+	sc_sb.content_margin_right = 6
+	score_box.add_theme_stylebox_override("panel", sc_sb)
+	main_hb.add_child(score_box)
 
 	_score_lbl = Label.new()
-	_score_lbl.text = "DED 0 - 0 SVA"
-	_score_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_score_lbl.text = "0 - 0"
 	_score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_score_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_score_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_score_lbl.add_theme_font_size_override("font_size", 18)
-	hb.add_child(_score_lbl)
+	_score_lbl.add_theme_font_size_override("font_size", 20)
+	_score_lbl.add_theme_color_override("font_color", Color("#0B1320"))
+	score_box.add_child(_score_lbl)
+
+	# Away Team Bar (3-letter Code + Crest)
+	_sb_away_bar = PanelContainer.new()
+	_sb_away_bar.custom_minimum_size = Vector2(106, 32)
+	_sb_away_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_sb_away_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ab_sb: StyleBoxFlat = hb_sb.duplicate()
+	ab_sb.bg_color = Color("#1B4970", 0.94)
+	_sb_away_bar.add_theme_stylebox_override("panel", ab_sb)
+	main_hb.add_child(_sb_away_bar)
+
+	var away_in := HBoxContainer.new()
+	away_in.alignment = BoxContainer.ALIGNMENT_CENTER
+	away_in.add_theme_constant_override("separation", 6)
+	away_in.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sb_away_bar.add_child(away_in)
+	_sb_away_code_lbl = Label.new()
+	_sb_away_code_lbl.text = "DSI"
+	_sb_away_code_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_sb_away_code_lbl.add_theme_font_size_override("font_size", 15)
+	_sb_away_code_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	away_in.add_child(_sb_away_code_lbl)
+	_sb_away_crest = ClubCrest.new()
+	_sb_away_crest.custom_minimum_size = Vector2(22, 22)
+	_sb_away_crest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	away_in.add_child(_sb_away_crest)
+
+	# Right Circular Live Match Rating Gauge (Gambar 1: 6,4!)
+	_sb_rating_ring = MatchHudWidgets.RatingRingGauge.new()
+	_sb_rating_ring.custom_minimum_size = Vector2(40, 40)
+	main_hb.add_child(_sb_rating_ring)
+
+	# Half + Minute Pill right under Score Box (B1 13' / B2 56')
+	var min_cc := CenterContainer.new()
+	min_cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sb_vb.add_child(min_cc)
+	_sb_min_panel = PanelContainer.new()
+	_sb_min_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var m_sb := StyleBoxFlat.new()
+	m_sb.bg_color = Color("#132338", 0.94)
+	m_sb.border_color = Color("#5BB2E8", 0.72)
+	m_sb.set_border_width_all(1)
+	m_sb.set_corner_radius_all(3)
+	m_sb.content_margin_left = 10
+	m_sb.content_margin_right = 10
+	m_sb.content_margin_top = 1
+	m_sb.content_margin_bottom = 1
+	_sb_min_panel.add_theme_stylebox_override("panel", m_sb)
+	min_cc.add_child(_sb_min_panel)
+
+	_minute_lbl = Label.new()
+	_minute_lbl.text = "B1 1'"
+	_minute_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_minute_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_minute_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	_minute_lbl.add_theme_font_size_override("font_size", 12)
+	_sb_min_panel.add_child(_minute_lbl)
+
+	# Competition & Week Ribbon right underneath Half/Minute pill
+	var rib_cc := CenterContainer.new()
+	rib_cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sb_vb.add_child(rib_cc)
+	_sb_comp_ribbon_panel = PanelContainer.new()
+	_sb_comp_ribbon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var r_sb := StyleBoxFlat.new()
+	r_sb.bg_color = Color("#1E4B72", 0.92)
+	r_sb.set_corner_radius_all(2)
+	r_sb.content_margin_left = 12
+	r_sb.content_margin_right = 12
+	r_sb.content_margin_top = 1
+	r_sb.content_margin_bottom = 1
+	_sb_comp_ribbon_panel.add_theme_stylebox_override("panel", r_sb)
+	rib_cc.add_child(_sb_comp_ribbon_panel)
+
+	_sb_comp_ribbon_lbl = Label.new()
+	_sb_comp_ribbon_lbl.text = "LIGA KE-3  •  PEKAN 1"
+	_sb_comp_ribbon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sb_comp_ribbon_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_sb_comp_ribbon_lbl.add_theme_font_size_override("font_size", 9)
+	_sb_comp_ribbon_lbl.add_theme_color_override("font_color", Color("#E2F2FF"))
+	_sb_comp_ribbon_panel.add_child(_sb_comp_ribbon_lbl)
+
+	# Top-Right Compact Controls (1X, SKIP, and iconic square dark II Pause button!)
+	_top_right_bar = HBoxContainer.new()
+	_top_right_bar.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_top_right_bar.offset_left = -172
+	_top_right_bar.offset_right = -10
+	_top_right_bar.offset_top = 8
+	_top_right_bar.offset_bottom = 46
+	_top_right_bar.alignment = BoxContainer.ALIGNMENT_END
+	_top_right_bar.add_theme_constant_override("separation", 6)
+	add_child(_top_right_bar)
 
 	_speed_btn = Button.new()
-	_speed_btn.text = "2X"
-	_speed_btn.custom_minimum_size = Vector2(54, 30)
-	UITheme.style_btn(_speed_btn, Color("#183860"), UITheme.BORDER_CYAN)
+	_speed_btn.text = "1X"
+	_speed_btn.custom_minimum_size = Vector2(44, 34)
+	UITheme.style_btn(_speed_btn, Color("#11233A"), UITheme.BORDER_CYAN, 11)
 	_speed_btn.pressed.connect(_on_toggle_speed)
-	hb.add_child(_speed_btn)
+	_top_right_bar.add_child(_speed_btn)
 
 	_exit_btn = Button.new()
 	_exit_btn.text = "SKIP"
-	_exit_btn.custom_minimum_size = Vector2(58, 30)
-	UITheme.style_btn(_exit_btn, Color("#4E2424"), UITheme.ACCENT_RED)
+	_exit_btn.custom_minimum_size = Vector2(52, 34)
+	UITheme.style_btn(_exit_btn, Color("#4A1E24"), UITheme.ACCENT_RED, 11)
 	_exit_btn.pressed.connect(_on_skip_or_exit)
-	hb.add_child(_exit_btn)
+	_top_right_bar.add_child(_exit_btn)
 
 	_pause_btn = Button.new()
 	_pause_btn.text = "II"
-	_pause_btn.custom_minimum_size = Vector2(36, 30)
-	UITheme.style_btn(_pause_btn, Color("#152A46"), UITheme.BORDER_CYAN)
+	_pause_btn.custom_minimum_size = Vector2(38, 36)
+	UITheme.style_btn(_pause_btn, Color("#0A101B"), Color("#3B5578"), 14)
 	_pause_btn.pressed.connect(func(): AudioSynth.play_click(); _open_pause_menu())
-	hb.add_child(_pause_btn)
+	_top_right_bar.add_child(_pause_btn)
 
-	# Commentary Ticker Strip (top-left leaving center pitch open)
-	var ticker_panel := PanelContainer.new()
-	ticker_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	ticker_panel.offset_left = 10
-	ticker_panel.offset_right = -380
-	ticker_panel.offset_top = 56
-	ticker_panel.offset_bottom = 82
-	ticker_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.03, 0.06, 0.12, 0.85), UITheme.BORDER_STEEL, 1, 2))
-	add_child(ticker_panel)
+	# Commentary Ticker Strip (Sleek centered pill right under scorebug ribbon like Gambar 1!)
+	_ticker_panel = PanelContainer.new()
+	_ticker_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_ticker_panel.offset_left = -224
+	_ticker_panel.offset_right = 224
+	_ticker_panel.offset_top = 86
+	_ticker_panel.offset_bottom = 110
+	_ticker_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ticker_panel.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.04, 0.07, 0.13, 0.86), Color("#2A4160"), 1, 5))
+	add_child(_ticker_panel)
 
 	_ticker_lbl = Label.new()
 	_ticker_lbl.text = "Kickoff! Peluang emas menantimu di lapangan."
 	_ticker_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_ticker_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_ticker_lbl.clip_text = true
-	_ticker_lbl.add_theme_font_size_override("font_size", 12)
-	ticker_panel.add_child(_ticker_lbl)
+	_ticker_lbl.add_theme_font_size_override("font_size", 11)
+	_ticker_lbl.add_theme_color_override("font_color", Color("#F1F5F9"))
+	_ticker_panel.add_child(_ticker_lbl)
 
-	# Key Moment Prompt Banner
+	# Key Moment Prompt Banner (compact centered right below ticker)
 	_moment_banner = PanelContainer.new()
-	_moment_banner.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	_moment_banner.offset_left = 10
-	_moment_banner.offset_right = -380
-	_moment_banner.offset_top = 86
-	_moment_banner.offset_bottom = 142
-	_moment_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.05, 0.14, 0.28, 0.90), UITheme.ACCENT_GOLD, 2, 4))
+	_moment_banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_moment_banner.offset_left = -210
+	_moment_banner.offset_right = 210
+	_moment_banner.offset_top = 114
+	_moment_banner.offset_bottom = 160
+	_moment_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_moment_banner.add_theme_stylebox_override("panel", UITheme.make_box(Color(0.05, 0.11, 0.22, 0.88), UITheme.ACCENT_GOLD, 1, 5))
 	_moment_banner.visible = false
 	add_child(_moment_banner)
 
 	var mb_vb := VBoxContainer.new()
+	mb_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mb_vb.add_theme_constant_override("separation", 1)
 	_moment_banner.add_child(mb_vb)
 	_moment_title_lbl = Label.new()
 	_moment_title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_moment_title_lbl.add_theme_font_override("font", UITheme.get_display_font())
 	_moment_title_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	_moment_title_lbl.add_theme_font_size_override("font_size", 15)
+	_moment_title_lbl.add_theme_font_size_override("font_size", 14)
 	mb_vb.add_child(_moment_title_lbl)
 
 	_moment_sub_lbl = Label.new()
 	_moment_sub_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_moment_sub_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_moment_sub_lbl.add_theme_font_size_override("font_size", 11)
+	_moment_sub_lbl.add_theme_font_size_override("font_size", 10)
 	mb_vb.add_child(_moment_sub_lbl)
 
 	# Moviola TV Frame Banner + Interactive 3D Camera Controls (0.5x/1x | TV | GOL | ORBIT | BEBAS)
@@ -895,19 +1083,105 @@ func _build_hud() -> void:
 	_stamina_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	st_ctrl.add_child(_stamina_lbl)
 
-	# Bottom-Left Player Number/Name Badge
+	# Bottom-Left Controlled Player Broadcast Card (Gambar 1: White Number Box + Portrait + REAL Player/Teammate Name!)
+	_player_card_panel = PanelContainer.new()
+	_player_card_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_player_card_panel.offset_left = 18
+	_player_card_panel.offset_top = -226
+	_player_card_panel.offset_right = 246
+	_player_card_panel.offset_bottom = -182
+	_player_card_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_player_card_panel.visible = false
+	var pc_sb := StyleBoxFlat.new()
+	pc_sb.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	_player_card_panel.add_theme_stylebox_override("panel", pc_sb)
+	add_child(_player_card_panel)
+
+	var pc_hb := HBoxContainer.new()
+	pc_hb.add_theme_constant_override("separation", 0)
+	pc_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_player_card_panel.add_child(pc_hb)
+
+	# Left White Shirt Number Square (exact Gambar 1: [29]!)
+	var num_box := PanelContainer.new()
+	num_box.custom_minimum_size = Vector2(44, 40)
+	num_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var nb_sb := StyleBoxFlat.new()
+	nb_sb.bg_color = Color("#F5F8FC")
+	nb_sb.border_color = Color("#CBD5E1")
+	nb_sb.set_border_width_all(1)
+	nb_sb.corner_radius_top_left = 6
+	nb_sb.corner_radius_bottom_left = 6
+	num_box.add_theme_stylebox_override("panel", nb_sb)
+	pc_hb.add_child(num_box)
+
+	_player_card_num_lbl = Label.new()
+	_player_card_num_lbl.text = "9"
+	_player_card_num_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_player_card_num_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_player_card_num_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_player_card_num_lbl.add_theme_font_size_override("font_size", 18)
+	_player_card_num_lbl.add_theme_color_override("font_color", Color("#0C1322"))
+	num_box.add_child(_player_card_num_lbl)
+
+	# Right Club-Tinted Nameplate (Portrait + Real Name + Position)
+	_player_card_strip = PanelContainer.new()
+	_player_card_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_player_card_strip.custom_minimum_size = Vector2(174, 40)
+	_player_card_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ps_sb := StyleBoxFlat.new()
+	ps_sb.bg_color = Color("#132842", 0.90)
+	ps_sb.border_color = Color("#5BB2E8", 0.65)
+	ps_sb.border_width_top = 1
+	ps_sb.border_width_bottom = 1
+	ps_sb.border_width_right = 1
+	ps_sb.corner_radius_top_right = 6
+	ps_sb.corner_radius_bottom_right = 6
+	ps_sb.content_margin_left = 6
+	ps_sb.content_margin_right = 8
+	ps_sb.content_margin_top = 2
+	ps_sb.content_margin_bottom = 2
+	_player_card_strip.add_theme_stylebox_override("panel", ps_sb)
+	pc_hb.add_child(_player_card_strip)
+
+	var strip_hb := HBoxContainer.new()
+	strip_hb.alignment = BoxContainer.ALIGNMENT_BEGIN
+	strip_hb.add_theme_constant_override("separation", 6)
+	strip_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_player_card_strip.add_child(strip_hb)
+
+	_player_card_avatar = PixelAvatar.new()
+	_player_card_avatar.full_body = false
+	_player_card_avatar.custom_minimum_size = Vector2(30, 32)
+	_player_card_avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip_hb.add_child(_player_card_avatar)
+
+	var nm_vb := VBoxContainer.new()
+	nm_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	nm_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	nm_vb.add_theme_constant_override("separation", 0)
+	nm_vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip_hb.add_child(nm_vb)
+
+	_player_card_name_lbl = Label.new()
+	_player_card_name_lbl.text = "PEMAIN"
+	_player_card_name_lbl.clip_text = true
+	_player_card_name_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_player_card_name_lbl.add_theme_font_size_override("font_size", 13)
+	_player_card_name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	nm_vb.add_child(_player_card_name_lbl)
+
+	_player_card_pos_lbl = Label.new()
+	_player_card_pos_lbl.text = "ST"
+	_player_card_pos_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	_player_card_pos_lbl.add_theme_font_size_override("font_size", 9)
+	_player_card_pos_lbl.add_theme_color_override("font_color", Color("#93C5FD"))
+	nm_vb.add_child(_player_card_pos_lbl)
+
+	# Keep _player_badge_lbl alias synced cleanly for compatibility (hidden because _player_card_panel replaces it!)
 	_player_badge_lbl = Label.new()
-	_player_badge_lbl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_player_badge_lbl.offset_left = 18
-	_player_badge_lbl.offset_top = -202
-	_player_badge_lbl.offset_right = 240
-	_player_badge_lbl.offset_bottom = -178
-	_player_badge_lbl.add_theme_font_override("font", UITheme.get_display_font())
-	_player_badge_lbl.add_theme_font_size_override("font_size", 15)
-	_player_badge_lbl.add_theme_color_override("font_color", Color.WHITE)
-	_player_badge_lbl.add_theme_color_override("font_outline_color", Color.BLACK)
-	_player_badge_lbl.add_theme_constant_override("outline_size", 4)
 	_player_badge_lbl.visible = false
+	_player_badge_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_player_badge_lbl)
 
 	# Power Readout Badge (Bottom-Right above Spin Pad)
@@ -1007,6 +1281,11 @@ func _start_selected_mode() -> void:
 	_rating = 6.2
 	_shots_telemetry.clear()
 	_goal_timeline.clear()
+	_goal_candidates.clear()
+	_acrobatic_ready_style = ""
+	_acrobatic_anim_style = ""
+	_acrobatic_anim_timer = 0.0
+	_last_shot_style = "AKSI SOLO"
 	_best_clip = {}
 	_match_stamina_max = 100.0
 	_match_stamina = _match_stamina_max
@@ -1047,12 +1326,11 @@ func _start_selected_mode() -> void:
 	# CAREER_MATCH
 	var club := CareerState.get_current_club()
 	var fix := CareerState.get_current_fixture()
-	var us_code: String = club.get("code", "DED")
-	var them_code: String = fix.get("opp_code", "SVA")
-	_score_lbl.text = "%s 0 - 0 %s" % [us_code, them_code]
 	_minute = 1.0
 	_sim_speed = 1.0
 	_speed_btn.text = "1X"
+	_sync_broadcast_scorebug()
+	_apply_control_layout_settings()
 
 	var visi := CareerState.get_effective_attribute("visi")
 	var rel_tm := int(CareerState.career["playerProfile"]["relations"]["ruangGanti"])
@@ -1087,6 +1365,7 @@ func _start_selected_mode() -> void:
 	_saves_them = 0
 	_corners_us = 0
 	_corners_them = 0
+	_gk_buildup_count = 0
 	_fouls_us = 0
 	_fouls_them = 0
 	_board_paused = false
@@ -1118,14 +1397,23 @@ func _start_selected_mode() -> void:
 	if _board_cards_bar != null:
 		_board_cards_bar.visible = false
 	if _board_feed_vb != null:
-		for c in _board_feed_vb.get_children():
-			c.queue_free()
+		while _board_feed_vb.get_child_count() > 0:
+			var fc: Node = _board_feed_vb.get_child(0)
+			_board_feed_vb.remove_child(fc)
+			fc.queue_free()
 	_spin_pad.visible = false
 	_power_lbl.visible = false
 	_phase = MatchPhase.INTRO
 	_open_lineup_intro()
 
 func _process(delta: float) -> void:
+	if _scorebug_root != null:
+		var hide_3d_hud: bool = (_board_panel != null and _board_panel.visible) or _phase == MatchPhase.INTRO
+		_scorebug_root.visible = not hide_3d_hud
+		if _ticker_panel != null:
+			_ticker_panel.visible = not hide_3d_hud and run_mode != RunMode.MOVIOLA_REPLAY
+		if _top_right_bar != null:
+			_top_right_bar.visible = not hide_3d_hud
 	if _is_paused:
 		return
 	if run_mode == RunMode.MOVIOLA_REPLAY:
@@ -1133,6 +1421,8 @@ func _process(delta: float) -> void:
 		return
 
 	_anim_clock += delta
+	if _acrobatic_anim_timer > 0.0:
+		_acrobatic_anim_timer = maxf(0.0, _acrobatic_anim_timer - delta)
 	_update_camera(delta)
 
 	match _phase:
@@ -1147,6 +1437,14 @@ func _process(delta: float) -> void:
 			_animate_teammates(delta)
 			if _moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]:
 				_process_dribble_control(delta)
+				if _acrobatic_ready_style != "":
+					if _dribble_input.length() > 0.25:
+						_acrobatic_ready_style = ""
+						_ball_pos.y = 0.115
+					else:
+						var base_y: float = 1.48 if _acrobatic_ready_style == "SALTO" else 1.02
+						_ball_pos.y = base_y + sin(_anim_clock * 7.5) * 0.10
+						_sync_3d_sprites()
 			_update_pass_openness_ui()
 			_draw_aim_and_ring()
 		MatchPhase.HEADER_TIMING:
@@ -1163,6 +1461,8 @@ func _process(delta: float) -> void:
 			_process_teammate_carry(delta)
 		MatchPhase.INCOMING_PASS:
 			_process_incoming_pass(delta)
+		MatchPhase.THROW_IN_PREP:
+			_process_throw_in_prep(delta)
 		MatchPhase.REBOUND_SCRAMBLE:
 			_process_rebound_scramble(delta)
 		MatchPhase.MOMENT_RESULT:
@@ -1195,7 +1495,7 @@ func _is_current_knockout_match() -> bool:
 	if st_lbl in ["8 BESAR", "SEMI FINAL", "FINAL", "16 BESAR", "32 BESAR", "BABAK 1"]:
 		return true
 	var comp := str(fix.get("comp", ""))
-	return comp in ["PIALA", "TURNAMEN_ASIA", "PIALA_DUNIA_KLUB"]
+	return comp in ["PIALA", "TURNAMEN_ASIA", "PIALA_DUNIA_KLUB", "PIALA_SUPER_EROPA"]
 
 func _process_simulation(delta: float) -> void:
 	if _board_paused:
@@ -1211,7 +1511,7 @@ func _process_simulation(delta: float) -> void:
 	var eff_speed: float = 4.5 if _board_hold_fast else _sim_speed
 	var min_step: float = delta * 6.5 * eff_speed
 	_minute += min_step
-	_minute_lbl.text = "%d'" % mini(int(_et_end_min), int(_minute))
+	_sync_broadcast_scorebug()
 
 	# 20% faster in-match Energy drain while user is on the pitch (scaled by Intensity & Fisik)
 	if run_mode == RunMode.CAREER_MATCH and not _user_subbed_out:
@@ -1287,23 +1587,26 @@ func _process_simulation(delta: float) -> void:
 		_next_moment_idx += 1
 		var r := randf()
 		var m_type := MomentType.SHOT
-		if r < 0.09:
+		if r < 0.03 and _gk_buildup_count < 1:
 			m_type = MomentType.GK_BUILDUP
-		elif r < 0.20:
+			_gk_buildup_count += 1
+		elif r < 0.14:
+			m_type = MomentType.THROW_IN
+		elif r < 0.27:
 			m_type = MomentType.CORNER_KICK
-		elif r < 0.31:
+		elif r < 0.37:
 			m_type = MomentType.HEADER_CROSS
-		elif r < 0.42:
+		elif r < 0.47:
 			m_type = MomentType.DRIBBLE_DUEL
-		elif r < 0.53:
+		elif r < 0.56:
 			m_type = MomentType.LONG_PASS_CONTROL
-		elif r < 0.63:
+		elif r < 0.65:
 			m_type = MomentType.TEAMMATE_PASS
-		elif r < 0.75:
+		elif r < 0.76:
 			m_type = MomentType.SHOT
 		elif r < 0.85:
 			m_type = MomentType.PASS
-		elif r < 0.93:
+		elif r < 0.92:
 			m_type = MomentType.FREE_KICK
 		else:
 			m_type = MomentType.PENALTY
@@ -1362,8 +1665,12 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 	_current_clip_frames.clear()
 	_shot_by_teammate = false
 	_post_rebound_eligible = false
+	_scramble_from_penalty_rebound = false
 	_rebound_grace = 0.0
 	_tm_penalty_kicked = false
+	_throw_in_thrown = false
+	_throw_in_timer = 0.0
+	_throw_in_flight_t = 0.0
 	_carry_tm_idx = -1
 	_carry_timer = 0.0
 	_carry_pass_back = false
@@ -1428,6 +1735,9 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 		MomentType.TEAMMATE_PASS:
 			_setup_teammate_pass_to_user()
 			return
+		MomentType.THROW_IN:
+			_setup_throw_in_moment()
+			return
 		MomentType.GK_BUILDUP:
 			_setup_gk_buildup_moment()
 			return
@@ -1448,13 +1758,13 @@ func _trigger_key_moment(m_type: MomentType) -> void:
 			_ball_pos = Vector3(0.0, 0.115, -41.5)
 			for i in range(2):
 				_teammates[i].visible = true
-				_teammate_positions.append(Vector3(-4.8 if i == 0 else 5.2, 0.0, -35.8))
+				_teammate_positions.append(Vector3(-5.8 if i == 0 else 5.8, 0.0, -33.4))
 				_teammate_vels.append(Vector3(0.0, 0.0, 0.0))
 				_teammate_targets.append(Vector3(-4.2 if i == 0 else 4.5, 0.0, -43.0))
 				_teammate_open_scores.append(2.0)
 			for i in range(2):
 				_defenders[i].visible = true
-				_defender_positions.append(Vector3(-6.2 if i == 0 else 6.2, 0.0, -36.0))
+				_defender_positions.append(Vector3(-9.2 if i == 0 else 9.2, 0.0, -34.8))
 				_defender_dirs.append(1.0 if i == 0 else -1.0)
 			_moment_title_lbl.text = "PENALTI!"
 			_moment_sub_lbl.text = "Tarik ketapel & atur putaran bola ke pojok gawang!"
@@ -1573,8 +1883,13 @@ func _configure_moment_camera() -> void:
 	var angle_off := (float(SettingsManager.data.get("camera_angle", 0.5)) - 0.5) * 8.0
 
 	if _moment_type == MomentType.TEAMMATE_PENALTY:
-		_cam_target_pos = Vector3(0.0, 7.8, -22.0)
-		_cam_look_pos = Vector3(0.0, 0.7, -42.5)
+		_cam_target_pos = Vector3(0.0, 9.2, -19.2)
+		_cam_look_pos = Vector3(0.0, 0.7, -41.5)
+	elif _moment_type == MomentType.THROW_IN:
+		var t_origin: Vector3 = _teammate_positions[0] if not _teammate_positions.is_empty() else Vector3(_throw_in_side * 34.15, 0.0, _throw_in_z)
+		var mid_t: Vector3 = t_origin.lerp(_player_pos, 0.52)
+		_cam_target_pos = mid_t + Vector3(-_throw_in_side * 8.2, 10.6, 15.8)
+		_cam_look_pos = mid_t + Vector3(_throw_in_side * 1.2, 0.9, -2.0)
 	elif _moment_type == MomentType.HEADER_CROSS:
 		_cam_target_pos = _player_pos + Vector3(0.0, 8.6, 15.5)
 		_cam_look_pos = Vector3(_player_pos.x * 0.35, 1.3, -47.0)
@@ -1607,8 +1922,13 @@ func _configure_moment_camera() -> void:
 
 func _update_camera(delta: float) -> void:
 	if _phase == MatchPhase.TEAMMATE_PENALTY_WAIT:
-		_cam_target_pos = _cam_target_pos.lerp(Vector3(0.0, 7.8, -22.0), delta * 4.5)
-		_cam_look_pos = _cam_look_pos.lerp(Vector3(0.0, 0.7, -42.5), delta * 5.0)
+		_cam_target_pos = _cam_target_pos.lerp(Vector3(0.0, 9.2, -19.2), delta * 4.5)
+		_cam_look_pos = _cam_look_pos.lerp(Vector3(0.0, 0.7, -41.5), delta * 5.0)
+	elif _phase == MatchPhase.THROW_IN_PREP:
+		var t_org: Vector3 = _teammate_positions[0] if not _teammate_positions.is_empty() else Vector3(_throw_in_side * 34.15, 0.0, _throw_in_z)
+		var focus_t: Vector3 = t_org.lerp(_player_pos, 0.56 if not _throw_in_thrown else 0.72)
+		_cam_target_pos = _cam_target_pos.lerp(focus_t + Vector3(-_throw_in_side * 8.0, 10.4, 15.6), delta * 5.0)
+		_cam_look_pos = _cam_look_pos.lerp(focus_t.lerp(_ball_pos, 0.28) + Vector3(0.0, 0.85, -1.8), delta * 5.5)
 	elif _phase == MatchPhase.TEAMMATE_CARRY or _phase == MatchPhase.INCOMING_PASS:
 		if _incoming_pass_is_our_gk:
 			_cam_target_pos = _cam_target_pos.lerp(_ball_pos + Vector3(0.0, 7.6, 15.5), delta * 5.0)
@@ -1655,6 +1975,12 @@ func _input(event: InputEvent) -> void:
 		elif event is InputEventKey and event.pressed and not event.echo:
 			if event.keycode == KEY_SPACE or event.keycode == KEY_ENTER:
 				_handle_qte_tap()
+		return
+	if _phase == MatchPhase.THROW_IN_PREP:
+		if not _throw_in_thrown and _throw_in_timer >= 0.35:
+			if event is InputEventKey and event.pressed and not event.echo:
+				if event.keycode == KEY_SPACE or event.keycode == KEY_ENTER:
+					_release_teammate_throw_in()
 		return
 	if _phase != MatchPhase.KEY_MOMENT_AIM:
 		return
@@ -1729,6 +2055,31 @@ func _release_slingshot() -> void:
 	_ball_vel = _rotate_corner_launch(launch["velocity"]) if (_moment_type == MomentType.CORNER_KICK and _corner_taker_is_user) else launch["velocity"]
 	_ball_omega = launch["omega"]
 	_last_kick_power_ratio = float(launch.get("power_ratio", 0.5))
+	# Detect & execute acrobatic SALTO (Bicycle Kick) or VOLI (Volley) on counter-attack pass reception!
+	if _controlling_teammate_idx < 0 and _acrobatic_ready_style == "SALTO":
+		_last_shot_style = "SALTO"
+		_acrobatic_anim_style = "SALTO"
+		_acrobatic_anim_dur = 0.66
+		_acrobatic_anim_timer = 0.66
+		_ball_vel *= 1.10
+		_acrobatic_ready_style = ""
+	elif _controlling_teammate_idx < 0 and _acrobatic_ready_style == "VOLI":
+		_last_shot_style = "VOLI"
+		_acrobatic_anim_style = "VOLI"
+		_acrobatic_anim_dur = 0.52
+		_acrobatic_anim_timer = 0.52
+		_ball_vel *= 1.08
+		_acrobatic_ready_style = ""
+	elif _moment_type == MomentType.FREE_KICK:
+		_last_shot_style = "TENDANGAN BEBAS"
+	elif _moment_type == MomentType.PENALTY:
+		_last_shot_style = "PENALTI"
+	elif _moment_type == MomentType.HEADER_CROSS:
+		_last_shot_style = "SUNDULAN"
+	elif _ball_pos.distance_to(Vector3(0, 0, -52.5)) >= 24.0:
+		_last_shot_style = "JARAK JAUH"
+	else:
+		_last_shot_style = "AKSI SOLO"
 	_flight_timer = 0.0
 	_current_clip_frames.clear()
 	_current_clip_frames.append({
@@ -1798,16 +2149,26 @@ func get_player_max_run_speed(spd_attr: int) -> float:
 	# Realistic speed strictly driven by player's Kecepatan attribute (40..99 -> ~3.8..8.2 m/s)
 	return lerpf(3.4, 8.2, clampf((float(spd_attr) - 35.0) / 64.0, 0.0, 1.0))
 
+func _read_user_move_vec() -> Vector2:
+	var kx: float = Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
+	var ky: float = Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
+	if Input.is_key_pressed(KEY_D):
+		kx += 1.0
+	if Input.is_key_pressed(KEY_A):
+		kx -= 1.0
+	if Input.is_key_pressed(KEY_S):
+		ky += 1.0
+	if Input.is_key_pressed(KEY_W):
+		ky -= 1.0
+	var kb := Vector2(clampf(kx, -1.0, 1.0), clampf(ky, -1.0, 1.0))
+	if kb.length() > 0.12:
+		return kb.normalized()
+	return _dribble_input
+
 func _process_dribble_control(delta: float) -> void:
 	if _skill_burst_timer > 0.0:
 		_skill_burst_timer = maxf(0.0, _skill_burst_timer - delta)
-	var kb := Vector2(
-		Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left"),
-		Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
-	)
-	var joy: Vector2 = _dribble_input
-	if kb.length() > 0.12:
-		joy = kb.normalized()
+	var joy: Vector2 = _read_user_move_vec()
 	var is_moving := (joy.length() > 0.08 and not _dragging)
 	var fisik_attr := CareerState.get_effective_attribute("fisik") if CareerState.has_active_career else 68
 	var drain_mult: float = lerpf(1.22, 0.68, clampf(float(fisik_attr) / 99.0, 0.0, 1.0))
@@ -1923,7 +2284,7 @@ func _process_ball_flight(delta: float) -> void:
 					_defenders[i].rotation_degrees.z = 42.0 if _defender_slide_dirs[i].x >= 0.0 else -42.0
 			elif d_spd > 0.0 and dist_i > 0.35 and dist_i < (10.5 * opp_agil):
 				# Trigger slide tackle lunge ONLY after ball is kicked, once per kick, when low pass/shot zips within agile lunge range!
-				if _flight_timer > 0.04 and not _defender_slid_this_kick[i] and _ball_pos.y < 1.35 and dist_i < (3.2 * opp_agil) and dist_i > 0.85 and _ball_vel.length() > 7.5 and _moment_type != MomentType.PENALTY:
+				if _flight_timer > 0.04 and not _defender_slid_this_kick[i] and _ball_pos.y < 1.35 and dist_i < (3.2 * opp_agil) and dist_i > 0.85 and _ball_vel.length() > 7.5 and _moment_type != MomentType.PENALTY and _moment_type != MomentType.TEAMMATE_PENALTY:
 					_defender_slid_this_kick[i] = true
 					_defender_slide_timers[i] = 0.36
 					_defender_slide_dirs[i] = intercept_dir.normalized()
@@ -1936,6 +2297,7 @@ func _process_ball_flight(delta: float) -> void:
 		# Trigger post rebound scramble cleanly inside attacking box
 		if _post_rebound_eligible and _ball_vel.z > 1.2 and _ball_pos.z > -50.8 and _ball_pos.z < -26.0 and absf(_ball_pos.x) < 16.0:
 			_post_rebound_eligible = false
+			_scramble_from_penalty_rebound = (_moment_type == MomentType.TEAMMATE_PENALTY or _moment_type == MomentType.PENALTY)
 			_enter_rebound_scramble("KENA TIANG! REBUT REBOUND!")
 			return
 
@@ -1979,8 +2341,8 @@ func _process_ball_flight(delta: float) -> void:
 				_enter_user_follow_up_shot("BOLA KEMBALI KE KAMU!", "Rekan mengembalikan bola — tarik ketapel TEMBAK atau umpan!")
 				return
 
-		# Check Live Teammate reception (PASS, SHOT, DRIBBLE, FREE_KICK, HEADER_CROSS, CORNER_KICK, GK_BUILDUP — with FIFA Law 11 Offside check!)
-		if _carry_tm_idx < 0 and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS, MomentType.CORNER_KICK, MomentType.GK_BUILDUP]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
+		# Check Live Teammate reception (only for USER kicks — never let a teammate intercept another teammate's shot on goal!)
+		if not _shot_by_teammate and _carry_tm_idx < 0 and not _incoming_pass_kicked and (_moment_type in [MomentType.PASS, MomentType.SHOT, MomentType.DRIBBLE, MomentType.FREE_KICK, MomentType.HEADER_CROSS, MomentType.CORNER_KICK, MomentType.GK_BUILDUP]) and _flight_timer > 0.05 and not _teammate_positions.is_empty():
 			var catch_rad: float = 2.45 if _moment_type == MomentType.CORNER_KICK else (2.25 if (_moment_type in [MomentType.PASS, MomentType.FREE_KICK, MomentType.HEADER_CROSS]) else 1.85)
 			for ti in range(_teammate_positions.size()):
 				if ti == _controlling_teammate_idx:
@@ -2020,14 +2382,16 @@ func _process_ball_flight(delta: float) -> void:
 					_credit_key_pass_if_pending()
 				else:
 					_credit_on_target_shot("DITEPIS KIPER")
-				var rebound_chance := 0.62 if (_shot_by_teammate or _moment_type == MomentType.PENALTY or _ball_vel.length() > 21.0) else 0.48
+				var is_tm_pen: bool = (_moment_type == MomentType.TEAMMATE_PENALTY)
+				var rebound_chance := 0.86 if is_tm_pen else (0.62 if (_shot_by_teammate or _moment_type == MomentType.PENALTY or _ball_vel.length() > 21.0) else 0.48)
 				if randf() < rebound_chance and _ball_pos.z < -42.0:
 					var parry_dir := signf(_ball_pos.x - _gk_pos.x)
 					if absf(parry_dir) < 0.1:
 						parry_dir = 1.0 if randf() > 0.5 else -1.0
-					_ball_pos.z = -49.8
-					_ball_vel = Vector3(parry_dir * randf_range(3.0, 6.2), randf_range(1.8, 3.3), randf_range(5.2, 8.8))
-					_enter_rebound_scramble("TEMBAKAN REKAN DITEPIS KIPER! BEREBUT REBOUND!" if _shot_by_teammate else "DITEPIS KIPER! BEREBUT REBOUND!")
+					_scramble_from_penalty_rebound = (is_tm_pen or _moment_type == MomentType.PENALTY)
+					_ball_pos.z = -48.4 if is_tm_pen else -49.8
+					_ball_vel = Vector3(parry_dir * randf_range(2.2, 4.8), randf_range(1.4, 2.6), randf_range(6.2, 9.2)) if is_tm_pen else Vector3(parry_dir * randf_range(3.0, 6.2), randf_range(1.8, 3.3), randf_range(5.2, 8.8))
+					_enter_rebound_scramble("PENALTI DITEPIS KIPER! KEJAR REBOUND!" if is_tm_pen else ("TEMBAKAN REKAN DITEPIS KIPER! BEREBUT REBOUND!" if _shot_by_teammate else "DITEPIS KIPER! BEREBUT REBOUND!"))
 					return
 				_ball_vel.z = absf(_ball_vel.z) * 0.45
 				_ball_vel.x += signf(_ball_pos.x - _gk_pos.x) * 3.0
@@ -2050,6 +2414,15 @@ func _process_ball_flight(delta: float) -> void:
 	if _trail_points.size() > 24:
 		_trail_points.pop_front()
 	_draw_ball_trail()
+	if _moment_type == MomentType.TEAMMATE_PENALTY and _tm_penalty_kicked:
+		# Box-edge players (user + defenders) surge into box immediately after penalty kick is struck!
+		var pen_stride: int = 5 if fmod(_anim_clock, 0.26) < 0.13 else 6
+		_player_pos.z = maxf(-45.5, _player_pos.z - 5.2 * delta)
+		_player_sprite.frame = pen_stride
+		for di in range(_defender_positions.size()):
+			_defender_positions[di].z = maxf(-46.5, _defender_positions[di].z - 4.4 * delta)
+			if di < _defenders.size():
+				_defenders[di].frame = 1 if fmod(_anim_clock, 0.28) < 0.14 else 2
 	_animate_teammates(delta)
 	_sync_3d_sprites()
 
@@ -2130,7 +2503,7 @@ func get_opp_gk_profile(override_ovr: int = -1) -> Dictionary:
 	}
 
 func _get_gk_desired_z(ball_z: float) -> float:
-	if _moment_type == MomentType.PENALTY or _moment_type == MomentType.FREE_KICK:
+	if _moment_type == MomentType.PENALTY or _moment_type == MomentType.TEAMMATE_PENALTY or _moment_type == MomentType.FREE_KICK:
 		return -51.6
 	if ball_z >= -36.0 or absf(_ball_pos.x) >= 16.5:
 		return -51.6
@@ -2144,7 +2517,7 @@ func _update_gk_ai(dt: float) -> void:
 	var gk_spd: float = float(prof["dive_speed"])
 	var rush_spd: float = float(prof.get("rush_speed", 2.8))
 	var read_acc: float = float(prof["read_accuracy"])
-	if _moment_type != MomentType.PENALTY and _moment_type != MomentType.FREE_KICK and _ball_pos.z < -36.0 and _ball_pos.z > -50.2 and absf(_ball_pos.x) < 16.5:
+	if _moment_type != MomentType.PENALTY and _moment_type != MomentType.TEAMMATE_PENALTY and _moment_type != MomentType.FREE_KICK and _ball_pos.z < -36.0 and _ball_pos.z > -50.2 and absf(_ball_pos.x) < 16.5:
 		var des_z: float = _get_gk_desired_z(_ball_pos.z)
 		_gk_pos.z = move_toward(_gk_pos.z, des_z, rush_spd * dt)
 	# GK holds line horizontally until shot travels toward goal, then reacts/dives explosively by OVR reflex
@@ -2386,8 +2759,8 @@ func _animate_gk_idle(delta: float) -> void:
 	_sync_3d_sprites()
 
 func _animate_teammates(delta: float) -> void:
-	# During Free Kick, Aerial Cross Header, & Corner Kick aiming, non-controlled teammates stay stationary in optimal positions
-	if _phase == MatchPhase.KEY_MOMENT_AIM and (_moment_type == MomentType.FREE_KICK or _moment_type == MomentType.HEADER_CROSS or _moment_type == MomentType.CORNER_KICK):
+	# During Free Kick, Penalty, Aerial Cross Header, & Corner Kick aiming, non-controlled teammates stay stationary in optimal positions
+	if _phase == MatchPhase.KEY_MOMENT_AIM and (_moment_type == MomentType.FREE_KICK or _moment_type == MomentType.PENALTY or _moment_type == MomentType.HEADER_CROSS or _moment_type == MomentType.CORNER_KICK):
 		for i in range(_teammates.size()):
 			if i != _controlling_teammate_idx and _teammates[i].visible:
 				_teammates[i].frame = 4
@@ -2493,10 +2866,13 @@ func _enter_teammate_user_control(tm_idx: int, from_direct_user_pass: bool) -> v
 	_ball_pos = Vector3(clampf(cpos.x, -32.8, 32.8), 0.115, clampf(cpos.z - 0.82, -52.25, 48.8))
 	if tm_idx < _teammates.size():
 		_teammates[tm_idx].frame = 4
-	var combo_hint := "Oper rekan lain lalu gol (+0.1 rating) atau tembak langsung!" if _user_assisted_pass else "Kombinasi tim aktif — umpan atau tembak!"
-	_moment_title_lbl.text = "KENDALIKAN REKAN!"
+	var ctrl_info: Dictionary = _get_controlled_player_info()
+	var tm_disp: String = str(ctrl_info.get("name", "REKAN")).to_upper()
+	var tm_num: int = int(ctrl_info.get("num", 8))
+	var combo_hint := "Oper rekan lain lalu gol (+0.1 rating) atau tembak langsung!" if _user_assisted_pass else "Kombinasi tim aktif - umpan atau tembak!"
+	_moment_title_lbl.text = "KENDALIKAN %s (#%d)!" % [tm_disp, tm_num]
 	_moment_sub_lbl.text = combo_hint
-	_ticker_lbl.text = "Bola di kaki rekan! Giring bebas, tembak, atau oper ke rekan lain!"
+	_ticker_lbl.text = "Bola di kaki %s (#%d)! Giring bebas, tembak, atau oper ke rekan lain!" % [tm_disp, tm_num]
 	_moment_banner.visible = true
 	_update_pass_openness_ui()
 	_sync_action_bar()
@@ -2539,6 +2915,8 @@ func _start_teammate_carry(tm_idx: int, is_assist: bool, quick_exec: bool = fals
 		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
+	if _player_card_panel != null:
+		_player_card_panel.visible = false
 
 	var tm_pos: Vector3 = _teammate_positions[tm_idx]
 	# Never pass back to user after user passed to teammate — teammate pushes forward & finishes directly
@@ -2858,6 +3236,256 @@ func _setup_teammate_pass_to_user() -> void:
 	_sync_3d_sprites()
 	AudioSynth.play_whistle(false)
 
+# ==============================================================================
+# LEMPARAN DALAM REKAN SETIM (HANYA REKAN YANG MELEMPAR + USER GERAK BEBAS + AUTO-AIM!)
+# ==============================================================================
+func setup_throw_in_for_test(side: float = 1.0, z_pos: float = -24.0) -> void:
+	_trigger_key_moment(MomentType.THROW_IN)
+	_setup_throw_in_moment(side, z_pos)
+
+func _setup_throw_in_moment(side_override: float = 0.0, z_override: float = 999.0) -> void:
+	_phase = MatchPhase.THROW_IN_PREP
+	_moment_type = MomentType.THROW_IN
+	_controlling_teammate_idx = -1
+	_throw_in_side = side_override if absf(side_override) > 0.1 else (-1.0 if randf() < 0.5 else 1.0)
+	_throw_in_z = clampf(z_override, -40.0, -10.0) if z_override < 900.0 else randf_range(-34.0, -16.0)
+	_throw_in_timer = 0.0
+	_throw_in_duration = 2.4
+	_throw_in_thrown = false
+	_throw_in_flight_t = 0.0
+	_throw_in_flight_dur = 0.70
+	_shot_by_teammate = false
+	_carry_assist_pending = false
+	_dribble_input = Vector2.ZERO
+	if _dribble_pad != null:
+		_dribble_pad.reset_joy()
+	_trail_points.clear()
+	_trail_imm.clear_surfaces()
+	_aim_imm.clear_surfaces()
+	_ring_imm.clear_surfaces()
+
+	for tm in _teammates:
+		tm.visible = false
+		tm.frame = 4
+	for df in _defenders:
+		df.visible = false
+		df.frame = 0
+		df.rotation_degrees.z = 0.0
+	_teammate_positions.clear()
+	_teammate_vels.clear()
+	_teammate_targets.clear()
+	_teammate_open_scores.clear()
+	_defender_positions.clear()
+	_defender_dirs.clear()
+
+	# Teammate 0 stands strictly on the touchline (x = +/-34.15) holding ball overhead!
+	var thrower_pos := Vector3(_throw_in_side * 34.15, 0.0, _throw_in_z)
+	_teammates[0].visible = true
+	_teammate_positions.append(thrower_pos)
+	_teammate_vels.append(Vector3.ZERO)
+	_teammate_targets.append(thrower_pos)
+	_teammate_open_scores.append(2.0)
+
+	# Supporting teammates further inward/forward as passing options after reception
+	var supp_spots := [
+		Vector3(_throw_in_side * 12.0, 0.0, clampf(_throw_in_z - 5.5, -45.0, -12.0)),
+		Vector3(-_throw_in_side * 5.0, 0.0, clampf(_throw_in_z - 8.5, -46.0, -15.0)),
+	]
+	for si in range(supp_spots.size()):
+		if si + 1 < _teammates.size():
+			_teammates[si + 1].visible = true
+			_teammate_positions.append(supp_spots[si])
+			_teammate_vels.append(Vector3.ZERO)
+			_teammate_targets.append(supp_spots[si])
+			_teammate_open_scores.append(3.0)
+
+	# User player starts ~10m inside from sideline, FREE TO RUN to open space!
+	_player_pos = Vector3(_throw_in_side * 24.0, 0.0, clampf(_throw_in_z - 1.5, -42.0, -10.0))
+	_player_sprite.visible = true
+	_player_sprite.frame = 4
+
+	# Defenders nearby (def 0 loosely shadows user with lag so moving creates genuine space!)
+	var def_spots := [
+		Vector3(_throw_in_side * 20.8, 0.0, clampf(_throw_in_z - 4.8, -46.0, -12.0)),
+		Vector3(_throw_in_side * 11.5, 0.0, clampf(_throw_in_z - 9.0, -47.0, -16.0)),
+		Vector3(-_throw_in_side * 3.5, 0.0, clampf(_throw_in_z - 11.0, -48.0, -20.0)),
+	]
+	for di in range(def_spots.size()):
+		if di < _defenders.size():
+			_defenders[di].visible = true
+			_defender_positions.append(def_spots[di])
+			_defender_dirs.append(1.0)
+
+	# Ball lifted overhead in thrower's hands!
+	_ball_pos = Vector3(thrower_pos.x - _throw_in_side * 0.18, 1.95, thrower_pos.z)
+	_ball_vel = Vector3.ZERO
+	_ball_omega = Vector3.ZERO
+	_throw_in_start_pos = _ball_pos
+	_throw_in_target_pos = _player_pos
+
+	_moment_title_lbl.text = "LEMPARAN DALAM REKAN!"
+	_moment_sub_lbl.text = "Gerakkan pemainmu untuk cari ruang kosong, bola otomatis diarahkan pas ke kamu!"
+	_ticker_lbl.text = "Lemparan rekan! Cari ruang (SPACE = lempar)."
+	_moment_banner.visible = true
+	_sync_action_bar()
+	_configure_moment_camera()
+	_sync_3d_sprites()
+	_draw_throw_in_aim_ring(thrower_pos)
+	AudioSynth.play_whistle(false)
+
+func _release_teammate_throw_in() -> void:
+	if _throw_in_thrown:
+		return
+	_throw_in_thrown = true
+	_throw_in_flight_t = 0.0
+	var thrower_pos: Vector3 = _teammate_positions[0] if not _teammate_positions.is_empty() else Vector3(_throw_in_side * 34.15, 0.0, _throw_in_z)
+	_throw_in_start_pos = Vector3(thrower_pos.x - _throw_in_side * 0.22, 1.95, thrower_pos.z)
+	_throw_in_target_pos = _player_pos + Vector3(0.0, 0.0, -0.45)
+	var dist_t: float = Vector2(_throw_in_target_pos.x - _throw_in_start_pos.x, _throw_in_target_pos.z - _throw_in_start_pos.z).length()
+	_throw_in_flight_dur = clampf(dist_t / 16.5, 0.48, 1.05)
+	if not _teammates.is_empty():
+		_teammates[0].frame = 7
+	_moment_title_lbl.text = "BOLA DILEMPAR KE ARAHMU!"
+	_moment_sub_lbl.text = "Lemparan auto-aim meluncur tepat menuju posisimu!"
+	AudioSynth.play_kick(0.55)
+
+func _draw_throw_in_aim_ring(thrower_pos: Vector3) -> void:
+	_ring_imm.clear_surfaces()
+	_aim_imm.clear_surfaces()
+	var tgt: Vector3 = _player_pos
+	# Crisp glowing cyan auto-aim reception ring around user's feet
+	var ring_col := Color("#38BDF8") if not _throw_in_thrown else Color("#FACC15")
+	_ring_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs := 32
+	var r_in := 1.45
+	var r_out := 1.72
+	for i in range(segs):
+		if i % 3 == 2:
+			continue
+		var a0: float = float(i) / float(segs) * TAU
+		var a1: float = float(i + 1) / float(segs) * TAU
+		var p0_in := Vector3(tgt.x + cos(a0) * r_in, 0.05, tgt.z + sin(a0) * r_in)
+		var p0_out := Vector3(tgt.x + cos(a0) * r_out, 0.05, tgt.z + sin(a0) * r_out)
+		var p1_in := Vector3(tgt.x + cos(a1) * r_in, 0.05, tgt.z + sin(a1) * r_in)
+		var p1_out := Vector3(tgt.x + cos(a1) * r_out, 0.05, tgt.z + sin(a1) * r_out)
+		_ring_imm.surface_set_color(ring_col)
+		_ring_imm.surface_add_vertex(p0_in)
+		_ring_imm.surface_add_vertex(p0_out)
+		_ring_imm.surface_add_vertex(p1_out)
+		_ring_imm.surface_add_vertex(p0_in)
+		_ring_imm.surface_add_vertex(p1_out)
+		_ring_imm.surface_add_vertex(p1_in)
+	_ring_imm.surface_end()
+
+	# Dotted auto-aim throw arc preview from thrower's overhead hands -> live user position!
+	if not _throw_in_thrown:
+		var start_p := Vector3(thrower_pos.x - _throw_in_side * 0.2, 1.95, thrower_pos.z)
+		var end_p := Vector3(tgt.x, 0.25, tgt.z)
+		var dist_h: float = Vector2(end_p.x - start_p.x, end_p.z - start_p.z).length()
+		var peak_h: float = clampf(dist_h * 0.12, 1.2, 3.1)
+		_aim_imm.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		var steps := 14
+		for si in range(steps):
+			if si % 2 == 1:
+				continue
+			var u0: float = float(si) / float(steps)
+			var u1: float = float(si + 1) / float(steps)
+			var p0 := start_p.lerp(end_p, u0)
+			p0.y = lerpf(1.95, 0.25, u0) + sin(u0 * PI) * peak_h
+			var p1 := start_p.lerp(end_p, u1)
+			p1.y = lerpf(1.95, 0.25, u1) + sin(u1 * PI) * peak_h
+			var dir_xz := Vector3(p1.x - p0.x, 0.0, p1.z - p0.z)
+			var side_v := Vector3(-dir_xz.z, 0.0, dir_xz.x).normalized() * 0.14 if dir_xz.length() > 0.01 else Vector3(0.14, 0.0, 0.0)
+			var col_a := Color(0.22, 0.85, 1.0, 0.78)
+			_aim_imm.surface_set_color(col_a)
+			_aim_imm.surface_add_vertex(p0 - side_v)
+			_aim_imm.surface_add_vertex(p0 + side_v)
+			_aim_imm.surface_add_vertex(p1 + side_v)
+			_aim_imm.surface_add_vertex(p0 - side_v)
+			_aim_imm.surface_add_vertex(p1 + side_v)
+			_aim_imm.surface_add_vertex(p1 - side_v)
+		_aim_imm.surface_end()
+
+func _process_throw_in_prep(delta: float) -> void:
+	_throw_in_timer += delta
+	var stride_back: int = 5 if fmod(_anim_clock, 0.28) < 0.14 else 6
+	var stride_front: int = 1 if fmod(_anim_clock, 0.30) < 0.15 else 2
+	var thrower_pos: Vector3 = _teammate_positions[0] if not _teammate_positions.is_empty() else Vector3(_throw_in_side * 34.15, 0.0, _throw_in_z)
+
+	# 1. User Player CAN MOVE FREELY (Joystick / WASD / Arrow Keys) before & during throw-in!
+	var joy: Vector2 = _read_user_move_vec()
+	if joy.length() > 0.08:
+		var spd_attr: int = CareerState.get_effective_attribute("kecepatan") if CareerState.has_active_career else 68
+		var move_spd: float = get_player_max_run_speed(spd_attr) * clampf(joy.length(), 0.0, 1.0)
+		_dribble_facing = joy.normalized()
+		var nx: float = clampf(_player_pos.x + joy.x * move_spd * delta, -31.8, 31.8)
+		var nz: float = clampf(_player_pos.z + joy.y * move_spd * delta, -48.5, 14.0)
+		var cand := Vector3(nx, 0.0, nz)
+		# Keep within realistic throw-in reach (28m from touchline taker)
+		var from_t := Vector2(cand.x - thrower_pos.x, cand.z - thrower_pos.z)
+		if from_t.length() > 28.0:
+			var clamped_2d: Vector2 = from_t.normalized() * 28.0
+			cand.x = clampf(thrower_pos.x + clamped_2d.x, -31.8, 31.8)
+			cand.z = clampf(thrower_pos.z + clamped_2d.y, -48.5, 14.0)
+		_player_pos = cand
+		_player_sprite.frame = stride_back
+	else:
+		_player_sprite.frame = 4
+
+	# 2. Defender 0 loosely shadows user with realistic reaction lag so user movement creates space!
+	if not _defender_positions.is_empty():
+		var mark_tgt := Vector3(clampf(_player_pos.x - _throw_in_side * 1.8, -30.0, 30.0), 0.0, clampf(_player_pos.z - 2.6, -48.0, 12.0))
+		var to_m := Vector3(mark_tgt.x - _defender_positions[0].x, 0.0, mark_tgt.z - _defender_positions[0].z)
+		if to_m.length() > 0.35:
+			_defender_positions[0] += to_m.normalized() * 2.55 * delta
+			if not _defenders.is_empty():
+				_defenders[0].frame = stride_front
+		elif not _defenders.is_empty():
+			_defenders[0].frame = 0
+
+	# 3. Preparation vs Live Auto-Aim Overhead Throw Flight!
+	if not _throw_in_thrown:
+		var windup_bob: float = sin(_throw_in_timer * 6.0) * 0.07
+		_ball_pos = Vector3(thrower_pos.x - _throw_in_side * 0.18, 1.95 + windup_bob, thrower_pos.z)
+		if not _teammates.is_empty():
+			_teammates[0].frame = 4
+		var rem_s: float = maxf(0.0, _throw_in_duration - _throw_in_timer)
+		_moment_sub_lbl.text = "Cari ruang kosong (%.1fd), bola otomatis diarahkan pas ke posisimu!" % rem_s
+		_draw_throw_in_aim_ring(thrower_pos)
+		if _throw_in_timer >= _throw_in_duration:
+			_release_teammate_throw_in()
+	else:
+		_throw_in_flight_t += delta
+		var u: float = clampf(_throw_in_flight_t / maxf(0.15, _throw_in_flight_dur), 0.0, 1.0)
+		# LIVE AUTO-AIM HOMING: tracks user's live position so the throw ALWAYS lands accurately at user!
+		var desired_land := _player_pos + Vector3(0.0, 0.0, -0.55)
+		_throw_in_target_pos = _throw_in_target_pos.lerp(desired_land, clampf(delta * 14.0, 0.0, 1.0))
+		var dist_h: float = Vector2(_throw_in_target_pos.x - _throw_in_start_pos.x, _throw_in_target_pos.z - _throw_in_start_pos.z).length()
+		var peak_h: float = clampf(dist_h * 0.12, 1.2, 3.1)
+		var horiz := _throw_in_start_pos.lerp(_throw_in_target_pos, u)
+		var arc_y: float = lerpf(1.95, 0.12, u) + sin(u * PI) * peak_h
+		_ball_pos = Vector3(horiz.x, arc_y, horiz.z)
+		_trail_points.append(_ball_pos)
+		if _trail_points.size() > 18:
+			_trail_points.pop_front()
+		_draw_ball_trail()
+		_draw_throw_in_aim_ring(thrower_pos)
+
+		if u >= 1.0:
+			# Move throw-in taker smoothly back inside touchline as an active passing teammate
+			if not _teammate_positions.is_empty():
+				_teammate_positions[0] = Vector3(_throw_in_side * 31.2, 0.0, _throw_in_z)
+				_teammate_vels[0] = Vector3(-_throw_in_side * 1.2, 0.0, -2.6)
+				_teammate_targets[0] = Vector3(_throw_in_side * 22.0, 0.0, clampf(_throw_in_z - 12.0, -47.0, -14.0))
+			_passes_won += 1
+			_enter_user_follow_up_shot(
+				"LEMPARAN DITERIMA PAS!",
+				"Bola lemparan dalam tepat di kakimu! Giring bebas, oper rekan, atau tembak!"
+			)
+			return
+
+	_sync_3d_sprites()
+
 func _launch_pass_to_user(tm_idx: int, title_txt: String, sub_txt: String) -> void:
 	_phase = MatchPhase.INCOMING_PASS
 	_incoming_pass_tm_idx = tm_idx
@@ -2949,7 +3577,21 @@ func _process_incoming_pass(delta: float) -> void:
 			_ball_pos.z += step_xz.z
 			_ball_pos.y = 0.12 + clampf(dist * 0.06, 0.0, 0.45) * sin(clampf(_incoming_pass_timer * 4.0, 0.0, PI))
 		if dist < 1.15 or _incoming_pass_timer >= 2.1:
-			_enter_user_follow_up_shot("UMPAN REKAN DITERIMA!", "Tarik ketapel TEMBAK, kirim UMPAN lagi, atau pakai DRIBEL!")
+			# Counter-attack pass into attacking zone can trigger SALTO (Bicycle Kick) or VOLI (Volley)!
+			var acro_style: String = ""
+			if _player_pos.z <= -22.0:
+				var tek_bonus: float = float(CareerState.get_effective_attribute("teknik") - 60) * 0.003 if CareerState.has_active_career else 0.0
+				var roll_a: float = randf()
+				if roll_a < clampf(0.20 + tek_bonus, 0.14, 0.30):
+					acro_style = "SALTO"
+				elif roll_a < clampf(0.46 + tek_bonus, 0.36, 0.58):
+					acro_style = "VOLI"
+			if acro_style == "SALTO":
+				_enter_user_follow_up_shot("PELUANG SALTO! (SERANGAN BALIK)", "Bola melambung pas di atas kepala! Tarik ketapel untuk TENDANGAN SALTO!", "SALTO")
+			elif acro_style == "VOLI":
+				_enter_user_follow_up_shot("PELUANG VOLI! (SERANGAN BALIK)", "Umpan lambung matang! Tarik ketapel untuk TENDANGAN VOLI keras!", "VOLI")
+			else:
+				_enter_user_follow_up_shot("UMPAN REKAN DITERIMA!", "Tarik ketapel TEMBAK, kirim UMPAN lagi, atau pakai DRIBEL!")
 			return
 
 	var agil_inc: float = get_opp_defender_agility()
@@ -3004,10 +3646,11 @@ func _process_incoming_pass(delta: float) -> void:
 					_defenders[i].frame = stride_front
 	_sync_3d_sprites()
 
-func _enter_user_follow_up_shot(title_msg: String, sub_msg: String) -> void:
+func _enter_user_follow_up_shot(title_msg: String, sub_msg: String, acrobatic_style: String = "") -> void:
 	_phase = MatchPhase.KEY_MOMENT_AIM
 	_moment_type = MomentType.SHOT
 	_controlling_teammate_idx = -1
+	_acrobatic_ready_style = acrobatic_style
 	_user_assisted_pass = false
 	_user_hockey_assist_eligible = false
 	_shot_by_teammate = false
@@ -3027,7 +3670,8 @@ func _enter_user_follow_up_shot(title_msg: String, sub_msg: String) -> void:
 	_ball_vel = Vector3.ZERO
 	_ball_omega = Vector3.ZERO
 	_player_sprite.frame = 4
-	_ball_pos = _player_pos + Vector3(0.0, 0.115, -0.95)
+	var init_ball_y: float = 1.48 if _acrobatic_ready_style == "SALTO" else (1.02 if _acrobatic_ready_style == "VOLI" else 0.115)
+	_ball_pos = _player_pos + Vector3(0.0, init_ball_y, -0.95)
 	_moment_title_lbl.text = title_msg
 	_moment_sub_lbl.text = sub_msg
 	_ticker_lbl.text = "Peluang terbuka! Giring bebas atau langsung tembak/umpan!"
@@ -3226,7 +3870,8 @@ func _process_rebound_scramble(delta: float) -> void:
 					else:
 						_enter_teammate_user_control(i, _controlling_teammate_idx < 0)
 				else:
-					_evaluate_teammate_shot_or_layoff(i, true)
+					# Rebound chased & won by a teammate -> AUTOMATIC IMMEDIATE SHOT ON GOAL!
+					_fire_teammate_auto_shot(i, _scramble_from_penalty_rebound)
 				return
 		var user_can_pickup: bool = (not _scramble_is_loose_pass or _controlling_teammate_idx >= 0 or _rebound_timer >= 0.55) and _ball_pos.z < (49.5 if _scramble_is_loose_pass else -24.0)
 		if user_can_pickup and Vector2(_player_pos.x - _ball_pos.x, _player_pos.z - _ball_pos.z).length() < 1.32:
@@ -3243,32 +3888,101 @@ func _process_rebound_scramble(delta: float) -> void:
 			_adjust_rating(-0.15, "BOLA KELUAR" if _scramble_is_loose_pass else "REBOUND GAGAL")
 		_show_moment_result("BOLA KELUAR LAPANGAN!" if _scramble_is_loose_pass else "BOLA REBOUND KELUAR!", UITheme.ACCENT_GOLD if _key_pass_awarded else Color("#F97316"), 1.25)
 
+func _fire_teammate_auto_shot(tm_idx: int, from_penalty_rebound: bool = false) -> void:
+	if tm_idx < 0 or tm_idx >= _teammate_positions.size():
+		return
+	var shooter_pos: Vector3 = _teammate_positions[tm_idx]
+	if tm_idx < _teammates.size():
+		_teammates[tm_idx].frame = 7
+	# Place ball cleanly at teammate's shooting boot facing opponent goal
+	_ball_pos = Vector3(shooter_pos.x, 0.14, maxf(-51.8, shooter_pos.z - 0.72))
+	# Aim instinctively away from the diving/out-of-position GK toward the open corner!
+	var open_side: float = 1.0 if _gk_pos.x <= 0.0 else -1.0
+	var aim_x: float = open_side * randf_range(1.15, 3.25)
+	var aim_pt := Vector3(aim_x, randf_range(0.35, 1.55), -52.6)
+	var shot_spd: float = randf_range(24.5, 29.0)
+	_ball_vel = (aim_pt - _ball_pos).normalized() * shot_spd + Vector3(0.0, 0.85, 0.0)
+	_ball_omega = Vector3(0.0, open_side * randf_range(0.8, 1.8), 0.0)
+	_flight_timer = 0.0
+	_gk_react_timer = float(get_opp_gk_profile().get("reaction_delay", 0.24)) * 1.18
+	_post_rebound_eligible = false
+	_scramble_from_penalty_rebound = false
+	_scramble_is_loose_pass = false
+	_carry_tm_idx = -1
+	_controlling_teammate_idx = -1
+	_shot_by_teammate = true
+	_moment_type = MomentType.SHOT
+	_phase = MatchPhase.BALL_IN_FLIGHT
+	_clear_defender_slides()
+	_aim_imm.clear_surfaces()
+	_ring_imm.clear_surfaces()
+	_moment_banner.visible = true
+	_moment_title_lbl.text = "REKAN SAMBAR REBOUND PENALTI!" if from_penalty_rebound else "REKAN LANGSUNG TEMBAK REBOUND!"
+	_moment_sub_lbl.text = "Rekan mendapatkan bola muntah dan otomatis melepaskan tembakan ke gawang!"
+	_ticker_lbl.text = "Rekan sambar rebound dan langsung menembak!"
+	_sync_3d_sprites()
+	AudioSynth.play_kick(0.92)
+
+static func is_outside_penalty_box(pos: Vector3) -> bool:
+	# Pitch penalty area outer white line is at z = -36.5; D-arc extends around penalty spot (0, -41.5) radius 9.15m!
+	var dist_to_spot: float = Vector2(pos.x, pos.z - (-41.5)).length()
+	return pos.z > -36.2 and dist_to_spot >= 9.35
+
+func setup_teammate_penalty_for_test() -> void:
+	_trigger_key_moment(MomentType.TEAMMATE_PENALTY)
+
+func trigger_penalty_rebound_for_test() -> void:
+	_tm_penalty_kicked = true
+	_scramble_from_penalty_rebound = true
+	_ball_pos = Vector3(3.2, 0.25, -43.5)
+	_ball_vel = Vector3(0.8, 0.8, 2.2)
+	_gk_pos = Vector3(-2.6, 0.0, -51.2)
+	if _teammate_positions.size() > 1:
+		_teammate_positions[1] = Vector3(3.6, 0.0, -42.4)
+	_player_pos = Vector3(-4.5, 0.0, -35.5)
+	_enter_rebound_scramble("PENALTI DITEPIS KIPER! KEJAR REBOUND!")
+	_rebound_grace = 0.0
+
 func _setup_teammate_penalty() -> void:
 	_phase = MatchPhase.TEAMMATE_PENALTY_WAIT
 	_tm_penalty_timer = 0.0
 	_tm_penalty_kicked = false
 	_shot_by_teammate = true
 	_post_rebound_eligible = true
+	_scramble_from_penalty_rebound = false
 	_ball_pos = Vector3(0.0, 0.115, -41.5)
 	_ball_vel = Vector3.ZERO
 	_ball_omega = Vector3.ZERO
 
-	# Teammate 0 takes penalty; User + Teammate 1 + Defenders crouch alert on the 16m line for rebounds!
+	# ONLY Teammate 0 (penalty taker) is inside the box; ALL other players (User + Teammates + Defenders) stand STRICTLY OUTSIDE the penalty box & D-arc!
 	_teammates[0].visible = true
-	_teammate_positions.append(Vector3(0.0, 0.0, -38.6))
+	_teammate_positions.append(Vector3(0.0, 0.0, -38.8))
 	_teammate_vels.append(Vector3(0.0, 0.0, -2.8))
 	_teammate_targets.append(Vector3(0.0, 0.0, -41.2))
 	_teammate_open_scores.append(2.0)
 
 	_teammates[1].visible = true
-	_teammate_positions.append(Vector3(5.2, 0.0, -35.8))
+	_teammate_positions.append(Vector3(5.4, 0.0, -33.2))
 	_teammate_vels.append(Vector3.ZERO)
-	_teammate_targets.append(Vector3(4.0, 0.0, -45.0))
+	_teammate_targets.append(Vector3(3.8, 0.0, -45.5))
 	_teammate_open_scores.append(2.5)
 
-	_player_pos = Vector3(-4.0, 0.0, -35.8)
+	if _teammates.size() > 2:
+		_teammates[2].visible = true
+		_teammate_positions.append(Vector3(-9.6, 0.0, -35.0))
+		_teammate_vels.append(Vector3.ZERO)
+		_teammate_targets.append(Vector3(-4.6, 0.0, -45.5))
+		_teammate_open_scores.append(2.4)
 
-	var d_spots := [Vector3(-6.2, 0.0, -36.0), Vector3(3.2, 0.0, -35.9), Vector3(7.4, 0.0, -36.4)]
+	# User player strictly outside BOTH the 16.5m box (z = -36.5) AND the D-arc (dist >= 9.35m from spot)!
+	_player_pos = Vector3(-4.2, 0.0, -32.8)
+
+	var d_spots := [
+		Vector3(-7.4, 0.0, -34.4),
+		Vector3(2.4, 0.0, -31.8),
+		Vector3(8.8, 0.0, -34.8),
+		Vector3(-1.8, 0.0, -31.8),
+	]
 	for i in range(d_spots.size()):
 		if i < _defenders.size():
 			_defenders[i].visible = true
@@ -3276,8 +3990,8 @@ func _setup_teammate_penalty() -> void:
 			_defender_dirs.append(1.0)
 
 	_moment_title_lbl.text = "PENALTI REKAN SETIM!"
-	_moment_sub_lbl.text = "Bersiap di garis kotak 16m — antisipasi bola rebound!"
-	_ticker_lbl.text = "Rekan maju ke titik putih. Bersiap jika kiper menepis!"
+	_moment_sub_lbl.text = "Semua pemain bersiap di luar kotak penalti, antisipasi bola rebound!"
+	_ticker_lbl.text = "Penalti rekan setim! Bersiap kejar bola rebound."
 	_moment_banner.visible = true
 	_sync_action_bar()
 	_configure_moment_camera()
@@ -3287,8 +4001,9 @@ func _setup_teammate_penalty() -> void:
 func _process_teammate_penalty_wait(delta: float) -> void:
 	_tm_penalty_timer += delta
 	var stride_back: int = 5 if fmod(_anim_clock, 0.28) < 0.14 else 6
-	# User & box edge players bob slightly on toes, ready to pounce (GK holds line without pacing)
-	_player_pos.x = -4.0 + sin(_anim_clock * 4.0) * 0.25
+	# User stays strictly outside penalty box & D-arc while bobbing on toes ready to rush in
+	_player_pos.x = -4.2 + sin(_anim_clock * 4.0) * 0.22
+	_player_pos.z = -32.8
 	_gk_dive_dir = 0.0
 	if not _teammate_positions.is_empty():
 		var to_spot := -41.1 - _teammate_positions[0].z
@@ -3309,10 +4024,12 @@ func _process_teammate_penalty_wait(delta: float) -> void:
 		_gk_react_timer = float(get_opp_gk_profile().get("reaction_delay", 0.25))
 		_phase = MatchPhase.BALL_IN_FLIGHT
 		AudioSynth.play_kick(0.85)
-		# Teammates & defenders start surging toward box right after the strike!
-		_teammate_vels[0] = Vector3(0.0, 0.0, -1.6)
+		# All box-edge teammates immediately burst forward into the box for potential rebound!
+		_teammate_vels[0] = Vector3(0.0, 0.0, -1.8)
 		if _teammate_vels.size() > 1:
-			_teammate_vels[1] = Vector3(-0.6, 0.0, -3.5)
+			_teammate_vels[1] = Vector3(-0.8, 0.0, -5.0)
+		if _teammate_vels.size() > 2:
+			_teammate_vels[2] = Vector3(1.2, 0.0, -4.8)
 
 func _pick_squad_member_name(prefer_attacker: bool) -> String:
 	if CareerState.has_active_career:
@@ -3385,13 +4102,39 @@ func _handle_goal_scored() -> void:
 	_save_moviola_clip("GOL SPEKTAKULER!")
 	var ast_tm: Dictionary = _pick_roster_player(true, false, false) if (_moment_type in [MomentType.HEADER_CROSS, MomentType.LONG_PASS_CONTROL, MomentType.TEAMMATE_PASS]) else {}
 	var ast_nm: String = str(ast_tm.get("name", "")).to_upper() if not ast_tm.is_empty() else ""
-	_add_rich_board_highlight(int(_minute), "GOAL", "GOL %s!" % u_name, ("Assist: %s" % ast_nm if not ast_nm.is_empty() else "Penyelesaian spektakuler!"), u_dict, ast_tm, true)
-	_goal_timeline.append({"minute": int(_minute), "scorer": u_name, "assist": ast_nm, "is_us": true, "is_user_involved": true, "clip": _best_clip.duplicate(true)})
+	var goal_style: String = _last_shot_style if not _last_shot_style.is_empty() else "AKSI SOLO"
+	var base_g_sc: int = 78
+	match goal_style:
+		"SALTO":
+			base_g_sc = 96
+			_adjust_rating(0.25, "GOL SALTO")
+		"VOLI":
+			base_g_sc = 91
+			_adjust_rating(0.15, "GOL VOLI")
+		"TENDANGAN BEBAS":
+			base_g_sc = 86
+		"JARAK JAUH":
+			base_g_sc = 85
+		"SUNDULAN":
+			base_g_sc = 76
+		"PENALTI":
+			base_g_sc = 60
+	var g_dist_m: float = snappedf(_player_pos.distance_to(Vector3(0, 0, -52.5)), 0.1)
+	_goal_candidates.append({
+		"style": goal_style,
+		"minute": int(_minute),
+		"score": base_g_sc + mini(6, int(g_dist_m * 0.18)),
+		"distance": g_dist_m,
+	})
+	var hl_desc: String = ("Gol %s! Assist: %s" % [goal_style, ast_nm]) if not ast_nm.is_empty() else ("Gol %s spektakuler!" % goal_style)
+	_add_rich_board_highlight(int(_minute), "GOAL", "GOL %s!" % u_name, hl_desc, u_dict, ast_tm, true)
+	_goal_timeline.append({"minute": int(_minute), "scorer": u_name, "assist": ast_nm, "style": goal_style, "is_us": true, "is_user_involved": true, "clip": _best_clip.duplicate(true)})
 	if is_instance_valid(_goal_flash_rect):
 		_goal_flash_rect.color = Color(1.0, 0.92, 0.45, 0.65)
 		create_tween().tween_property(_goal_flash_rect, "color:a", 0.0, 0.40)
 	_start_goal_replay_then_celebration(u_name, int(_minute), ast_nm, true)
-	_show_moment_result("GOOOOL!!", UITheme.ACCENT_GOLD, 2.45)
+	var banner_g: String = "GOOOOL SALTO SPEKTAKULER!!" if goal_style == "SALTO" else ("GOOOOL VOLI MEMATIKAN!!" if goal_style == "VOLI" else "GOOOOL!!")
+	_show_moment_result(banner_g, UITheme.ACCENT_GOLD, 2.45)
 
 func _start_goal_replay_then_celebration(scorer_name: String, goal_min: int, assist_name: String, is_user_goal: bool) -> void:
 	_pending_celeb_info = {
@@ -3758,6 +4501,8 @@ func _show_moment_result(msg: String, col: Color, dur: float) -> void:
 		_stamina_bar_bg.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
+	if _player_card_panel != null:
+		_player_card_panel.visible = false
 	if _qte_overlay != null:
 		_qte_overlay.visible = false
 	_result_toast.text = msg
@@ -3904,6 +4649,7 @@ func _finish_career_match() -> void:
 		"shots": shots_copy,
 		"moviola_clip": _best_clip,
 		"goal_timeline": _goal_timeline.duplicate(true),
+		"goal_candidates": _goal_candidates.duplicate(true),
 		"motm_player": motm_p,
 		"extra_energy_drain": net_extra_drain,
 		"subbed_out": _user_subbed_out,
@@ -3947,7 +4693,21 @@ func _process_moviola_replay(delta: float) -> void:
 		_camera.look_at(Vector3(_ball_pos.x * 0.3, maxf(0.8, _ball_pos.y), minf(_ball_pos.z, -48.0)), Vector3.UP)
 
 func _sync_3d_sprites() -> void:
-	_player_sprite.global_position = _player_pos
+	if _acrobatic_anim_timer > 0.0:
+		var ap: float = clampf(1.0 - (_acrobatic_anim_timer / maxf(0.01, _acrobatic_anim_dur)), 0.0, 1.0)
+		var arc: float = sin(ap * PI)
+		if _acrobatic_anim_style == "SALTO":
+			_player_sprite.global_position = _player_pos + Vector3(0.0, arc * 1.15, 0.0)
+			_player_sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			_player_sprite.rotation_degrees = Vector3(-16.0, 0.0, -arc * 205.0)
+		else:
+			_player_sprite.global_position = _player_pos + Vector3(0.0, arc * 0.72, 0.0)
+			_player_sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+			_player_sprite.rotation_degrees = Vector3(-12.0, 0.0, -arc * 58.0)
+	else:
+		_player_sprite.global_position = _player_pos
+		_player_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_player_sprite.rotation_degrees = Vector3.ZERO
 	_player_shadow.global_position = Vector3(_player_pos.x, 0.03, _player_pos.z)
 	_gk_sprite.global_position = _gk_pos
 	if absf(_gk_dive_dir) > 0.1 and (_phase == MatchPhase.BALL_IN_FLIGHT or _goal_replay_active):
@@ -4613,9 +5373,7 @@ func _moment_type_str() -> String:
 func _update_score_label() -> void:
 	if run_mode != RunMode.CAREER_MATCH:
 		return
-	var club := CareerState.get_current_club()
-	var fix := CareerState.get_current_fixture()
-	_score_lbl.text = "%s %d - %d %s" % [club.get("code", "DED"), _score_us, _score_them, fix.get("opp_code", "SVA")]
+	_sync_broadcast_scorebug()
 
 func _on_toggle_speed() -> void:
 	AudioSynth.play_click()
@@ -6633,6 +7391,8 @@ func _open_halftime_locker() -> void:
 		_action_bar.visible = false
 	if _player_badge_lbl != null:
 		_player_badge_lbl.visible = false
+	if _player_card_panel != null:
+		_player_card_panel.visible = false
 	for c in _halftime_panel.get_children():
 		c.queue_free()
 	AudioSynth.play_whistle(false)
@@ -7261,16 +8021,251 @@ func _sync_stamina_hud() -> void:
 	_stamina_fill.color = st_col
 	_stamina_lbl.text = "STM %d%%" % int(round(_match_stamina))
 
+func _get_match_comp_theme() -> Dictionary:
+	if run_mode != RunMode.CAREER_MATCH or not CareerState.has_active_career:
+		return MatchHudWidgets.get_comp_theme("LIGA", "LATIHAN")
+	var fix: Dictionary = CareerState.get_current_fixture()
+	return MatchHudWidgets.get_comp_theme(str(fix.get("comp", "LIGA")), str(fix.get("comp_label", "")))
+
+func _get_half_minute_str() -> String:
+	var m_i: int = mini(int(_et_end_min), maxi(1, int(_minute)))
+	var half_s: String = "ET" if m_i > 90 else ("B2" if m_i > 45 else "B1")
+	return "%s %d'" % [half_s, m_i]
+
+func _sync_broadcast_scorebug() -> void:
+	if _score_lbl == null or _minute_lbl == null:
+		return
+	var th: Dictionary = _get_match_comp_theme()
+	var acc: Color = th.get("accent", Color("#3878A8"))
+	var acc_hi: Color = th.get("accent_hi", Color("#7DD3FC"))
+	var pill_bg: Color = th.get("pill_bg", Color("#265B84"))
+	var bar_bg: Color = th.get("bar_bg", Color("#193047"))
+
+	if _sb_comp_ring != null:
+		_sb_comp_ring.set_theme_info(th)
+	if _sb_rating_ring != null:
+		_sb_rating_ring.set_rating(_rating, acc_hi)
+
+	if run_mode == RunMode.CAREER_MATCH and CareerState.has_active_career:
+		var club: Dictionary = CareerState.get_current_club()
+		var fix: Dictionary = CareerState.get_current_fixture()
+		var is_home: bool = bool(fix.get("is_home", true))
+		var our_cid: int = int(club.get("id", 0))
+		var opp_cid: int = clampi(int(fix.get("opp_club_id", 1)), 0, maxi(0, GameData.clubs.size() - 1))
+		var our_code: String = str(club.get("code", "KLB")).left(3).to_upper()
+		var opp_code: String = str(fix.get("opp_code", "LWN")).left(3).to_upper()
+
+		var left_cid: int = our_cid if is_home else opp_cid
+		var right_cid: int = opp_cid if is_home else our_cid
+		var left_code: String = our_code if is_home else opp_code
+		var right_code: String = opp_code if is_home else our_code
+		var left_sc: int = _score_us if is_home else _score_them
+		var right_sc: int = _score_them if is_home else _score_us
+
+		if _sb_home_crest != null:
+			_sb_home_crest.set_club(left_cid)
+		if _sb_away_crest != null:
+			_sb_away_crest.set_club(right_cid)
+		if _sb_home_code_lbl != null:
+			_sb_home_code_lbl.text = left_code
+		if _sb_away_code_lbl != null:
+			_sb_away_code_lbl.text = right_code
+		_score_lbl.text = "%d - %d" % [left_sc, right_sc]
+		_minute_lbl.text = _get_half_minute_str()
+
+		if _sb_comp_ribbon_lbl != null:
+			var wk_n: int = int(CareerState.career.get("careerMeta", {}).get("week", 1))
+			var c_lbl: String = str(fix.get("comp_label", "LIGA")).to_upper()
+			var stage_s: String = str(fix.get("stage", "")).to_upper()
+			if not stage_s.is_empty() and not c_lbl.contains(stage_s):
+				_sb_comp_ribbon_lbl.text = "%s  •  %s" % [c_lbl, stage_s]
+			else:
+				_sb_comp_ribbon_lbl.text = "%s  •  PEKAN %d" % [c_lbl, wk_n]
+
+		if _sb_home_bar != null:
+			var hs := StyleBoxFlat.new()
+			hs.bg_color = Color(bar_bg.r, bar_bg.g, bar_bg.b, 0.95)
+			hs.border_color = Color(acc_hi.r, acc_hi.g, acc_hi.b, 0.72)
+			hs.border_width_top = 1
+			hs.border_width_bottom = 1
+			hs.content_margin_left = 8
+			hs.content_margin_right = 8
+			_sb_home_bar.add_theme_stylebox_override("panel", hs)
+		if _sb_away_bar != null:
+			var asb := StyleBoxFlat.new()
+			asb.bg_color = Color(acc.r, acc.g, acc.b, 0.90)
+			asb.border_color = Color(acc_hi.r, acc_hi.g, acc_hi.b, 0.72)
+			asb.border_width_top = 1
+			asb.border_width_bottom = 1
+			asb.content_margin_left = 8
+			asb.content_margin_right = 8
+			_sb_away_bar.add_theme_stylebox_override("panel", asb)
+		if _sb_min_panel != null:
+			var ms := StyleBoxFlat.new()
+			ms.bg_color = Color(bar_bg.r, bar_bg.g, bar_bg.b, 0.96)
+			ms.border_color = Color(acc_hi.r, acc_hi.g, acc_hi.b, 0.78)
+			ms.set_border_width_all(1)
+			ms.set_corner_radius_all(3)
+			ms.content_margin_left = 10
+			ms.content_margin_right = 10
+			ms.content_margin_top = 1
+			ms.content_margin_bottom = 1
+			_sb_min_panel.add_theme_stylebox_override("panel", ms)
+		if _sb_comp_ribbon_panel != null:
+			var rs := StyleBoxFlat.new()
+			rs.bg_color = Color(pill_bg.r, pill_bg.g, pill_bg.b, 0.92)
+			rs.set_corner_radius_all(2)
+			rs.content_margin_left = 12
+			rs.content_margin_right = 12
+			rs.content_margin_top = 1
+			rs.content_margin_bottom = 1
+			_sb_comp_ribbon_panel.add_theme_stylebox_override("panel", rs)
+
+func _get_controlled_player_info() -> Dictionary:
+	var club: Dictionary = CareerState.get_current_club() if CareerState.has_active_career else GameData.clubs[0]
+	if _controlling_teammate_idx >= 0:
+		# Resolve real non-user outfield starter from _our_lineup (NEVER generic "REKAN #3"!)
+		var outfield: Array[Dictionary] = []
+		var defenders: Array[Dictionary] = []
+		for p in _our_lineup:
+			if bool(p.get("is_user", false)):
+				continue
+			var pos_s: String = str(p.get("pos", "CM")).to_upper()
+			if pos_s == "GK":
+				continue
+			outfield.append(p)
+			if pos_s in ["CB", "LB", "RB", "LWB", "RWB", "CDM"]:
+				defenders.append(p)
+		var picked: Dictionary = {}
+		var is_backline_ctrl: bool = (_controlling_teammate_idx == 0 and _teammate_positions.size() > 0 and _teammate_positions[0].z > 10.0)
+		if is_backline_ctrl and not defenders.is_empty():
+			picked = defenders[0]
+		elif not outfield.is_empty():
+			picked = outfield[_controlling_teammate_idx % outfield.size()]
+		if not picked.is_empty():
+			var raw_n: String = str(picked.get("name", "SANTOSO")).strip_edges().to_upper()
+			var parts: PackedStringArray = raw_n.split(" ")
+			var disp_n: String = parts[parts.size() - 1] if parts.size() >= 2 else raw_n
+			return {
+				"name": disp_n.left(14),
+				"full_name": raw_n,
+				"num": int(picked.get("num", 4 + _controlling_teammate_idx)),
+				"pos": str(picked.get("pos", "CM")).to_upper(),
+				"seed": int(picked.get("seed", 101 + _controlling_teammate_idx * 19)),
+				"is_user": false,
+				"club": picked.get("club", club),
+			}
+		var fb_ln: String = str(GameData.LAST_NAMES[(_controlling_teammate_idx * 7 + int(club.get("id", 0))) % GameData.LAST_NAMES.size()]).to_upper()
+		return {
+			"name": fb_ln.left(14),
+			"full_name": fb_ln,
+			"num": 4 + _controlling_teammate_idx,
+			"pos": "CB" if is_backline_ctrl else "CM",
+			"seed": 31 + _controlling_teammate_idx * 17,
+			"is_user": false,
+			"club": club,
+		}
+
+	if CareerState.has_active_career:
+		var prof: Dictionary = CareerState.career["playerProfile"]
+		var u_nm: String = str(prof.get("name", "PEMAIN")).strip_edges().to_upper()
+		var u_parts: PackedStringArray = u_nm.split(" ")
+		var u_disp: String = u_parts[u_parts.size() - 1] if u_parts.size() >= 2 else u_nm
+		return {
+			"name": u_disp.left(14),
+			"full_name": u_nm,
+			"num": int(prof.get("appearance", {}).get("shirt_num", 9)),
+			"pos": str(prof.get("favoritePosition", "ST")).to_upper(),
+			"seed": 0,
+			"is_user": true,
+			"club": club,
+		}
+	return {"name": "PEMAIN", "full_name": "PEMAIN", "num": 9, "pos": "ST", "seed": 0, "is_user": true, "club": club}
+
+func _apply_control_layout_settings() -> void:
+	var left_handed: bool = bool(SettingsManager.data.get("left_handed", false))
+	var joy_pct: int = clampi(int(SettingsManager.data.get("joy_size", 100)), 60, 140)
+	var op_pct: int = clampi(int(SettingsManager.data.get("joy_opacity", 70)), 15, 100)
+	var joy_sz: float = round(140.0 * float(joy_pct) / 100.0)
+	var open_play: bool = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and (_moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]))
+
+	if _dribble_pad != null:
+		_dribble_pad.modulate.a = clampf(float(op_pct) / 100.0, 0.15, 1.0)
+		if left_handed:
+			_dribble_pad.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			_dribble_pad.offset_left = -18.0 - joy_sz
+			_dribble_pad.offset_right = -18.0
+		else:
+			_dribble_pad.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_dribble_pad.offset_left = 18.0
+			_dribble_pad.offset_right = 18.0 + joy_sz
+		_dribble_pad.offset_top = -12.0 - joy_sz
+		_dribble_pad.offset_bottom = -12.0
+		_dribble_pad.queue_redraw()
+
+	var card_bot: float = (-18.0 - joy_sz - 24.0) if open_play else -14.0
+	var st_bot: float = (-18.0 - joy_sz) if open_play else -14.0
+	if _stamina_bar_bg != null:
+		if left_handed:
+			_stamina_bar_bg.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			_stamina_bar_bg.offset_left = -246.0
+			_stamina_bar_bg.offset_right = -18.0
+		else:
+			_stamina_bar_bg.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_stamina_bar_bg.offset_left = 18.0
+			_stamina_bar_bg.offset_right = 246.0
+		_stamina_bar_bg.offset_top = st_bot - 18.0
+		_stamina_bar_bg.offset_bottom = st_bot
+
+	if _player_card_panel != null:
+		if left_handed:
+			_player_card_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			_player_card_panel.offset_left = -246.0
+			_player_card_panel.offset_right = -18.0
+		else:
+			_player_card_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_player_card_panel.offset_left = 18.0
+			_player_card_panel.offset_right = 246.0
+		_player_card_panel.offset_top = card_bot - 44.0
+		_player_card_panel.offset_bottom = card_bot
+
+	if _spin_pad != null:
+		if left_handed:
+			_spin_pad.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_spin_pad.offset_left = 16.0
+			_spin_pad.offset_right = 114.0
+		else:
+			_spin_pad.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			_spin_pad.offset_left = -114.0
+			_spin_pad.offset_right = -16.0
+		_spin_pad.offset_top = -134.0
+		_spin_pad.offset_bottom = -20.0
+
+	if _power_lbl != null:
+		if left_handed:
+			_power_lbl.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+			_power_lbl.offset_left = 16.0
+			_power_lbl.offset_right = 180.0
+			_power_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		else:
+			_power_lbl.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+			_power_lbl.offset_left = -180.0
+			_power_lbl.offset_right = -16.0
+			_power_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_power_lbl.offset_top = -166.0
+		_power_lbl.offset_bottom = -138.0
+
 func _sync_action_bar() -> void:
 	if _action_bar == null:
 		return
-	var open_play := (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and (_moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]))
+	var open_play: bool = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and (_moment_type in [MomentType.SHOT, MomentType.PASS, MomentType.DRIBBLE]))
+	var throw_in_move: bool = (_phase == MatchPhase.THROW_IN_PREP and run_mode != RunMode.MOVIOLA_REPLAY)
 	_action_bar.visible = open_play
 	if _dribble_pad != null:
-		_dribble_pad.visible = open_play
+		_dribble_pad.visible = (open_play or throw_in_move)
 	if _stamina_bar_bg != null:
-		_stamina_bar_bg.visible = open_play
-		if open_play:
+		_stamina_bar_bg.visible = (open_play or throw_in_move)
+		if open_play or throw_in_move:
 			_sync_stamina_hud()
 	if _spin_pad != null:
 		_spin_pad.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY and _moment_type != MomentType.TEAMMATE_PENALTY)
@@ -7279,23 +8274,56 @@ func _sync_action_bar() -> void:
 	if open_play:
 		_last_pass_state = ""
 		_update_pass_openness_ui()
-	if _player_badge_lbl != null:
-		_player_badge_lbl.visible = (_phase == MatchPhase.KEY_MOMENT_AIM and run_mode != RunMode.MOVIOLA_REPLAY)
-		if open_play:
-			_player_badge_lbl.offset_top = -202
-			_player_badge_lbl.offset_bottom = -178
-		else:
-			_player_badge_lbl.offset_top = -52
-			_player_badge_lbl.offset_bottom = -24
-		if _player_badge_lbl.visible:
-			if _controlling_teammate_idx >= 0:
-				_player_badge_lbl.text = "REKAN #%d (KONTROL)" % (_controlling_teammate_idx + 1)
-			elif CareerState.has_active_career:
-				var prof: Dictionary = CareerState.career["playerProfile"]
-				var num := int(prof.get("appearance", {}).get("shirt_num", 9))
-				_player_badge_lbl.text = "#%d %s" % [num, str(prof.get("name", "PEMAIN")).to_upper()]
+
+	_apply_control_layout_settings()
+	_sync_broadcast_scorebug()
+
+	var show_card: bool = ((_phase == MatchPhase.KEY_MOMENT_AIM or _phase == MatchPhase.THROW_IN_PREP) and run_mode != RunMode.MOVIOLA_REPLAY)
+	if _player_card_panel != null:
+		_player_card_panel.visible = show_card
+	if show_card:
+		var p_info: Dictionary = _get_controlled_player_info()
+		var p_nm: String = str(p_info.get("name", "PEMAIN"))
+		var p_num: int = int(p_info.get("num", 9))
+		var p_pos: String = str(p_info.get("pos", "ST"))
+		var is_u: bool = bool(p_info.get("is_user", true))
+		if _player_badge_lbl != null:
+			_player_badge_lbl.text = "#%d %s" % [p_num, p_nm]
+		if _player_card_num_lbl != null:
+			_player_card_num_lbl.text = str(p_num)
+		if _player_card_name_lbl != null:
+			_player_card_name_lbl.text = p_nm
+			_player_card_name_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD if is_u else Color("#FFFFFF"))
+		if _player_card_pos_lbl != null:
+			_player_card_pos_lbl.text = "%s • %s" % [p_pos, "KAMU" if is_u else "REKAN TIM"]
+			_player_card_pos_lbl.add_theme_color_override("font_color", Color("#FDE68A") if is_u else Color("#93C5FD"))
+		var cache_k: String = "%s_%d_%d" % [p_nm, p_num, int(p_info.get("seed", 0))]
+		if _player_card_avatar != null and cache_k != _player_card_last_key:
+			_player_card_last_key = cache_k
+			if is_u:
+				_player_card_avatar.configure_from_career()
 			else:
-				_player_badge_lbl.text = "#9 PEMAIN"
+				_player_card_avatar.configure_from_seed(int(p_info.get("seed", 42)), p_info.get("club", CareerState.get_current_club()), p_num)
+			_player_card_avatar.full_body = false
+			_player_card_avatar.anim_mode = "NONE"
+			_player_card_avatar.queue_redraw()
+		if _player_card_strip != null:
+			var th: Dictionary = _get_match_comp_theme()
+			var b_bg: Color = th.get("bar_bg", Color("#132842"))
+			var b_bd: Color = UITheme.ACCENT_GOLD if is_u else th.get("accent_hi", Color("#5BB2E8"))
+			var ps_sb := StyleBoxFlat.new()
+			ps_sb.bg_color = Color(b_bg.r, b_bg.g, b_bg.b, 0.92)
+			ps_sb.border_color = Color(b_bd.r, b_bd.g, b_bd.b, 0.78)
+			ps_sb.border_width_top = 1
+			ps_sb.border_width_bottom = 1
+			ps_sb.border_width_right = 1
+			ps_sb.corner_radius_top_right = 6
+			ps_sb.corner_radius_bottom_right = 6
+			ps_sb.content_margin_left = 6
+			ps_sb.content_margin_right = 8
+			ps_sb.content_margin_top = 2
+			ps_sb.content_margin_bottom = 2
+			_player_card_strip.add_theme_stylebox_override("panel", ps_sb)
 
 func _switch_open_play_action(new_t: MomentType) -> void:
 	if _phase != MatchPhase.KEY_MOMENT_AIM or _moment_type == new_t:
@@ -7312,6 +8340,80 @@ func _switch_open_play_action(new_t: MomentType) -> void:
 	_sync_3d_sprites()
 	_draw_aim_and_ring()
 
+func _restart_current_match() -> void:
+	_is_paused = false
+	_dragging = false
+	_goal_replay_active = false
+	_celebrating_goal = false
+	_stop_goal_celebration()
+	if is_instance_valid(_pause_panel):
+		_pause_panel.queue_free()
+	_controlling_teammate_idx = -1
+	_player_card_last_key = ""
+	if _player_card_panel != null:
+		_player_card_panel.visible = false
+	if _moment_banner != null:
+		_moment_banner.visible = false
+	_start_selected_mode()
+
+func _make_pause_bar_btn(label_txt: String, icon_kind: String, icon_col: Color, bg_col: Color, border_col: Color, bottom_bw: int = 2) -> Button:
+	var btn := Button.new()
+	btn.text = ""
+	btn.custom_minimum_size = Vector2(0, 62)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	var n := StyleBoxFlat.new()
+	n.bg_color = bg_col
+	n.border_color = border_col
+	n.set_border_width_all(1)
+	n.border_width_bottom = bottom_bw
+	n.set_corner_radius_all(4)
+	var h: StyleBoxFlat = n.duplicate()
+	h.bg_color = bg_col.lightened(0.12)
+	h.border_color = Color("#FFFFFF")
+	var pr: StyleBoxFlat = n.duplicate()
+	pr.bg_color = bg_col.darkened(0.10)
+	btn.add_theme_stylebox_override("normal", n)
+	btn.add_theme_stylebox_override("hover", h)
+	btn.add_theme_stylebox_override("pressed", pr)
+	btn.add_theme_stylebox_override("focus", h)
+
+	var mc := MarginContainer.new()
+	mc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	mc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mc.add_theme_constant_override("margin_left", 16)
+	mc.add_theme_constant_override("margin_right", 16)
+	btn.add_child(mc)
+
+	var hb := HBoxContainer.new()
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mc.add_child(hb)
+
+	var ico := MatchHudWidgets.PauseMenuIcon.new()
+	ico.kind = icon_kind
+	ico.col = icon_col
+	ico.custom_minimum_size = Vector2(24, 24)
+	hb.add_child(ico)
+
+	var lbl := Label.new()
+	lbl.text = label_txt
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_override("font", UITheme.get_display_font())
+	lbl.add_theme_font_size_override("font_size", 16 if icon_kind == "PLAY" else 13)
+	lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	hb.add_child(lbl)
+
+	var r_pad := Control.new()
+	r_pad.custom_minimum_size = Vector2(24, 24)
+	r_pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(r_pad)
+	return btn
+
 func _open_pause_menu() -> void:
 	if is_instance_valid(_pause_panel):
 		_pause_panel.queue_free()
@@ -7319,64 +8421,137 @@ func _open_pause_menu() -> void:
 	_dragging = false
 	_pause_panel = Control.new()
 	_pause_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_pause_panel)
 
+	var th: Dictionary = _get_match_comp_theme()
+	var pill_bg: Color = th.get("pill_bg", Color("#265B84"))
+	var acc_hi: Color = th.get("accent_hi", Color("#7DD3FC"))
+	var resume_bd: Color = th.get("resume_border", Color("#E11D48"))
+
+	# Translucent broadcast glass backdrop so live pitch & scorebug subtly show through (Gambar 3!)
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.04, 0.09, 0.86)
+	dim.color = Color(0.015, 0.03, 0.06, 0.80)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_pause_panel.add_child(dim)
 
-	var card := PanelContainer.new()
-	card.set_anchors_preset(Control.PRESET_CENTER)
-	card.custom_minimum_size = Vector2(440, 276)
-	card.offset_left = -220
-	card.offset_right = 220
-	card.offset_top = -138
-	card.offset_bottom = 138
-	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0A1526"), UITheme.ACCENT_CYAN, 2, 14))
-	_pause_panel.add_child(card)
+	var main_wrap := Control.new()
+	main_wrap.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_panel.add_child(main_wrap)
 
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-	card.add_child(vb)
+	# 1. TOP HEADER BAR: Left = JEDA [B1 13'] | Right = [PBO 0-0 DSI] (Themed dynamically!)
+	var hdr_hb := HBoxContainer.new()
+	hdr_hb.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	hdr_hb.offset_left = 36
+	hdr_hb.offset_right = -36
+	hdr_hb.offset_top = 18
+	hdr_hb.offset_bottom = 62
+	hdr_hb.add_theme_constant_override("separation", 14)
+	main_wrap.add_child(hdr_hb)
 
-	var ttl := Label.new()
-	ttl.text = "JEDA PERTANDINGAN"
-	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ttl.add_theme_font_override("font", UITheme.get_display_font())
-	ttl.add_theme_font_size_override("font_size", 20)
-	ttl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	vb.add_child(ttl)
+	var jeda_lbl := Label.new()
+	jeda_lbl.text = "JEDA"
+	jeda_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	jeda_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	jeda_lbl.add_theme_font_size_override("font_size", 24)
+	jeda_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	hdr_hb.add_child(jeda_lbl)
 
-	var info := Label.new()
-	info.text = "MODE: %s   •   KAMERA: %s" % [
-		str(SettingsManager.data.get("difficulty", "NORMAL")),
-		str(SettingsManager.data.get("perspective", "TV")),
+	var min_pill := PanelContainer.new()
+	min_pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var mp_sb := StyleBoxFlat.new()
+	mp_sb.bg_color = pill_bg
+	mp_sb.border_color = acc_hi
+	mp_sb.set_border_width_all(1)
+	mp_sb.set_corner_radius_all(4)
+	mp_sb.content_margin_left = 10
+	mp_sb.content_margin_right = 10
+	mp_sb.content_margin_top = 4
+	mp_sb.content_margin_bottom = 4
+	min_pill.add_theme_stylebox_override("panel", mp_sb)
+	var mp_lbl := Label.new()
+	mp_lbl.text = _get_half_minute_str()
+	mp_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	mp_lbl.add_theme_font_size_override("font_size", 11)
+	mp_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	min_pill.add_child(mp_lbl)
+	hdr_hb.add_child(min_pill)
+
+	var h_spacer := Control.new()
+	h_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr_hb.add_child(h_spacer)
+
+	# Top-Right Dynamic Score Pill (Gambar 3: [BIL 0-0 POL]!)
+	var sc_pill := PanelContainer.new()
+	sc_pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var sp_sb := mp_sb.duplicate()
+	sp_sb.content_margin_left = 16
+	sp_sb.content_margin_right = 16
+	sp_sb.content_margin_top = 7
+	sp_sb.content_margin_bottom = 7
+	sc_pill.add_theme_stylebox_override("panel", sp_sb)
+	var sc_txt: String = "%s %d-%d %s" % [
+		_sb_home_code_lbl.text if _sb_home_code_lbl != null else "PBO",
+		_score_us,
+		_score_them,
+		_sb_away_code_lbl.text if _sb_away_code_lbl != null else "DSI",
 	]
-	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
-	info.add_theme_font_size_override("font_size", 12)
-	vb.add_child(info)
+	if run_mode == RunMode.CAREER_MATCH and CareerState.has_active_career:
+		var fix_p: Dictionary = CareerState.get_current_fixture()
+		var is_hm: bool = bool(fix_p.get("is_home", true))
+		sc_txt = "%s %d-%d %s" % [
+			_sb_home_code_lbl.text if _sb_home_code_lbl != null else "KLB",
+			_score_us if is_hm else _score_them,
+			_score_them if is_hm else _score_us,
+			_sb_away_code_lbl.text if _sb_away_code_lbl != null else "LWN",
+		]
+	var sp_lbl := Label.new()
+	sp_lbl.text = sc_txt
+	sp_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	sp_lbl.add_theme_font_size_override("font_size", 15)
+	sp_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	sc_pill.add_child(sp_lbl)
+	hdr_hb.add_child(sc_pill)
 
-	var res_b := Button.new()
-	res_b.text = "> LANJUTKAN"
-	res_b.custom_minimum_size = Vector2(0, 48)
-	UITheme.style_btn(res_b, Color("#17462E"), UITheme.ACCENT_GREEN, 15)
+	# 2. MAIN TWO-COLUMN BODY (Left = 5 Action Bars | Right = 3 Control Customization Cards!)
+	var cols := HBoxContainer.new()
+	cols.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cols.offset_left = 36
+	cols.offset_right = -36
+	cols.offset_top = 94
+	cols.offset_bottom = -34
+	cols.add_theme_constant_override("separation", 24)
+	main_wrap.add_child(cols)
+
+	# LEFT COLUMN (52% width): LANJUT, CARA MAIN, SETELAN, ULANGI, KELUAR LAGA
+	var left_vb := VBoxContainer.new()
+	left_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_vb.size_flags_stretch_ratio = 1.08
+	left_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	left_vb.add_theme_constant_override("separation", 14)
+	cols.add_child(left_vb)
+
+	var res_b: Button = _make_pause_bar_btn("LANJUT", "PLAY", Color("#FFFFFF"), Color("#090E16", 0.94), resume_bd, 4)
 	res_b.pressed.connect(func():
 		AudioSynth.play_click()
 		_is_paused = false
 		if is_instance_valid(_pause_panel):
 			_pause_panel.queue_free()
 	)
-	vb.add_child(res_b)
+	left_vb.add_child(res_b)
 
-	var set_b := Button.new()
-	set_b.text = "SETELAN (KESULITAN & KAMERA)"
-	set_b.custom_minimum_size = Vector2(0, 48)
-	UITheme.style_btn(set_b, Color("#173B66"), UITheme.ACCENT_CYAN, 14)
+	var how_b: Button = _make_pause_bar_btn("CARA MAIN", "CONE", Color("#7DD3FC"), Color("#090E16", 0.88), Color("#1F334D"), 2)
+	how_b.pressed.connect(func():
+		AudioSynth.play_click()
+		main_wrap.visible = false
+		_open_how_to_play_subpanel(main_wrap, th)
+	)
+	left_vb.add_child(how_b)
+
+	var set_b: Button = _make_pause_bar_btn("SETELAN", "GEAR", Color("#CBD5E1"), Color("#090E16", 0.88), Color("#1F334D"), 2)
 	set_b.pressed.connect(func():
 		AudioSynth.play_click()
-		card.visible = false
+		main_wrap.visible = false
 		var sm: Control = (load("res://scenes/modals/SettingsModal.gd") as GDScript).new()
 		sm.call("configure", "LAGA", true)
 		sm.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -7388,12 +8563,16 @@ func _open_pause_menu() -> void:
 		)
 		_pause_panel.add_child(sm)
 	)
-	vb.add_child(set_b)
+	left_vb.add_child(set_b)
 
-	var exit_b := Button.new()
-	exit_b.text = "< KELUAR LAGA"
-	exit_b.custom_minimum_size = Vector2(0, 44)
-	UITheme.style_btn(exit_b, Color("#562828"), UITheme.ACCENT_RED, 13)
+	var rep_b: Button = _make_pause_bar_btn("ULANGI", "REPLAY", Color("#FDE68A"), Color("#6E4815", 0.95), Color("#A67528"), 3)
+	rep_b.pressed.connect(func():
+		AudioSynth.play_click()
+		_restart_current_match()
+	)
+	left_vb.add_child(rep_b)
+
+	var exit_b: Button = _make_pause_bar_btn("KELUAR LAGA", "EXIT", Color("#FFFFFF"), Color("#D45454", 0.95), Color("#F08080"), 3)
 	exit_b.pressed.connect(func():
 		AudioSynth.play_click()
 		_is_paused = false
@@ -7401,7 +8580,242 @@ func _open_pause_menu() -> void:
 			_pause_panel.queue_free()
 		_on_skip_or_exit()
 	)
-	vb.add_child(exit_b)
+	left_vb.add_child(exit_b)
+
+	# RIGHT COLUMN (48% width): KIDAL, UKURAN, OPASITAS Live On-Pitch Control Cards!
+	var right_vb := VBoxContainer.new()
+	right_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_vb.size_flags_stretch_ratio = 0.96
+	right_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	right_vb.add_theme_constant_override("separation", 18)
+	cols.add_child(right_vb)
+
+	var card_sb := StyleBoxFlat.new()
+	card_sb.bg_color = Color(0.03, 0.06, 0.11, 0.68)
+	card_sb.border_color = Color(0.20, 0.34, 0.52, 0.45)
+	card_sb.set_border_width_all(1)
+	card_sb.set_corner_radius_all(6)
+	card_sb.content_margin_left = 16
+	card_sb.content_margin_right = 16
+	card_sb.content_margin_top = 14
+	card_sb.content_margin_bottom = 14
+
+	# Card 1: KIDAL (Left-Handed Toggle: TAK / YA)
+	var kidal_c := PanelContainer.new()
+	kidal_c.custom_minimum_size = Vector2(0, 114)
+	kidal_c.add_theme_stylebox_override("panel", card_sb.duplicate())
+	right_vb.add_child(kidal_c)
+
+	var khb := HBoxContainer.new()
+	khb.alignment = BoxContainer.ALIGNMENT_CENTER
+	khb.add_theme_constant_override("separation", 12)
+	kidal_c.add_child(khb)
+
+	var k_ico := MatchHudWidgets.PauseMenuIcon.new()
+	k_ico.kind = "SWAP"
+	k_ico.col = Color("#EC4899")
+	k_ico.custom_minimum_size = Vector2(24, 24)
+	khb.add_child(k_ico)
+
+	var k_lbl := Label.new()
+	k_lbl.text = "KIDAL"
+	k_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	k_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	k_lbl.add_theme_font_size_override("font_size", 14)
+	k_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	khb.add_child(k_lbl)
+
+	var kidal_btn := Button.new()
+	kidal_btn.custom_minimum_size = Vector2(82, 42)
+	kidal_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var is_lh: bool = bool(SettingsManager.data.get("left_handed", false))
+	kidal_btn.text = "YA" if is_lh else "TAK"
+	UITheme.style_btn(kidal_btn, pill_bg if is_lh else Color("#0A101B"), acc_hi if is_lh else Color("#283E5C"), 13)
+	kidal_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		var nv: bool = not bool(SettingsManager.data.get("left_handed", false))
+		SettingsManager.set_setting("left_handed", nv)
+		kidal_btn.text = "YA" if nv else "TAK"
+		UITheme.style_btn(kidal_btn, pill_bg if nv else Color("#0A101B"), acc_hi if nv else Color("#283E5C"), 13)
+		_apply_control_layout_settings()
+	)
+	khb.add_child(kidal_btn)
+
+	# Card 2: UKURAN (Joystick Size Slider: 60% .. 140%)
+	var size_c := PanelContainer.new()
+	size_c.custom_minimum_size = Vector2(0, 114)
+	size_c.add_theme_stylebox_override("panel", card_sb.duplicate())
+	right_vb.add_child(size_c)
+
+	var shb := HBoxContainer.new()
+	shb.alignment = BoxContainer.ALIGNMENT_CENTER
+	shb.add_theme_constant_override("separation", 12)
+	size_c.add_child(shb)
+
+	var s_ico := MatchHudWidgets.PauseMenuIcon.new()
+	s_ico.kind = "JOY"
+	s_ico.col = Color("#38BDF8")
+	s_ico.custom_minimum_size = Vector2(24, 24)
+	shb.add_child(s_ico)
+
+	var s_lbl := Label.new()
+	s_lbl.text = "UKURAN"
+	s_lbl.custom_minimum_size = Vector2(78, 0)
+	s_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	s_lbl.add_theme_font_size_override("font_size", 13)
+	s_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	shb.add_child(s_lbl)
+
+	var cur_sz: int = clampi(int(SettingsManager.data.get("joy_size", 100)), 60, 140)
+	var sz_sl := HSlider.new()
+	sz_sl.min_value = 60
+	sz_sl.max_value = 140
+	sz_sl.step = 5
+	sz_sl.value = cur_sz
+	sz_sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sz_sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	MatchHudWidgets.style_cyan_slider(sz_sl, Color("#38BDF8"))
+	shb.add_child(sz_sl)
+
+	var sz_val_lbl := Label.new()
+	sz_val_lbl.text = "%d%%" % cur_sz
+	sz_val_lbl.custom_minimum_size = Vector2(46, 0)
+	sz_val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	sz_val_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	sz_val_lbl.add_theme_font_size_override("font_size", 13)
+	sz_val_lbl.add_theme_color_override("font_color", Color("#E2F2FF"))
+	shb.add_child(sz_val_lbl)
+
+	sz_sl.value_changed.connect(func(v: float):
+		var iv: int = int(round(v))
+		sz_val_lbl.text = "%d%%" % iv
+		SettingsManager.set_setting("joy_size", iv)
+		_apply_control_layout_settings()
+	)
+
+	# Card 3: OPASITAS (Joystick Opacity Slider: 15% .. 100%)
+	var op_c := PanelContainer.new()
+	op_c.custom_minimum_size = Vector2(0, 114)
+	op_c.add_theme_stylebox_override("panel", card_sb.duplicate())
+	right_vb.add_child(op_c)
+
+	var ohb := HBoxContainer.new()
+	ohb.alignment = BoxContainer.ALIGNMENT_CENTER
+	ohb.add_theme_constant_override("separation", 12)
+	op_c.add_child(ohb)
+
+	var o_ico := MatchHudWidgets.PauseMenuIcon.new()
+	o_ico.kind = "EYE"
+	o_ico.col = Color("#38BDF8")
+	o_ico.custom_minimum_size = Vector2(24, 24)
+	ohb.add_child(o_ico)
+
+	var o_lbl := Label.new()
+	o_lbl.text = "OPASITAS"
+	o_lbl.custom_minimum_size = Vector2(78, 0)
+	o_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	o_lbl.add_theme_font_size_override("font_size", 13)
+	o_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	ohb.add_child(o_lbl)
+
+	var cur_op: int = clampi(int(SettingsManager.data.get("joy_opacity", 70)), 15, 100)
+	var op_sl := HSlider.new()
+	op_sl.min_value = 15
+	op_sl.max_value = 100
+	op_sl.step = 5
+	op_sl.value = cur_op
+	op_sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	op_sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	MatchHudWidgets.style_cyan_slider(op_sl, Color("#38BDF8"))
+	ohb.add_child(op_sl)
+
+	var op_val_lbl := Label.new()
+	op_val_lbl.text = "%d%%" % cur_op
+	op_val_lbl.custom_minimum_size = Vector2(46, 0)
+	op_val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	op_val_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	op_val_lbl.add_theme_font_size_override("font_size", 13)
+	op_val_lbl.add_theme_color_override("font_color", Color("#E2F2FF"))
+	ohb.add_child(op_val_lbl)
+
+	op_sl.value_changed.connect(func(v: float):
+		var iv: int = int(round(v))
+		op_val_lbl.text = "%d%%" % iv
+		SettingsManager.set_setting("joy_opacity", iv)
+		_apply_control_layout_settings()
+	)
+
+func _open_how_to_play_subpanel(parent_main: Control, th: Dictionary) -> void:
+	var card := PanelContainer.new()
+	card.set_anchors_preset(Control.PRESET_CENTER)
+	card.custom_minimum_size = Vector2(580, 344)
+	card.offset_left = -290
+	card.offset_right = 290
+	card.offset_top = -172
+	card.offset_bottom = 172
+	var acc_hi: Color = th.get("accent_hi", Color("#7DD3FC"))
+	var sb := UITheme.make_box(Color("#09111E", 0.96), acc_hi, 2, 10)
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	sb.content_margin_top = 16
+	sb.content_margin_bottom = 16
+	card.add_theme_stylebox_override("panel", sb)
+	_pause_panel.add_child(card)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	card.add_child(vb)
+
+	var ttl := Label.new()
+	ttl.text = "CARA MAIN  •  PANDUAN KONTROL LAGA"
+	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ttl.add_theme_font_override("font", UITheme.get_display_font())
+	ttl.add_theme_font_size_override("font_size", 16)
+	ttl.add_theme_color_override("font_color", acc_hi)
+	vb.add_child(ttl)
+
+	var tips: Array = [
+		["1. GIRING BOLA (JOYSTICK)", "Geser joystick bundar di pojok bawah untuk menggiring bola melewati bek lawan. Atur KIDAL, UKURAN & OPASITAS di menu JEDA."],
+		["2. TEMBAK & UMPAN KETAPEL", "Tarik mundur dari bola/layar lalu lepas untuk menendang. Kekuatan 65%+ melepas umpan panjang akurat ke rekan yang terbuka."],
+		["3. SUDUT & EFEK BOLA (SPIN)", "Geser titik merah di bola kanan bawah untuk efek melengkung kiri/kanan, atau tarik ke separuh bawah untuk tendangan LAMBUNG."],
+		["4. KENDALIKAN REKAN & KOMBINASI", "Saat mengoper ke rekan setim, kamu langsung mengendalikan rekan tersebut (lihat kartu nama asli di pojok bawah) untuk operan balik atau gol!"],
+	]
+	for tp in tips:
+		var box := PanelContainer.new()
+		var bsb := UITheme.make_box(Color("#0E1A2D"), Color("#243A59"), 1, 5)
+		bsb.content_margin_left = 10
+		bsb.content_margin_right = 10
+		bsb.content_margin_top = 6
+		bsb.content_margin_bottom = 6
+		box.add_theme_stylebox_override("panel", bsb)
+		var ivb := VBoxContainer.new()
+		ivb.add_theme_constant_override("separation", 2)
+		box.add_child(ivb)
+		var l1 := Label.new()
+		l1.text = str(tp[0])
+		l1.add_theme_font_override("font", UITheme.get_display_font())
+		l1.add_theme_font_size_override("font_size", 11)
+		l1.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+		var l2 := Label.new()
+		l2.text = str(tp[1])
+		l2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l2.add_theme_font_size_override("font_size", 10)
+		l2.add_theme_color_override("font_color", Color("#CBD5E1"))
+		ivb.add_child(l1)
+		ivb.add_child(l2)
+		vb.add_child(box)
+
+	var back_b := Button.new()
+	back_b.text = "KEMBALI KE JEDA"
+	back_b.custom_minimum_size = Vector2(0, 42)
+	UITheme.style_btn(back_b, th.get("pill_bg", Color("#265B84")), acc_hi, 13)
+	back_b.pressed.connect(func():
+		AudioSynth.play_click()
+		card.queue_free()
+		if is_instance_valid(parent_main):
+			parent_main.visible = true
+	)
+	vb.add_child(back_b)
 
 
 class SpinBallPad extends Control:

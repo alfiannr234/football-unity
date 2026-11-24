@@ -437,13 +437,10 @@ func _render_management() -> void:
 	bg.texture = load("res://assets/sprites/backgrounds/manager_office.png")
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	office.add_child(bg)
-	var npc := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-	at.region = Rect2(2 * 24, 0, 24, 36)
-	npc.texture = at
-	npc.custom_minimum_size = Vector2(84, 110)
-	npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var npc := NpcAvatar.new()
+	npc.configure_role("COACH", false, CareerState.get_current_club())
+	npc.anim_mode = "IDLE"
+	npc.custom_minimum_size = Vector2(84, 122)
 	office.add_child(npc)
 
 	var lvl := int(CareerState.career["contract"].get("clubRequestsLevel", 1))

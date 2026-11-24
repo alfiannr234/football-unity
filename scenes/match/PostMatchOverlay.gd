@@ -17,7 +17,8 @@ var _flash_cd: float = 1.1
 func show_report(rep: Dictionary) -> void:
 	report = rep
 	_stage = 0
-	_render_stage()
+	if is_node_ready() and _container != null and is_instance_valid(_container):
+		_render_stage()
 
 func _ready() -> void:
 	theme = UITheme.build_theme()
@@ -38,6 +39,8 @@ func _clear_container() -> void:
 	_crowd_bg = null
 	_mvp_particles.clear()
 	_press_flash = null
+	if _container == null or not is_instance_valid(_container):
+		return
 	for c in _container.get_children():
 		_container.remove_child(c)
 		c.queue_free()
@@ -82,6 +85,8 @@ func _spawn_mvp_confetti() -> void:
 	_container.add_child(_mvp_confetti)
 
 func _render_stage() -> void:
+	if _container == null or not is_instance_valid(_container):
+		return
 	_clear_container()
 	if _stage == 0:
 		_render_summary()
@@ -653,26 +658,20 @@ func _render_moviola() -> void:
 	)
 	cv.add_child(watch_btn)
 
-	# 3 Pundits standing behind desk
+	# 3 Human-Proportioned Studio Pundits standing behind desk
 	var pundits_hb := HBoxContainer.new()
 	pundits_hb.alignment = BoxContainer.ALIGNMENT_CENTER
-	pundits_hb.add_theme_constant_override("separation", 28)
-	pundits_hb.custom_minimum_size = Vector2(0, 114)
+	pundits_hb.add_theme_constant_override("separation", 24)
+	pundits_hb.custom_minimum_size = Vector2(0, 118)
 	vb.add_child(pundits_hb)
 	var pi: int = 0
-	for idx in [3, 0, 2]:
-		var npc := TextureRect.new()
-		var at := AtlasTexture.new()
-		at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-		at.region = Rect2(idx * 24, 0, 24, 36)
-		npc.texture = at
-		npc.custom_minimum_size = Vector2(68, 102)
-		npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	for p_role in ["SENIOR_COACH", "REPORTER", "COACH"]:
+		var npc := NpcAvatar.new()
+		npc.configure_role(p_role, false, club)
+		npc.anim_mode = "TALK" if pi == 1 else "IDLE"
+		npc.anim_phase = float(pi) * 0.8
+		npc.custom_minimum_size = Vector2(72, 114)
 		pundits_hb.add_child(npc)
-		var ptw := npc.create_tween().set_loops()
-		ptw.tween_interval(float(pi) * 0.22)
-		ptw.tween_property(npc, "position:y", -5.0, 0.45).as_relative()
-		ptw.tween_property(npc, "position:y", 5.0, 0.45).as_relative()
 		pi += 1
 
 	var sp2 := Control.new()
@@ -705,129 +704,157 @@ func _render_moviola() -> void:
 	bvb.add_child(cont)
 
 func _render_interview() -> void:
-	# Matching Screenshot #1: Checkered press backdrop + Player & Reporter with Mic!
-	var wall := TextureRect.new()
-	wall.texture = load("res://assets/sprites/backgrounds/press_wall.png")
-	wall.set_anchors_preset(Control.PRESET_FULL_RECT)
-	wall.stretch_mode = TextureRect.STRETCH_TILE
-	_container.add_child(wall)
-
-	var vb := VBoxContainer.new()
-	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vb.offset_left = 120
-	vb.offset_right = -120
-	vb.offset_top = 24
-	vb.offset_bottom = -16
-	vb.add_theme_constant_override("separation", 0)
-	_container.add_child(vb)
-
-	var sp_top := Control.new()
-	sp_top.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vb.add_child(sp_top)
-
-	# Player + Reporter standing side-by-side
-	var chars := HBoxContainer.new()
-	chars.alignment = BoxContainer.ALIGNMENT_CENTER
-	chars.add_theme_constant_override("separation", 24)
-	vb.add_child(chars)
-
+	# Landscape Pitch-Side TV Interview Stage matching Gambar 2:
+	# Stadium Grandstands (tribun) + Green Pitch (lapangan) + Club Sponsor Press Wall +
+	# Human-Proportioned Player + Standing 'TV' Floor Mic + Side-Profile Human TV Reporter!
+	var club: Dictionary = CareerState.get_current_club()
+	var fix: Dictionary = report.get("fixture", {})
 	var is_motm: bool = bool(report.get("motm", false))
+	var g: int = int(report.get("my_goals", 0))
+	var a: int = int(report.get("my_assists", 0))
+	var r_v: float = float(report.get("rating", 6.8))
+
+	var stage_bg := PressStageBackdrop.new()
+	stage_bg.configure_from_club(club, str(fix.get("comp_label", "")))
+	_container.add_child(stage_bg)
+
 	if is_motm:
 		_spawn_mvp_confetti()
 
+	# Top-Left Broadcast Context Pill (SETELAH LAGA + ClubCrest + Club Name + Match Stats)
+	var stat_str: String = "%s • %d GOL • %d AST" % [("%.1f" % r_v).replace(".", ","), g, a]
+	var top_pill: PanelContainer = PressStageBackdrop.build_top_club_pill(
+		club,
+		"SETELAH LAGA • MIKROFON PADAMU" if is_motm else "SETELAH LAGA",
+		stat_str
+	)
+	top_pill.position = Vector2(16, 6)
+	_container.add_child(top_pill)
+
+	# Center-Left Human-Proportioned Player Standing Pitch-Side (4x crisp pixel scale!)
 	var av := PixelAvatar.new()
-	av.custom_minimum_size = Vector2(126, 188)
+	av.position = Vector2(332, 108)
+	av.size = Vector2(142, 236)
+	av.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.configure_from_career()
 	av.show_mvp_trophy = is_motm
-	av.anim_mode = "MVP" if is_motm else "TALK"
-	chars.add_child(av)
+	av.anim_mode = "INTERVIEW"
+	_container.add_child(av)
 
-	var rep := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-	at.region = Rect2(0, 0, 24, 36)
-	rep.texture = at
-	rep.custom_minimum_size = Vector2(118, 176)
-	rep.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	chars.add_child(rep)
-	var rtw := rep.create_tween().set_loops()
-	rtw.tween_property(rep, "position:y", -4.0, 0.5).as_relative()
-	rtw.tween_property(rep, "position:y", 4.0, 0.5).as_relative()
+	# Standing 'TV' Floor Microphone positioned naturally in front of player's left shoulder
+	var mic_stand := PressStageBackdrop.BroadcastMicStand.new()
+	mic_stand.accent_col = stage_bg.club_primary
+	mic_stand.position = Vector2(288, 178)
+	mic_stand.size = Vector2(58, 182)
+	_container.add_child(mic_stand)
 
+	# Center-Right Side-Profile Human TV Reporter facing LEFT extending handheld mic to player!
+	var rep := NpcAvatar.new()
+	rep.configure_role("REPORTER", true, club)
+	rep.anim_mode = "TALK"
+	rep.position = Vector2(436, 108)
+	rep.size = Vector2(178, 236)
+	rep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_container.add_child(rep)
+
+	# Subtle camera flash overlay
 	_press_flash = ColorRect.new()
 	_press_flash.color = Color(1, 1, 1, 0.0)
 	_press_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_press_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_container.add_child(_press_flash)
 
-	# Interactive MIKROFON PADAMU Live TV Interview Card (New 3 Screenshot 17)
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", UITheme.make_box(Color("#0C121D", 0.96), Color("#FB7185") if is_motm else UITheme.BORDER_CYAN, 2, 8))
-	vb.add_child(card)
-	var iv := VBoxContainer.new()
-	iv.add_theme_constant_override("separation", 6)
-	card.add_child(iv)
-
-	var pname := str(CareerState.career["playerProfile"]["name"]).to_upper()
-	var g := int(report.get("my_goals", 0))
-	var a := int(report.get("my_assists", 0))
-	var r_v := float(report.get("rating", 6.8))
-	var l1 := Label.new()
-	l1.text = "%.1f  •  %d GOL  •  %d AST" % [r_v, g, a]
-	l1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l1.add_theme_color_override("font_color", Color("#FB7185"))
-	l1.add_theme_font_size_override("font_size", 12)
-	iv.add_child(l1)
-
-	var l2 := Label.new()
-	l2.text = "MIKROFON PADAMU" if is_motm else "WAWANCARA PASCA-LAGA • %s" % pname
-	l2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l2.add_theme_font_override("font", UITheme.get_display_font())
-	l2.add_theme_font_size_override("font_size", 18)
-	iv.add_child(l2)
-
-	var l3 := Label.new()
-	l3.text = "Pemain terbaik laga. Stasiun TV menahanmu sebelum ruang ganti; 30 detik siaran langsung diputar ulang sepekan penuh." if is_motm else "Mikrofon pers menyapa setelah peluit panjang. Pilih pernyataanmu di depan kamera."
-	l3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l3.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l3.add_theme_font_size_override("font_size", 11)
-	iv.add_child(l3)
+	# Bottom Narrative Prompt & 3 Gambar 2 Icon-Topped Choice Cards (x=54..906, y=354..528)
+	var bot_vb := VBoxContainer.new()
+	bot_vb.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	bot_vb.offset_left = 54
+	bot_vb.offset_right = -54
+	bot_vb.offset_top = -178
+	bot_vb.offset_bottom = -10
+	bot_vb.alignment = BoxContainer.ALIGNMENT_END
+	bot_vb.add_theme_constant_override("separation", 6)
+	_container.add_child(bot_vb)
 
 	var sc_id_cur: int = int(CareerState.career.get("careerMeta", {}).get("scoutedByClubId", -1)) if CareerState.has_active_career else -1
 	if sc_id_cur >= 0 and sc_id_cur < GameData.clubs.size():
 		var sc_cl: Dictionary = GameData.clubs[sc_id_cur]
+		var sc_wrap := CenterContainer.new()
+		bot_vb.add_child(sc_wrap)
 		var sc_box := PanelContainer.new()
-		sc_box.add_theme_stylebox_override("panel", UITheme.make_box(Color("#1A1A0E"), UITheme.ACCENT_GOLD, 1, 6))
-		iv.add_child(sc_box)
+		var sc_sb := UITheme.make_box(Color("#1A170B", 0.92), UITheme.ACCENT_GOLD, 1, 5)
+		sc_sb.content_margin_left = 10
+		sc_sb.content_margin_right = 12
+		sc_sb.content_margin_top = 3
+		sc_sb.content_margin_bottom = 3
+		sc_box.add_theme_stylebox_override("panel", sc_sb)
+		sc_wrap.add_child(sc_box)
 		var sc_hb := HBoxContainer.new()
 		sc_hb.alignment = BoxContainer.ALIGNMENT_CENTER
-		sc_hb.add_theme_constant_override("separation", 8)
+		sc_hb.add_theme_constant_override("separation", 7)
 		sc_box.add_child(sc_hb)
 		var sc_cr := ClubCrest.new()
-		sc_cr.custom_minimum_size = Vector2(28, 28)
+		sc_cr.custom_minimum_size = Vector2(20, 20)
 		sc_cr.set_club(sc_id_cur)
 		sc_hb.add_child(sc_cr)
 		var sc_lbl := Label.new()
 		sc_lbl.text = "SCOUT MENGINCARMU: %s (DIV %d • OVR %d)" % [str(sc_cl.get("name", "KLUB")).to_upper(), int(sc_cl.get("division", 2)), int(sc_cl.get("ovr", 68))]
+		sc_lbl.add_theme_font_override("font", UITheme.get_display_font())
+		sc_lbl.add_theme_font_size_override("font_size", 10)
 		sc_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-		sc_lbl.add_theme_font_size_override("font_size", 11)
 		sc_hb.add_child(sc_lbl)
 
+	var prompt_lbl := Label.new()
+	if is_motm:
+		prompt_lbl.text = "Mikrofon di depan wajah dan satu pertanyaan terbuka usai menjadi Pemain Terbaik Laga. Apa pun jawabanmu, itu menggambarkanmu."
+	else:
+		prompt_lbl.text = "Mikrofon di depan wajah dan satu pertanyaan terbuka. Apa pun jawabanmu, itu menggambarkanmu."
+	prompt_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	prompt_lbl.add_theme_font_override("font", UITheme.get_display_font())
+	prompt_lbl.add_theme_font_size_override("font_size", 12)
+	prompt_lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	prompt_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	prompt_lbl.add_theme_constant_override("shadow_offset_y", 2)
+	bot_vb.add_child(prompt_lbl)
+
 	var ch_hb := HBoxContainer.new()
-	ch_hb.add_theme_constant_override("separation", 8)
-	iv.add_child(ch_hb)
-	var tv_choices := [
-		{"title": "JASA TIM", "sub": "+3 Pelatih • +8 Suporter", "col": Color("#1E5668"), "eff": {"pelatih": 3, "fans": 8}},
-		{"title": "BICARA FORMAMU", "sub": "+11 Pers • +5 Scout • -7 Tim\nmereka akan mengincarmu", "col": Color("#5E3578"), "eff": {"pers": 11, "ruangGanti": -7, "followers": 420}},
-		{"title": "UNTUK SUPORTER", "sub": "+11 Suporter • +3 Pers • -3 Pelatih", "col": Color("#733A5A"), "eff": {"fans": 11, "pers": 3, "pelatih": -3}},
+	ch_hb.add_theme_constant_override("separation", 12)
+	bot_vb.add_child(ch_hb)
+
+	var tv_choices: Array = [
+		{
+			"title": "JASA TIM",
+			"icon": "JERSEY",
+			"col": Color("#7B521D"),
+			"chips": [["+3 PELATIH", false], ["+8 SUPORTER", false]],
+			"note": "",
+			"eff": {"pelatih": 3, "fans": 8},
+		},
+		{
+			"title": "BICARA FORMAMU",
+			"icon": "MIC",
+			"col": Color("#4C3D7A"),
+			"chips": [["+11 PERS", false], ["+5 SCOUT", false], ["-7 TIM", true]],
+			"note": "scout akan mengincarmu",
+			"eff": {"pers": 11, "ruangGanti": -7, "followers": 420},
+		},
+		{
+			"title": "UNTUK SUPORTER",
+			"icon": "FANS",
+			"col": Color("#6F324D"),
+			"chips": [["+11 SUPORTER", false], ["+3 PERS", false], ["-3 PELATIH", true]],
+			"note": "",
+			"eff": {"fans": 11, "pers": 3, "pelatih": -3},
+		},
 	]
 	for tvc in tv_choices:
-		var cb := Button.new()
-		cb.text = "%s\n%s" % [str(tvc["title"]), str(tvc["sub"])]
-		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cb.custom_minimum_size = Vector2(0, 62)
-		var bc: Color = tvc["col"]
-		UITheme.style_btn(cb, bc, bc.lightened(0.32), 11)
+		var cb: Button = PressStageBackdrop.build_gambar2_choice_button(
+			str(tvc["title"]),
+			str(tvc["icon"]),
+			tvc["col"],
+			tvc["chips"],
+			str(tvc["note"])
+		)
 		cb.pressed.connect(func():
 			AudioSynth.play_click()
 			CareerState.apply_cutscene_effects(tvc["eff"])

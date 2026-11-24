@@ -204,8 +204,9 @@ func _show_career_shell() -> void:
 func _on_end_season_requested() -> void:
 	if not CareerState.has_active_career:
 		return
-	CareerState.finalize_season_rollover()
-	_open_cutscene(32, func():
+	var summary: Dictionary = CareerState.finalize_season_rollover()
+	var ctx: Dictionary = CareerState.build_season_end_ceremony_context(summary)
+	_open_season_end_ceremony_modal(ctx, func():
 		_show_career_shell()
 		if CareerState.has_active_career and bool(CareerState.career.get("contract", {}).get("isFreeAgent", false)):
 			if _career_shell != null and _career_shell.has_method("switch_tab"):
@@ -222,14 +223,22 @@ func _launch_career_match(skip_pre_event: bool = false) -> void:
 		if str(fix.get("comp", "")) == "TIMNAS" and not called_wks.has(wk):
 			_open_cutscene(25, func():
 				if CareerState.has_active_career and int(CareerState.career["careerMeta"].get("week", 1)) == wk:
-					_launch_career_match(true)
+					var fx_after: Dictionary = CareerState.get_current_fixture()
+					var m_after: Dictionary = CareerState.career.get("careerMeta", {})
+					if CareerState.is_fixture_final(fx_after) and int(m_after.get("finalParadeDoneWeek", 0)) != wk:
+						m_after["finalParadeDoneWeek"] = wk
+						var pre_ctx_intl: Dictionary = CareerState.build_final_ceremony_context(fx_after)
+						_open_final_ceremony_modal(0, pre_ctx_intl, func(): _launch_career_match(true))
+					else:
+						_launch_career_match(true)
 				else:
 					_show_career_shell()
 			)
 			return
-		if str(fix.get("stage", "")) == "FINAL" and int(meta.get("finalParadeDoneWeek", 0)) != wk:
+		if CareerState.is_fixture_final(fix) and int(meta.get("finalParadeDoneWeek", 0)) != wk:
 			meta["finalParadeDoneWeek"] = wk
-			_open_cutscene(26, func(): _launch_career_match(true))
+			var pre_ctx: Dictionary = CareerState.build_final_ceremony_context(fix)
+			_open_final_ceremony_modal(0, pre_ctx, func(): _launch_career_match(true))
 			return
 		var en: int = int(prof.get("energy", 80))
 		var coach_rel: int = int(prof.get("relations", {}).get("pelatih", 60))
@@ -316,6 +325,10 @@ func _handle_quick_sim() -> void:
 
 func _trigger_post_match_chain(report: Dictionary) -> void:
 	if not CareerState.has_active_career:
+		return
+	var final_trophy: Dictionary = report.get("final_trophy_won", {})
+	if not final_trophy.is_empty():
+		_open_final_ceremony_modal(1, final_trophy)
 		return
 	var timnas_trophy: Dictionary = report.get("timnas_trophy_won", {})
 	if not timnas_trophy.is_empty():
@@ -455,6 +468,34 @@ func _transfer_step(step: int, offer: Dictionary) -> void:
 	cm.set_anchors_preset(Control.PRESET_FULL_RECT)
 	cm.connect("finished", func(): _transfer_step(step + 1, offer))
 	_modal_layer.add_child(cm)
+
+func _open_season_end_ceremony_modal(ctx: Dictionary, on_done: Callable = Callable()) -> void:
+	var scr: GDScript = load("res://scenes/modals/SeasonEndCeremonyModal.gd") as GDScript
+	if scr == null or not scr.can_instantiate():
+		push_error("Failed to load SeasonEndCeremonyModal.gd")
+		if on_done.is_valid():
+			on_done.call()
+		return
+	var sm: Control = scr.new()
+	sm.call("configure", ctx)
+	sm.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if on_done.is_valid():
+		sm.connect("finished", on_done)
+	_modal_layer.add_child(sm)
+
+func _open_final_ceremony_modal(mode_idx: int, ctx: Dictionary, on_done: Callable = Callable()) -> void:
+	var scr: GDScript = load("res://scenes/modals/FinalCeremonyModal.gd") as GDScript
+	if scr == null or not scr.can_instantiate():
+		push_error("Failed to load FinalCeremonyModal.gd for mode %d" % mode_idx)
+		if on_done.is_valid():
+			on_done.call()
+		return
+	var fm: Control = scr.new()
+	fm.call("configure", mode_idx, ctx)
+	fm.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if on_done.is_valid():
+		fm.connect("finished", on_done)
+	_modal_layer.add_child(fm)
 
 func _open_ballon_gala_modal(gala_data: Dictionary, on_done: Callable = Callable()) -> void:
 	var scr: GDScript = load("res://scenes/modals/BallonGalaModal.gd") as GDScript

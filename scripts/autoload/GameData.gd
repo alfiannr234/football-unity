@@ -924,6 +924,33 @@ func _init_sponsors_and_dilemmas() -> void:
 				{"label": "UNTUK RUANG GANTI", "sub": "+13 Ruang Ganti • +2 Pelatih", "color": "#7B4F1D", "effects": {"ruangGanti": 13, "pelatih": 2}},
 			]
 		},
+		{
+			"id": "ditunggu_di_lorong",
+			"timing": "POST",
+			"scene": "pitch_side",
+			"title": "SETELAH LAGA",
+			"recap_title": "DITUNGGU DI LORONG",
+			"allow_think": true,
+			"text": "Seorang bocah dengan namamu di punggung sudah setengah jam menunggu di mulut terowongan. Ayahnya menyuruhnya jangan mengganggumu, kamu sudah terlambat.",
+			"choices": [
+				{
+					"label": "TEMUI DIA",
+					"icon": "FANS",
+					"sub": "+10 Suporter • +2 Pers • -2 Energi",
+					"color": "#554B8E",
+					"effects": {"fans": 10, "pers": 2, "energy": -2},
+					"win_text": "Kamu berhenti sebentar, menandatangani jersey bocah itu, dan berfoto bersama sebelum bergegas ke bus tim.",
+				},
+				{
+					"label": "LAMBAI LALU JALAN",
+					"icon": "CHECK",
+					"sub": "+2 Suporter • hemat energi",
+					"color": "#4C5E80",
+					"effects": {"fans": 2},
+					"win_text": "Kamu tersenyum dan melambaikan tangan hangat dari dekat terowongan sebelum melangkah cepat menuju bus tim.",
+				},
+			]
+		},
 	]
 
 func _init_album_cards() -> void:

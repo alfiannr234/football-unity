@@ -221,6 +221,12 @@ func _render_mode() -> void:
 			_build_season_end_recap()
 
 func _add_backdrop(tex_path: String) -> void:
+	if tex_path.ends_with("press_wall.png"):
+		var pbg := PressStageBackdrop.new()
+		if CareerState.has_active_career:
+			pbg.configure_from_club(CareerState.get_current_club())
+		_stage.add_child(pbg)
+		return
 	var bg := TextureRect.new()
 	bg.texture = load(tex_path)
 	bg.anchor_left = 0.0
@@ -1322,20 +1328,14 @@ func _build_coach_reject() -> void:
 	av_hb.add_theme_constant_override("separation", 36)
 	vb.add_child(av_hb)
 
-	var coach := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-	at.region = Rect2(2 * 24, 0, 24, 36)
-	coach.texture = at
-	coach.custom_minimum_size = Vector2(90, 134)
-	coach.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var coach := NpcAvatar.new()
+	coach.configure_role("COACH", false, CareerState.get_current_club())
+	coach.anim_mode = "TALK"
+	coach.custom_minimum_size = Vector2(106, 168)
 	av_hb.add_child(coach)
-	var ctw := create_tween().set_loops()
-	ctw.tween_property(coach, "position:y", -5.0, 0.45).as_relative()
-	ctw.tween_property(coach, "position:y", 5.0, 0.45).as_relative()
 
 	var you := PixelAvatar.new()
-	you.custom_minimum_size = Vector2(90, 134)
+	you.custom_minimum_size = Vector2(106, 168)
 	you.configure_from_career()
 	you.anim_mode = "IDLE"
 	av_hb.add_child(you)
@@ -2947,73 +2947,58 @@ func _apply_and_finish_cutscene(eff: Dictionary, reaction_lbl: Label, msg: Strin
 # 16. HAT-TRICK & MIKROFON (POST-MATCH TV INTERVIEW)
 # ---------------------------------------------------------------------------
 func _build_hat_trick_mic() -> void:
-	var club := CareerState.get_current_club()
-	var rep := CareerState.last_match_report
-	var goals := maxi(3, int(rep.get("my_goals", 3)))
-	var kit_pri: Color = club.get("primary", Color("#1A90E0"))
-	var shirt_num := int(CareerState.career["playerProfile"]["appearance"].get("shirt_num", 9))
+	var club: Dictionary = CareerState.get_current_club()
+	var rep: Dictionary = CareerState.last_match_report
+	var goals: int = maxi(3, int(rep.get("my_goals", 3)))
+	var shirt_num: int = int(CareerState.career["playerProfile"]["appearance"].get("shirt_num", 9))
 
-	var bg := Control.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.draw.connect(func():
-		var sz := bg.size
-		bg.draw_rect(Rect2(Vector2.ZERO, sz), Color("#0D1524"))
-		bg.draw_rect(Rect2(0, sz.y * 0.52, sz.x, sz.y * 0.48), Color("#1E5631"))
-		# Stadium floodlights & blurred stand
-		for i in range(6):
-			bg.draw_circle(Vector2(120 + i * 190, 42), 18.0, Color(0.95, 0.92, 0.72, 0.25))
-		# TV Camera & boom mic on left
-		var cam_x := sz.x * 0.18
-		var cam_y := sz.y * 0.46
-		bg.draw_line(Vector2(cam_x, cam_y + 20), Vector2(cam_x - 24, cam_y + 100), Color("#64748B"), 4.0)
-		bg.draw_line(Vector2(cam_x, cam_y + 20), Vector2(cam_x + 24, cam_y + 100), Color("#64748B"), 4.0)
-		bg.draw_rect(Rect2(cam_x - 28, cam_y - 16, 56, 36), Color("#1E293B"))
-		bg.draw_rect(Rect2(cam_x + 28, cam_y - 8, 18, 20), Color("#0F172A"))
-		bg.draw_circle(Vector2(cam_x - 16, cam_y - 4), 4.0, Color("#EF4444")) # REC dot
-		# Match Ball on pedestal / held
-		var bx := sz.x * 0.56
-		var by := sz.y * 0.50
-		bg.draw_circle(Vector2(bx, by), 22.0, Color.WHITE)
-		bg.draw_circle(Vector2(bx, by), 22.0, UITheme.ACCENT_GOLD, false, 2.5)
-		bg.draw_circle(Vector2(bx - 6, by - 4), 5.0, Color("#0F172A"))
-		bg.draw_circle(Vector2(bx + 7, by + 5), 5.0, Color("#0F172A"))
-		bg.draw_string(UITheme.get_display_font(), Vector2(bx - 42, by + 44), "BOLA HAT-TRICK (%d GOL)" % goals, HORIZONTAL_ALIGNMENT_CENTER, 120, 11, UITheme.ACCENT_GOLD)
-		# Dark vignette at bottom for cards
-		bg.draw_rect(Rect2(0, sz.y * 0.64, sz.x, sz.y * 0.36), Color(0.03, 0.06, 0.12, 0.84))
-	)
-	_stage.add_child(bg)
+	var stage_bg := PressStageBackdrop.new()
+	stage_bg.configure_from_club(club, "HAT-TRICK #%d" % shirt_num)
+	_stage.add_child(stage_bg)
+
+	var top_pill: PanelContainer = PressStageBackdrop.build_top_club_pill(club, "PASCA LAGA • HAT-TRICK & MIKROFON", "%d GOL" % goals)
+	top_pill.position = Vector2(16, 6)
+	_stage.add_child(top_pill)
 
 	var av := PixelAvatar.new()
-	av.position = Vector2(540, 145)
-	av.custom_minimum_size = Vector2(110, 160)
+	av.position = Vector2(332, 108)
+	av.size = Vector2(142, 236)
+	av.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	av.configure_from_career()
-	av.anim_mode = "MVP"
+	av.show_mvp_trophy = true
+	av.anim_mode = "INTERVIEW"
 	_stage.add_child(av)
 
+	var mic_stand := PressStageBackdrop.BroadcastMicStand.new()
+	mic_stand.accent_col = stage_bg.club_primary
+	mic_stand.position = Vector2(288, 178)
+	mic_stand.size = Vector2(58, 182)
+	_stage.add_child(mic_stand)
+
+	var rep_av := NpcAvatar.new()
+	rep_av.configure_role("REPORTER", true, club)
+	rep_av.anim_mode = "TALK"
+	rep_av.position = Vector2(436, 108)
+	rep_av.size = Vector2(178, 236)
+	rep_av.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_stage.add_child(rep_av)
+
 	var vb := VBoxContainer.new()
-	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vb.offset_left = 72
-	vb.offset_right = -72
-	vb.offset_top = 20
-	vb.offset_bottom = -18
-	vb.add_theme_constant_override("separation", 8)
+	vb.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	vb.offset_left = 54
+	vb.offset_right = -54
+	vb.offset_top = -172
+	vb.offset_bottom = -10
+	vb.alignment = BoxContainer.ALIGNMENT_END
+	vb.add_theme_constant_override("separation", 6)
 	_stage.add_child(vb)
-
-	var badge := Label.new()
-	badge.text = "PASCA LAGA • HAT-TRICK & MIKROFON (#%d)" % shirt_num
-	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	badge.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	badge.add_theme_font_size_override("font_size", 18)
-	vb.add_child(badge)
-
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vb.add_child(spacer)
 
 	var desc := Label.new()
 	desc.text = "Reporter TV langsung menyodorkan mikrofon usai kamu memborong %d gol untuk %s! Bagaimana reaksimu?" % [goals, str(club.get("name", "timmu"))]
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.add_theme_font_override("font", UITheme.get_display_font())
+	desc.add_theme_font_size_override("font_size", 12)
 	desc.add_theme_color_override("font_color", UITheme.TEXT_WHITE)
 	vb.add_child(desc)
 
@@ -3021,29 +3006,25 @@ func _build_hat_trick_mic() -> void:
 	react_lbl.visible = false
 	react_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	react_lbl.add_theme_color_override("font_color", UITheme.ACCENT_GREEN)
-	react_lbl.add_theme_font_size_override("font_size", 14)
+	react_lbl.add_theme_font_size_override("font_size", 13)
 	vb.add_child(react_lbl)
 
 	var hb := HBoxContainer.new()
-	hb.add_theme_constant_override("separation", 8)
+	hb.add_theme_constant_override("separation", 12)
 	vb.add_child(hb)
 
-	var opts := [
-		["DEDIKASIKAN KE REKAN\n+8 R.Ganti • +4 Pers", {"ruangGanti": 8, "pers": 4, "pelatih": 3}, "\"Tanpa umpan mereka tak ada hat-trick hari ini!\"", true, 3],
-		["BIDIK GELAR JUARA!\n+7 Suporter • +6 Pers", {"fans": 7, "pers": 6, "followers": 450}, "\"Ini baru awal — kami ingin mengangkat trofi!\"", true, 4],
-		["SIMPAN BOLA SANTAI\n+6 Pelatih • +5 Suporter", {"pelatih": 6, "fans": 5, "ruangGanti": 4}, "Kamu menyelipkan bola bertanda tangan dan tersenyum ramah.", false, 2],
+	var opts: Array = [
+		["DEDIKASIKAN KE REKAN", "JERSEY", Color("#7B521D"), [["+8 TIM", false], ["+4 PERS", false]], {"ruangGanti": 8, "pers": 4, "pelatih": 3}, "\"Tanpa umpan mereka tak ada hat-trick hari ini!\"", true, 3],
+		["BIDIK GELAR JUARA!", "MIC", Color("#4C3D7A"), [["+7 SUPORTER", false], ["+6 PERS", false]], {"fans": 7, "pers": 6, "followers": 450}, "\"Ini baru awal - kami ingin mengangkat trofi!\"", true, 4],
+		["SIMPAN BOLA SANTAI", "FANS", Color("#6F324D"), [["+6 PELATIH", false], ["+5 SUPORTER", false]], {"pelatih": 6, "fans": 5, "ruangGanti": 4}, "Kamu menyelipkan bola bertanda tangan dan tersenyum ramah.", false, 2],
 	]
 	var btns: Array[Button] = []
 	for opt in opts:
-		var eff: Dictionary = opt[1]
-		var react_msg: String = str(opt[2])
-		var use_confetti: bool = bool(opt[3])
-		var leg_pts: int = int(opt[4])
-		var b := Button.new()
-		b.text = opt[0]
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 62)
-		UITheme.style_btn(b, kit_pri.darkened(0.45), UITheme.ACCENT_GOLD, 12)
+		var eff: Dictionary = opt[4]
+		var react_msg: String = str(opt[5])
+		var use_confetti: bool = bool(opt[6])
+		var leg_pts: int = int(opt[7])
+		var b: Button = PressStageBackdrop.build_gambar2_choice_button(str(opt[0]), str(opt[1]), opt[2], opt[3])
 		b.pressed.connect(func():
 			AudioSynth.play_achievement()
 			for bb in btns:
@@ -4617,13 +4598,10 @@ func _build_club_record_goals() -> void:
 	sp_l.add_theme_color_override("font_color", Color.WHITE)
 	speech_p.add_child(sp_l)
 	pres_vb.add_child(speech_p)
-	var pres_npc := TextureRect.new()
-	var at := AtlasTexture.new()
-	at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-	at.region = Rect2(0, 0, 24, 36)
-	pres_npc.texture = at
-	pres_npc.custom_minimum_size = Vector2(92, 136)
-	pres_npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var pres_npc := NpcAvatar.new()
+	pres_npc.configure_role("PRESIDENT", false, CareerState.get_current_club())
+	pres_npc.anim_mode = "TALK"
+	pres_npc.custom_minimum_size = Vector2(106, 168)
 	pres_vb.add_child(pres_npc)
 
 	# BOTTOM CEREMONIAL OVERLAY PANEL (EXACT GAMBAR 3 COPY & LAYOUT!)

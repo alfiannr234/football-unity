@@ -583,29 +583,23 @@ func _render_relations_body() -> void:
 		vb.alignment = BoxContainer.ALIGNMENT_END
 		card.add_child(vb)
 
-		if int(sp[2]) >= 0:
-			var npc := TextureRect.new()
-			var at := AtlasTexture.new()
-			at.atlas = load("res://assets/sprites/characters/npcs_sheet.png")
-			at.region = Rect2(int(sp[2]) * 24, 0, 24, 36)
-			npc.texture = at
-			npc.custom_minimum_size = Vector2(48, 72)
-			npc.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			vb.add_child(npc)
-		else:
-			var gf := PixelAvatar.new()
-			gf.custom_minimum_size = Vector2(48, 72)
-			gf.skin_idx = 1
-			gf.hair_style = 5
-			gf.hair_idx = 1
-			gf.beard = false
-			gf.casual_style = 1
-			gf.primary_color = Color("#E11D48")
-			gf.secondary_color = Color("#FCE7F3")
-			if val <= 0:
-				gf.modulate = Color(0.32, 0.36, 0.44, 0.55)
-			gf.queue_redraw()
-			vb.add_child(gf)
+		var club_cur: Dictionary = CareerState.get_current_club()
+		var npc_role: String = "PARTNER"
+		match int(sp[2]):
+			0: npc_role = "REPORTER"
+			1: npc_role = "SUPPORTER"
+			2: npc_role = "COACH"
+			4: npc_role = "AGENT"
+			5: npc_role = "TEAMMATE"
+			_: npc_role = "PARTNER"
+		var npc_av := NpcAvatar.new()
+		npc_av.configure_role(npc_role, false, club_cur)
+		npc_av.anim_mode = "IDLE" if (sp[1] != "kekasih" or val > 0) else "NONE"
+		npc_av.anim_phase = float(specs.find(sp)) * 0.7
+		npc_av.custom_minimum_size = Vector2(54, 82)
+		if sp[1] == "kekasih" and val <= 0:
+			npc_av.modulate = Color(0.32, 0.36, 0.44, 0.55)
+		vb.add_child(npc_av)
 
 		var l1 := Label.new()
 		l1.text = sp[0]

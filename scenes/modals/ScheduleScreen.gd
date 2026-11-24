@@ -475,8 +475,9 @@ func _build_next_match_card(fix: Dictionary, sched: Array, cur_wk: int) -> void:
 
 	var ic_c := CenterContainer.new()
 	var cic := SchedCompIcon.new()
-	cic.category = cat
-	cic.icon_color = accent_c
+	var is_super_cup: bool = (comp.to_upper() == "PIALA_SUPER_EROPA")
+	cic.category = "SUPER_EROPA" if is_super_cup else cat
+	cic.icon_color = Color("#E2E8F0") if is_super_cup else accent_c
 	cic.custom_minimum_size = Vector2(18, 18)
 	ic_c.add_child(cic)
 	hdr.add_child(ic_c)
@@ -601,6 +602,17 @@ func _build_next_match_card(fix: Dictionary, sched: Array, cur_wk: int) -> void:
 	r_val.add_theme_font_size_override("font_size", 12)
 	r_val.add_theme_color_override("font_color", role_col)
 	role_hb.add_child(r_val)
+
+	var det_btn := Button.new()
+	det_btn.text = "DETAIL"
+	det_btn.custom_minimum_size = Vector2(68, 22)
+	UITheme.style_btn(det_btn, Color("#122036"), Color("#94A3B8") if comp.to_upper() == "PIALA_SUPER_EROPA" else accent_c, 9)
+	var fix_cap: Dictionary = fix.duplicate(true)
+	det_btn.pressed.connect(func():
+		AudioSynth.play_click()
+		open_match_detail_modal(fix_cap)
+	)
+	role_hb.add_child(det_btn)
 
 func _add_status_bar_row(parent_vb: VBoxContainer, icon_kind: String, label_txt: String, val_txt: String, ratio: float, segs: int, icon_col: Color, bar_col: Color) -> void:
 	var hb := HBoxContainer.new()
@@ -1000,9 +1012,10 @@ func _make_calendar_match_tile(f: Dictionary, sched: Array, cur_wk: int, my_cid:
 	top_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(top_hb)
 
+	var is_super_cup: bool = (comp.to_upper() == "PIALA_SUPER_EROPA")
 	var ic := SchedCompIcon.new()
-	ic.category = cat
-	ic.icon_color = accent_c
+	ic.category = "SUPER_EROPA" if is_super_cup else cat
+	ic.icon_color = Color("#E2E8F0") if is_super_cup else accent_c
 	ic.custom_minimum_size = Vector2(10, 10)
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_hb.add_child(ic)
@@ -1070,12 +1083,170 @@ func _make_calendar_match_tile(f: Dictionary, sched: Array, cur_wk: int, my_cid:
 	bot_p.add_child(bot_l)
 
 	var wk_cap: int = w
+	var fix_cap: Dictionary = f.duplicate(true)
 	btn.pressed.connect(func():
 		AudioSynth.play_click()
-		_sel_week = wk_cap
-		_refresh(false)
+		if _sel_week == wk_cap:
+			open_match_detail_modal(fix_cap)
+		else:
+			_sel_week = wk_cap
+			_refresh(false)
 	)
 	return btn
+
+func open_match_detail_modal(fix: Dictionary) -> void:
+	if _root == null or fix.is_empty():
+		return
+	var existing: Node = _root.get_node_or_null("MatchDetailOverlay")
+	if existing != null:
+		_root.remove_child(existing)
+		existing.queue_free()
+
+	var comp: String = str(fix.get("comp", "LIGA")).to_upper()
+	var cat: String = get_comp_category(comp)
+	var is_super_cup: bool = (comp == "PIALA_SUPER_EROPA")
+	var as_flag: bool = (cat == "TIMNAS")
+	var is_home: bool = bool(fix.get("is_home", true))
+	var played: bool = bool(fix.get("played", false))
+	var club: Dictionary = CareerState.get_current_club()
+	var my_nat_id: int = clampi(int(CareerState.career.get("playerProfile", {}).get("nationId", 16)), 0, GameData.nations.size() - 1)
+	var my_id: int = my_nat_id if as_flag else int(club.get("id", 0))
+	var opp_id: int = int(fix.get("opp_nat_id", 0)) if as_flag else int(fix.get("opp_club_id", 0))
+	var my_name: String = (str(GameData.nations[my_nat_id].get("name", "TIMNAS")) if as_flag else str(club.get("name", "KLUB"))).to_upper()
+	var opp_name: String = str(fix.get("opp_name", "LAWAN")).to_upper()
+
+	var left_id: int = my_id if is_home else opp_id
+	var right_id: int = opp_id if is_home else my_id
+	var left_name: String = my_name if is_home else opp_name
+	var right_name: String = opp_name if is_home else my_name
+	var su: int = int(fix.get("score_us", 0))
+	var st: int = int(fix.get("score_them", 0))
+	var left_sc: int = su if is_home else st
+	var right_sc: int = st if is_home else su
+
+	var ov := Control.new()
+	ov.name = "MatchDetailOverlay"
+	ov.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ov.mouse_filter = Control.MOUSE_FILTER_STOP
+	_root.add_child(ov)
+
+	var bg := ColorRect.new()
+	bg.color = Color("#07101C")
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ov.add_child(bg)
+
+	var mc := MarginContainer.new()
+	mc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	mc.add_theme_constant_override("margin_left", 36)
+	mc.add_theme_constant_override("margin_right", 36)
+	mc.add_theme_constant_override("margin_top", 22)
+	mc.add_theme_constant_override("margin_bottom", 20)
+	ov.add_child(mc)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 18)
+	mc.add_child(vb)
+
+	# Top Header: Silver Trophy Emblem + "PIALA SUPER EROPA • FINAL" (exact Gambar 2!)
+	var hdr_cc := CenterContainer.new()
+	vb.add_child(hdr_cc)
+	var hdr_hb := HBoxContainer.new()
+	hdr_hb.add_theme_constant_override("separation", 10)
+	hdr_cc.add_child(hdr_hb)
+
+	var ic := SchedCompIcon.new()
+	ic.category = "SUPER_EROPA" if is_super_cup else cat
+	ic.icon_color = Color("#E2E8F0") if is_super_cup else (COMP_META[cat]["accent"] as Color)
+	ic.custom_minimum_size = Vector2(22, 22)
+	hdr_hb.add_child(ic)
+
+	var ttl := Label.new()
+	ttl.text = str(fix.get("comp_label", "PIALA SUPER EROPA • FINAL")).to_upper()
+	ttl.add_theme_font_override("font", UITheme.get_display_font())
+	ttl.add_theme_font_size_override("font_size", 16)
+	ttl.add_theme_color_override("font_color", Color("#E2E8F0") if is_super_cup else UITheme.TEXT_WHITE)
+	hdr_hb.add_child(ttl)
+
+	# Center Hero Row: Giant Home Crest | Giant Score (5-2 or VS) | Giant Away Crest
+	var mid_cc := CenterContainer.new()
+	mid_cc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vb.add_child(mid_cc)
+
+	var match_hb := HBoxContainer.new()
+	match_hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	match_hb.add_theme_constant_override("separation", 46)
+	mid_cc.add_child(match_hb)
+
+	var left_res: String = ("M" if left_sc > right_sc else ("S" if left_sc == right_sc else "K")) if played else "-"
+	var right_res: String = ("M" if right_sc > left_sc else ("S" if right_sc == left_sc else "K")) if played else "-"
+
+	for side_i in range(2):
+		if side_i == 1:
+			var sc_l := Label.new()
+			sc_l.text = ("%d-%d" % [left_sc, right_sc]) if played else "VS"
+			sc_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			sc_l.add_theme_font_override("font", UITheme.get_display_font())
+			sc_l.add_theme_font_size_override("font_size", 42)
+			sc_l.add_theme_color_override("font_color", UITheme.TEXT_WHITE if played else Color("#94A3B8"))
+			match_hb.add_child(sc_l)
+
+		var col_vb := VBoxContainer.new()
+		col_vb.alignment = BoxContainer.ALIGNMENT_CENTER
+		col_vb.custom_minimum_size = Vector2(230, 0)
+		col_vb.add_theme_constant_override("separation", 10)
+		match_hb.add_child(col_vb)
+
+		var cr_cc := CenterContainer.new()
+		col_vb.add_child(cr_cc)
+		cr_cc.add_child(_make_team_emblem(left_id if side_i == 0 else right_id, as_flag, 108))
+
+		var nm_l := Label.new()
+		nm_l.text = left_name if side_i == 0 else right_name
+		nm_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nm_l.add_theme_font_override("font", UITheme.get_display_font())
+		nm_l.add_theme_font_size_override("font_size", 14)
+		var is_u_side: bool = (side_i == 0 and is_home) or (side_i == 1 and not is_home)
+		nm_l.add_theme_color_override("font_color", Color("#FDA4AF") if is_u_side else Color("#E2E8F0"))
+		col_vb.add_child(nm_l)
+
+		# 5-Slot Recent Form Strip (- - - - M / - - - - K)
+		var frm_cc := CenterContainer.new()
+		col_vb.add_child(frm_cc)
+		var frm_hb := HBoxContainer.new()
+		frm_hb.add_theme_constant_override("separation", 4)
+		frm_cc.add_child(frm_hb)
+		var res_ch: String = left_res if side_i == 0 else right_res
+		for fi in range(5):
+			var ch_t: String = res_ch if (fi == 4 and played) else "-"
+			var fp := PanelContainer.new()
+			fp.custom_minimum_size = Vector2(18, 18)
+			var fcol: Color = Color("#94A3B8") if ch_t == "M" else (Color("#EF4444") if ch_t == "K" else Color("#334155"))
+			var fsb: StyleBoxFlat = UITheme.make_box(Color("#121D2E"), fcol, 1, 2)
+			fsb.content_margin_left = 2
+			fsb.content_margin_right = 2
+			fsb.content_margin_top = 0
+			fsb.content_margin_bottom = 0
+			fp.add_theme_stylebox_override("panel", fsb)
+			var fl := Label.new()
+			fl.text = ch_t
+			fl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			fl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			fl.add_theme_font_override("font", UITheme.get_display_font())
+			fl.add_theme_font_size_override("font_size", 9)
+			fl.add_theme_color_override("font_color", UITheme.TEXT_WHITE if ch_t == "M" else (Color("#FCA5A5") if ch_t == "K" else Color("#64748B")))
+			fp.add_child(fl)
+			frm_hb.add_child(fp)
+
+	# Bottom Full-Width TUTUP Button (exact Gambar 2!)
+	var close_b := Button.new()
+	close_b.text = "TUTUP"
+	close_b.custom_minimum_size = Vector2(0, 38)
+	UITheme.style_btn(close_b, Color("#0E1A2C"), Color("#334155"), 13)
+	close_b.pressed.connect(func():
+		AudioSynth.play_click()
+		ov.queue_free()
+	)
+	vb.add_child(close_b)
 
 # ==============================================================================
 # CUSTOM VECTOR ICON & METER CONTROLS (Zero Missing Unicode Glyphs!)
@@ -1086,7 +1257,16 @@ class SchedCompIcon extends Control:
 	func _draw() -> void:
 		var w: float = size.x
 		var h: float = size.y
-		if category == "LIGA":
+		if category == "SUPER_EROPA":
+			# Silver European Super Cup Chalice inside subtle ring
+			draw_arc(Vector2(w * 0.5, h * 0.5), minf(w, h) * 0.46, 0.0, TAU, 20, icon_color, 1.4)
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(w * 0.28, h * 0.22), Vector2(w * 0.72, h * 0.22),
+				Vector2(w * 0.60, h * 0.58), Vector2(w * 0.40, h * 0.58),
+			]), icon_color)
+			draw_rect(Rect2(w * 0.44, h * 0.58, w * 0.12, h * 0.14), icon_color, true)
+			draw_rect(Rect2(w * 0.34, h * 0.72, w * 0.32, h * 0.10), icon_color, true)
+		elif category == "LIGA":
 			# Mini League Trophy
 			draw_colored_polygon(PackedVector2Array([
 				Vector2(w * 0.22, h * 0.16), Vector2(w * 0.78, h * 0.16),
